@@ -1,6 +1,6 @@
 import type { Pen } from "../../engine/contract";
 import { clock } from "./script";
-import { ACTORS, duplicates, type Actor, type ActorId, type Row, type World } from "./sim";
+import { ACTORS, duplicates, waitingFor, type Actor, type ActorId, type Row, type World } from "./sim";
 
 // MVP-отрисовка: серые фигуры и подписи. Полировка — после утверждения сюжета.
 
@@ -19,9 +19,41 @@ const COLS = [
   { title: "lease_until", x: 340, w: 120 },
 ];
 const ACTOR = { w: 110, h: 46 };
-const DOOR_X = 1130;
+const DOOR = { x: 1140, w: 120 }; // дверь клиента заказа — на уровне его полки
 
 const rowY = (id: number) => SHELF.y + (id - 1) * (SHELF.rowH + SHELF.gap);
+const SHELF_END = SHELF.x + 465; // правый край строки — сюда сходятся стрелки
+
+/** Стрелка — отношение из модели: посылка в руках, доставка (путь полка → под → дверь), ожидание замка. */
+export interface Arrow {
+  kind: "carry" | "deliver" | "duplicate" | "rejected" | "wait";
+  row: number;
+  by: ActorId;
+  delivery?: number; // какая по счёту доставка в эту дверь
+}
+
+/** Только из состояния кадра: carrying, события доставки этого кадра, ожидание блокировки. */
+export function arrows(w: World): Arrow[] {
+  const out: Arrow[] = [];
+  for (const id of ACTORS) {
+    const a = w.actors[id];
+    if (!a.present) continue;
+    if (a.carrying !== null) out.push({ kind: "carry", row: a.carrying, by: id });
+    const wait = waitingFor(a);
+    if (wait !== null) out.push({ kind: "wait", row: wait, by: id });
+  }
+  const dup = new Set(w.events.filter((e) => e.kind === "duplicate").map((e) => `${e.row}:${e.by}`));
+  w.events.forEach((e) => {
+    if ((e.kind !== "deliver" && e.kind !== "rejected") || e.row === undefined || !e.by) return;
+    let delivery = -1;
+    w.deliveries.filter((d) => d.row === e.row).forEach((d, i) => {
+      if (d.by === e.by) delivery = i;
+    });
+    const kind = e.kind === "rejected" ? "rejected" : dup.has(`${e.row}:${e.by}`) ? "duplicate" : "deliver";
+    out.push({ kind, row: e.row, by: e.by, delivery });
+  });
+  return out;
+}
 
 /** Позиции воркеров: делящие одно место встают в ряд; очередь — за стоящими у полки. */
 function positions(w: World): Map<ActorId, [number, number]> {
@@ -50,8 +82,8 @@ function positions(w: World): Map<ActorId, [number, number]> {
       case "road":
         out.set(a.id, [760 + slot("road") * 130, 500]);
         break;
-      case "door":
-        out.set(a.id, [990, 150 + slot("door") * 90]);
+      case "door": // очередь у двери — влево от неё
+        out.set(a.id, [DOOR.x - 20 - ACTOR.w - slot(`door:${at.row}`) * (ACTOR.w + 10), rowY(at.row) + 5]);
         break;
     }
   }
@@ -76,12 +108,13 @@ function wrap(text: string, max: number): string {
     .join("\n");
 }
 
-function bubble(pen: Pen, key: string, x: number, y: number, text: string, maxChars = 24): void {
+/** Пузырь реплики; (x, y) — левый нижний угол, при right — правый нижний. */
+function bubble(pen: Pen, key: string, x: number, y: number, text: string, maxChars = 24, right = false): void {
   const body = wrap(text, maxChars);
   const lines = body.split("\n");
   const width = Math.max(...lines.map((l) => l.length)) * 7.2 + 16;
   const height = lines.length * 16 + 8;
-  pen.group(key, x, y - height, () => {
+  pen.group(key, right ? x - width : x, y - height, () => {
     pen.rect(`${key}:bg`, { width, height, rx: 10, fill: C.white, stroke: C.ink, "stroke-width": 1.5 });
     pen.text(`${key}:t`, { x: 8, y: 17, "font-size": 13, fill: C.ink }, body);
   });
@@ -113,7 +146,9 @@ function drawRow(pen: Pen, w: World, r: Row): void {
       });
     }
     if (r.lockedBy) {
-      pen.text(`row:${r.id}:lock`, { x: 470, y: 36, "font-size": 20, fill: C.lock }, `🔒${w.actors[r.lockedBy].label.replace("Pod ", "")}`);
+      // Заперта при перепроверке, но не взята — бледный замок, чтобы не читалось «взял посылку».
+      pen.text(`row:${r.id}:lock`, { x: 470, y: 36, "font-size": 20, fill: C.lock, opacity: r.idle ? 0.35 : 1 },
+        `🔒${w.actors[r.lockedBy].label.replace("Pod ", "")}`);
     }
   });
 }
@@ -123,31 +158,44 @@ function actorStatus(w: World, a: Actor): string {
   if (a.carrying !== null) parts.push(`📦#${a.carrying}`);
   if (a.mutex) parts.push("🔒mu");
   if (a.scan?.waitingFor != null) parts.push(`⏳${w.clock - a.scan.since}с`);
+  else if (a.pending) parts.push("⏳");
   if (a.token) parts.push(`🎫${a.token}`);
   if (a.frozen) parts.push("💤");
   return parts.join(" ");
 }
 
 function drawActor(pen: Pen, w: World, a: Actor, x: number, y: number): void {
-  const waiting = a.scan?.waitingFor != null;
+  const waiting = waitingFor(a) !== null;
   pen.group(`actor:${a.id}`, x, y, () => {
     pen.rect(`actor:${a.id}:body`, {
       width: ACTOR.w, height: ACTOR.h, rx: 12,
       fill: a.frozen ? C.frozen : C.box, stroke: waiting ? C.lock : C.ink, "stroke-width": waiting ? 3 : 1.5,
     });
-    pen.text(`actor:${a.id}:name`, { x: 10, y: 19, "font-size": a.id === "B2" ? 11 : 14, "font-weight": 600, fill: C.ink }, a.label);
+    pen.text(`actor:${a.id}:name`, { x: 10, y: 19, "font-size": 14, "font-weight": 600, fill: C.ink }, a.label);
     pen.text(`actor:${a.id}:st`, { x: 10, y: 38, "font-size": 13, fill: C.ink }, actorStatus(w, a));
   });
 }
 
-function drawClient(pen: Pen, w: World): void {
+/** Двери клиентов: у каждого заказа своя; что получено — ✓, второй раз — ДУБЛЬ, отказ — ✕. */
+function drawDoors(pen: Pen, w: World): void {
   const dup = duplicates(w);
-  const lines = w.deliveries.map((d) =>
-    d.rejected ? `#${d.row} ✕ повтор` : dup.includes(d.row) ? `#${d.row} ✓ ДУБЛЬ` : `#${d.row} ✓`);
-  pen.rect("client:bg", { x: DOOR_X, y: 140, width: 130, height: 330, rx: 8, fill: dup.length ? C.redBg : C.white, stroke: C.ink });
-  pen.text("client:title", { x: DOOR_X + 12, y: 168, "font-size": 16, "font-weight": 600, fill: C.ink }, "🚪 Клиент");
-  pen.text("client:list", { x: DOOR_X + 12, y: 198, "font-size": 14, "font-family": MONO, fill: dup.length ? C.red : C.ink }, lines.join("\n") || " ");
-  if (w.client) bubble(pen, "client:say", DOOR_X - 150, 132, w.client, 22);
+  for (const r of w.rows) {
+    let got = false;
+    const marks = w.deliveries.filter((d) => d.row === r.id).map((d) => {
+      if (d.rejected) return "✕ повтор";
+      const again = got;
+      got = true;
+      return again ? "✓ ДУБЛЬ" : "✓";
+    });
+    const bad = dup.includes(r.id);
+    pen.group(`door:${r.id}`, DOOR.x, rowY(r.id), () => {
+      pen.rect(`door:${r.id}:bg`, { width: DOOR.w, height: SHELF.rowH, rx: 8, fill: bad ? C.redBg : C.white, stroke: C.ink });
+      pen.text(`door:${r.id}:t`, { x: 10, y: 21, "font-size": 14, "font-weight": 600, fill: C.ink }, `🚪 заказ ${r.id}`);
+      pen.text(`door:${r.id}:got`, { x: 10, y: 42, "font-size": 13, "font-family": MONO, fill: bad ? C.red : C.ink }, marks.join(" ") || " ");
+    });
+  }
+  // Левее своей двери, над курьерами у неё: над дверью пузырь закрыл бы соседнюю.
+  if (w.client) bubble(pen, "client:say", DOOR.x - 6, rowY(w.client.row) + 3, w.client.text, 22, true);
 }
 
 function drawSql(pen: Pen, w: World): void {
@@ -174,6 +222,38 @@ function drawCard(pen: Pen, text: string): void {
   });
 }
 
+function drawArrows(pen: Pen, w: World, pos: Map<ActorId, [number, number]>): void {
+  arrows(w).forEach((ar, i) => {
+    const at = pos.get(ar.by);
+    if (!at) return;
+    const [x, y] = at;
+    const shelf = { x: SHELF_END, y: rowY(ar.row) + SHELF.rowH / 2 };
+    const key = `arrow:${ar.kind}:${ar.by}:${i}`;
+    if (ar.kind === "wait") {
+      pen.line(key, {
+        x1: x + ACTOR.w / 2, y1: y, x2: shelf.x, y2: shelf.y - 10,
+        stroke: C.lock, "stroke-width": 3, "stroke-dasharray": "8 6", marker: "arrow",
+      });
+      return;
+    }
+    const color = ar.kind === "duplicate" ? C.red : C.muted;
+    // Путь посылки: полка → под. Стоящему вплотную к полке стрелка не нужна — и так видно.
+    if (x - shelf.x > 90) {
+      pen.line(`${key}:take`, {
+        x1: shelf.x, y1: shelf.y, x2: x, y2: y + ACTOR.h / 2,
+        stroke: color, "stroke-width": 2.5, marker: "arrow",
+      });
+    }
+    if (ar.kind === "carry" || ar.delivery === undefined) return;
+    const ty = rowY(ar.row) + 18 + ar.delivery * 16;
+    pen.line(`${key}:give`, {
+      x1: x + ACTOR.w, y1: y + ACTOR.h / 2, x2: DOOR.x, y2: ty,
+      stroke: color, "stroke-width": 2.5, marker: "arrow",
+      ...(ar.kind === "rejected" ? { "stroke-dasharray": "4 4" } : {}),
+    });
+  });
+}
+
 export function render(pen: Pen, w: World): void {
   // Шапка: кладовщик, табличка, часы.
   pen.rect("db:box", { x: 40, y: 20, width: 170, height: 56, rx: 10, fill: C.box, stroke: C.ink });
@@ -190,9 +270,10 @@ export function render(pen: Pen, w: World): void {
 
   if (w.term) drawTerm(pen, w.term);
   drawSql(pen, w);
-  drawClient(pen, w);
+  drawDoors(pen, w);
 
   const pos = positions(w);
+  drawArrows(pen, w, pos); // под фигурами: линия уходит за чужой бокс, а не перечёркивает его
   for (const [id, [x, y]] of pos) drawActor(pen, w, w.actors[id], x, y);
   for (const [id, [x, y]] of pos) {
     const a = w.actors[id];

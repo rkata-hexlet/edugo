@@ -13,6 +13,8 @@ export interface Pen {
   rect(key: string, attrs: Attrs): void;
   /** `\n` в content — перенос строки. */
   text(key: string, attrs: Attrs, content: string): void;
+  /** Линия x1,y1 → x2,y2; `marker: "arrow"` — наконечник на конце. */
+  line(key: string, attrs: Attrs): void;
   /** Группа со смещением; при смене x/y между кадрами — плавный переезд. */
   group(key: string, x: number, y: number, children: () => void): void;
 }
@@ -43,6 +45,8 @@ export interface Step<S> {
   act: string;
   caption: string;
   state: S;
+  /** Сколько секунд держать кадр при автопроигрывании; нет — по длине подписи. */
+  hold?: number;
 }
 
 /** Сцена = заранее просчитанная последовательность кадров + отрисовка любого из них. */

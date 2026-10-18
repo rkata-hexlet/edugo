@@ -1,6 +1,6 @@
 import type { Sound, Voice } from "../../engine/contract";
 import { syllables } from "../../engine/audio";
-import type { ActorId, EventKind, World } from "./sim";
+import { ACTORS, type ActorId, type EventKind, type World } from "./sim";
 
 // Озвучка эпизода по карте sound-designer: одно событие модели — один узнаваемый звук.
 // Звуки событий — в окне ~0–0.9 с, реплики — после них, по очереди.
@@ -9,7 +9,6 @@ const VOICES: Record<ActorId | "db" | "client", Voice> = {
   A: { wave: "triangle", pitch: 392, rate: 11, spread: 3, gain: 0.14 },
   B: { wave: "square", pitch: 233, rate: 9, spread: 5, gain: 0.1 },
   C: { wave: "sine", pitch: 523, rate: 13, spread: 2, gain: 0.14 },
-  B2: { wave: "square", pitch: 277, rate: 10, spread: 3, gain: 0.1 },
   db: { wave: "sawtooth", pitch: 98, rate: 6, spread: 1.5, gain: 0.16 },
   client: { wave: "triangle", pitch: 440, rate: 10, spread: 7, gain: 0.14 },
 };
@@ -87,6 +86,12 @@ const RECIPES: Partial<Record<EventKind, Recipe>> = {
     return 0.8;
   },
   unfreeze: (s, at) => (s.tone({ freq: 200, to: 700, dur: 0.2, wave: "triangle", gain: 0.18, at }), 0.2),
+  crash: (s, at) => {
+    // Под упал: глухой удар и обрыв — без тона «ошибки», это не баг, а жизнь.
+    s.noise({ dur: 0.25, freq: 150, q: 0.7, gain: 0.25, at });
+    s.tone({ freq: 300, to: 60, dur: 0.35, wave: "sawtooth", gain: 0.1, at: at + 0.05 });
+    return 0.4;
+  },
   appear: (s, at) => (s.tone({ freq: 300, to: 600, dur: 0.08, gain: 0.14, at }), 0.08),
   expire: (s, at) => {
     // Пауза перед «фшш» — тишина работает на момент.
@@ -117,7 +122,7 @@ const REPEAT: Partial<Record<EventKind, { max: number; step: number }>> = {
 /** Порядок звучания в кадре: сначала смена сцены и действия, последствия — после. */
 const ORDER: EventKind[] = [
   "page", "clock", "unfreeze", "appear", "mutex", "lock", "skip", "wait", "relock", "wake", "ticket",
-  "commit", "one", "zero", "race", "freeze", "expire", "deliver", "rejected", "duplicate", "party", "card",
+  "commit", "one", "zero", "race", "freeze", "crash", "expire", "deliver", "rejected", "duplicate", "party", "card",
 ];
 
 function clockTicks(s: Sound, at: number, dt: number): number {
@@ -164,12 +169,12 @@ export function sound(s: Sound, w: World): void {
 
   // Реплики: воркеры, кладовщик, клиент — по очереди, после звуков событий.
   const lines: [Voice, string][] = [];
-  for (const id of ["A", "B", "C", "B2"] as const) {
+  for (const id of ACTORS) {
     const a = w.actors[id];
     if (a.present && speakable(a.say)) lines.push([VOICES[id], a.say]);
   }
   if (speakable(w.db)) lines.push([VOICES.db, w.db]);
-  if (speakable(w.client)) lines.push([VOICES.client, w.client]);
+  if (w.client && speakable(w.client.text)) lines.push([VOICES.client, w.client.text]);
   let at = Math.max(0.35, Math.min(end, 1.2));
   for (const [voice, text] of lines) {
     s.babble(voice, text, at);

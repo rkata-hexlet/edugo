@@ -2,9 +2,9 @@
 // READ COMMITTED. Детерминирована: время — счётчик секунд world.clock (часы БД), токены — из списка.
 
 export type Status = "new" | "in_progress" | "done";
-/** Воркеры: A, B, C — поды; B2 — второй воркер пода B. */
-export type ActorId = "A" | "B" | "C" | "B2";
-export const ACTORS: ActorId[] = ["A", "B", "C", "B2"];
+/** Воркеры: A, B, C — поды. */
+export type ActorId = "A" | "B" | "C";
+export const ACTORS: ActorId[] = ["A", "B", "C"];
 
 /** Колонки строки tasks (кроме id). */
 export interface RowData {
@@ -16,6 +16,7 @@ export interface RowData {
 export interface Row extends RowData {
   id: number;
   lockedBy: ActorId | null; // построчная блокировка, живёт до COMMIT/ROLLBACK
+  idle: boolean; // заперта при перепроверке, но не вернулась запросу — держатель её не брал
   draft: RowData | null; // незакоммиченная правка владельца блокировки
 }
 
@@ -24,7 +25,7 @@ export type Place =
   | { kind: "shelf"; row: number }
   | { kind: "queue"; row: number }
   | { kind: "road" }
-  | { kind: "door" };
+  | { kind: "door"; row: number }; // у каждого заказа своя дверь
 
 export type LockMode = "none" | "for_update" | "skip_locked";
 
@@ -38,6 +39,14 @@ export interface Scan {
   order: number; // порядок постановки в очередь за блокировкой
 }
 
+/** UPDATE, упёршийся в чужую блокировку: ждёт COMMIT/ROLLBACK держателя, потом перепроверяет WHERE. */
+export interface PendingUpdate {
+  id: number;
+  set: Partial<RowData>;
+  where: Partial<RowData> | null;
+  order: number;
+}
+
 export interface Actor {
   id: ActorId;
   label: string;
@@ -46,6 +55,7 @@ export interface Actor {
   carrying: number | null;
   seen: number | null; // результат последнего SELECT (id или пусто)
   scan: Scan | null;
+  pending: PendingUpdate | null;
   affected: number | null; // сколько строк задел последний UPDATE
   token: string | null; // талон, который воркер считает своим
   mutex: boolean; // держит свой sync.Mutex
@@ -63,11 +73,13 @@ export interface Delivery {
 export type EventKind =
   | "lock" | "relock" | "skip" | "wait" | "wake" | "commit" | "one" | "zero"
   | "deliver" | "duplicate" | "rejected" | "ticket"
-  | "race" | "mutex" | "freeze" | "unfreeze" | "appear" | "expire" | "clock" | "card" | "party" | "page";
+  | "race" | "mutex" | "freeze" | "unfreeze" | "appear" | "crash" | "expire" | "clock" | "card" | "party" | "page";
 
 export interface SimEvent {
   kind: EventKind;
   n?: number; // для clock — на сколько секунд прыгнули часы
+  row?: number; // для доставки — какая посылка
+  by?: ActorId; // для доставки — кто привёз
 }
 
 export interface World {
@@ -77,7 +89,7 @@ export interface World {
   deliveries: Delivery[];
   sql: string[]; // полный текст запросов кадра
   db: string | null; // реплика кладовщика-Postgres
-  client: string | null; // реплика клиента у двери
+  client: { row: number; text: string } | null; // реплика клиента заказа row
   race: boolean; // подсветить окно гонки
   card: string | null; // титр поверх сцены
   term: string | null; // ярлык акта: формальное имя проблемы/паттерна
@@ -89,20 +101,19 @@ export interface World {
 const TOKENS = ["7f3a", "c21e", "9b04", "e6d1", "40ac", "d58f"];
 
 export function world(rowCount = 4): World {
-  const actor = (id: ActorId, label: string, present = true): Actor => ({
-    id, label, present, at: { kind: "home" }, carrying: null, seen: null, scan: null,
-    affected: null, token: null, mutex: false, frozen: false, say: null,
+  const actor = (id: ActorId, label: string): Actor => ({
+    id, label, present: true, at: { kind: "home" }, carrying: null, seen: null, scan: null,
+    pending: null, affected: null, token: null, mutex: false, frozen: false, say: null,
   });
   return {
     clock: 0,
     rows: Array.from({ length: rowCount }, (_, i) => ({
-      id: i + 1, status: "new", token: null, leaseUntil: null, lockedBy: null, draft: null,
+      id: i + 1, status: "new", token: null, leaseUntil: null, lockedBy: null, idle: false, draft: null,
     })),
     actors: {
       A: actor("A", "Pod A"),
       B: actor("B", "Pod B"),
       C: actor("C", "Pod C"),
-      B2: actor("B2", "Pod B · воркер 2", false),
     },
     deliveries: [],
     sql: [],
@@ -121,6 +132,11 @@ export function rowById(w: World, id: number): Row {
   const r = w.rows.find((x) => x.id === id);
   if (!r) throw new Error(`нет строки #${id}`);
   return r;
+}
+
+/** Строка, которую воркер ждёт: запрос с блокировкой или UPDATE. */
+export function waitingFor(a: Actor): number | null {
+  return a.scan?.waitingFor ?? a.pending?.id ?? null;
 }
 
 /** Что видит транзакция воркера: свою незакоммиченную правку или закоммиченную версию. */
@@ -178,27 +194,36 @@ function advance(w: World, a: Actor, woke = false): void {
       a.scan = null;
       return;
     }
+    r.idle = true;
   }
   a.scan = null; // кандидаты кончились — 0 строк
 }
 
-/** UPDATE tasks SET <set> WHERE id=$id [AND <where>]; affected = 0 или 1. */
+/** UPDATE tasks SET <set> WHERE id=$id [AND <where>]; affected = 0 или 1.
+ *  Строка под чужой блокировкой — ждём её COMMIT/ROLLBACK и перепроверяем WHERE на свежей версии. */
 export function updateTask(
-  w: World, who: ActorId, id: number, set: Partial<RowData>, where?: (d: RowData) => boolean,
+  w: World, who: ActorId, id: number, set: Partial<RowData>, where: Partial<RowData> | null = null,
 ): void {
-  const r = rowById(w, id);
-  // Настоящий UPDATE здесь ждал бы блокировку; сценарии так не строим, чтобы модель не врала.
-  if (r.lockedBy !== null && r.lockedBy !== who) {
-    throw new Error(`сценарий: UPDATE #${id} от ${who} упёрся бы в блокировку ${r.lockedBy}`);
-  }
-  const cur = visible(r, who);
   const a = w.actors[who];
-  if (where && !where(cur)) {
+  const r = rowById(w, id);
+  if (r.lockedBy !== null && r.lockedBy !== who) {
+    a.pending = { id, set, where, order: ++w.queued };
+    a.affected = null;
+    w.events.push({ kind: "wait" });
+    return;
+  }
+  apply(w, a, r, set, where);
+}
+
+function apply(w: World, a: Actor, r: Row, set: Partial<RowData>, where: Partial<RowData> | null): void {
+  const cur = visible(r, a.id);
+  if (where && !Object.entries(where).every(([k, v]) => cur[k as keyof RowData] === v)) {
     a.affected = 0;
     w.events.push({ kind: "zero" });
     return;
   }
-  r.lockedBy = who;
+  r.lockedBy = a.id;
+  r.idle = false;
   r.draft = { status: cur.status, token: cur.token, leaseUntil: cur.leaseUntil, ...set };
   a.affected = 1;
   if (where) w.events.push({ kind: "one" });
@@ -206,23 +231,53 @@ export function updateTask(
 
 /** COMMIT: правки становятся видны всем, блокировки снимаются, ждавшие просыпаются. */
 export function commit(w: World, who: ActorId): void {
+  finish(w, who, true);
+}
+
+/** ROLLBACK: правки отброшены, блокировки сняты. Так же кончается транзакция упавшего пода. */
+export function rollback(w: World, who: ActorId): void {
+  finish(w, who, false);
+}
+
+function finish(w: World, who: ActorId, keep: boolean): void {
   const released: number[] = [];
   for (const r of w.rows) {
     if (r.lockedBy !== who) continue;
-    if (r.draft) Object.assign(r, r.draft);
+    if (keep && r.draft) Object.assign(r, r.draft);
     r.draft = null;
     r.lockedBy = null;
+    r.idle = false;
     released.push(r.id);
   }
-  if (released.length > 0) w.events.push({ kind: "commit" });
+  if (keep && released.length > 0) w.events.push({ kind: "commit" });
   // Ждавшие просыпаются в порядке очереди; кто не успел — ждёт уже нового владельца.
   const waiters = ACTORS.map((id) => w.actors[id])
-    .filter((a) => a.scan?.waitingFor != null && released.includes(a.scan.waitingFor))
-    .sort((x, y) => x.scan!.order - y.scan!.order);
+    .filter((a) => released.includes(waitingFor(a) ?? -1))
+    .sort((x, y) => (x.scan?.order ?? x.pending!.order) - (y.scan?.order ?? y.pending!.order));
   for (const a of waiters) {
-    advance(w, a, true);
-    if (a.scan === null) w.events.push({ kind: "wake" });
+    if (a.scan) {
+      advance(w, a, true);
+      if (a.scan === null) w.events.push({ kind: "wake" });
+      continue;
+    }
+    const p = a.pending!;
+    const r = rowById(w, p.id);
+    if (r.lockedBy !== null && r.lockedBy !== a.id) continue; // успел другой ждавший — ждём его
+    a.pending = null;
+    w.events.push({ kind: "wake" });
+    apply(w, a, r, p.set, p.where);
   }
+}
+
+/** Под упал: соединение закрылось, его транзакция откатилась, воркера больше нет. */
+export function crash(w: World, who: ActorId): void {
+  rollback(w, who);
+  const a = w.actors[who];
+  a.present = false;
+  a.carrying = null;
+  a.scan = null;
+  a.pending = null;
+  w.events.push({ kind: "crash" });
 }
 
 /** Захват с талоном одним оператором в autocommit:
@@ -243,7 +298,7 @@ export function claimLease(w: World, who: ActorId, ttl = 30): number | null {
 /** UPDATE tasks SET status='done' WHERE id=$id [AND claim_token=$мой] ; COMMIT */
 export function complete(w: World, who: ActorId, id: number, byToken: boolean): void {
   const mine = w.actors[who].token;
-  updateTask(w, who, id, { status: "done" }, byToken ? (d) => d.token === mine : undefined);
+  updateTask(w, who, id, { status: "done" }, byToken ? { token: mine } : null);
   commit(w, who);
 }
 
@@ -252,8 +307,8 @@ export function deliver(w: World, who: ActorId, id: number, idempotent = false):
   const already = w.deliveries.some((d) => d.row === id && !d.rejected);
   const rejected = idempotent && already;
   w.deliveries.push({ row: id, by: who, rejected });
-  w.events.push({ kind: rejected ? "rejected" : "deliver" });
-  if (!rejected && already) w.events.push({ kind: "duplicate" });
+  w.events.push({ kind: rejected ? "rejected" : "deliver", row: id, by: who });
+  if (!rejected && already) w.events.push({ kind: "duplicate", row: id, by: who });
 }
 
 /** id посылок, которые клиент реально получил больше одного раза. */

@@ -1,10 +1,10 @@
 import type { Step } from "../../engine/contract";
 import {
-  claimLease, commit, complete, deliver, selectTask, updateTask, world,
+  claimLease, commit, complete, crash, deliver, selectTask, updateTask, waitingFor, world,
   type ActorId, type LockMode, type Place, type World,
 } from "./sim";
 
-// Акты эпизода — синхронно с docs/episodes/01-skip-locked.md (сценарий v2).
+// Акты эпизода — синхронно с docs/episodes/01-skip-locked.md (сценарий v3, покадрово).
 
 export const ACT = {
   hook: "0. Хук",
@@ -13,8 +13,8 @@ export const ACT = {
   crowd: "3a. Толпа",
   convoy: "3b. Конвой",
   skip: "3c. Обход",
-  lease: "4. Курьер завис",
-  zombie: "5. Два B",
+  lease: "4. Курьер завис / упал",
+  zombie: "5. B и C",
   cheat: "6. Шпаргалка",
 } as const;
 
@@ -24,6 +24,7 @@ const SQL = {
     (lock === "for_update" ? " FOR UPDATE" : lock === "skip_locked" ? "\n  FOR UPDATE SKIP LOCKED" : ""),
   take: (id: number) => `UPDATE tasks SET status='in_progress' WHERE id=${id}`,
   takeIfNew: (id: number) => `UPDATE tasks SET status='in_progress'\n  WHERE id=${id} AND status='new'`,
+  done: (id: number) => `UPDATE tasks SET status='done' WHERE id=${id}`,
   claim:
     "UPDATE tasks SET status='in_progress',\n" +
     "       claim_token=gen_random_uuid(), lease_until=now()+'30s'\n" +
@@ -31,15 +32,31 @@ const SQL = {
     "   WHERE status='new'\n" +
     "      OR (status='in_progress' AND lease_until < now())\n" +
     "   ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED)\n" +
-    "RETURNING id, claim_token",
+    "RETURNING id, claim_token, lease_until",
   doneByToken: (id: number, token: string) =>
     `UPDATE tasks SET status='done'\n  WHERE id=${id} AND claim_token='${token}'`,
 };
 
+const rows = (n: number) => `→ ${n} ${n === 1 ? "строка" : "строк"}`;
+
 const home: Place = { kind: "home" };
 const road: Place = { kind: "road" };
-const door: Place = { kind: "door" };
+const door = (row: number): Place => ({ kind: "door", row });
 const shelf = (row: number): Place => ({ kind: "shelf", row });
+
+/** Время кадра: база + чтение всего текста в кадре (правило «Текст в кадре» в CLAUDE.md). */
+export function holdFor(caption: string, w: World): number {
+  const says = Object.values(w.actors).map((a) => a.say ?? "");
+  const text = [caption, w.card ?? "", w.db ?? "", w.client?.text ?? "", ...says, ...w.sql].join("");
+  return Math.round((1.5 + 0.035 * text.length) * 10) / 10;
+}
+
+interface ShotOptions {
+  /** Показать SQL-панель: только где SQL надо прочитать. Глаголы пишут SQL всегда — панель полная. */
+  sql?: boolean;
+  /** Своё время кадра, с: монтаж или шпаргалка. */
+  hold?: number;
+}
 
 class Director {
   readonly steps: Step<World>[] = [];
@@ -62,7 +79,7 @@ class Director {
   }
 
   /** Применить действия и записать кадр. Реплики, SQL и титры живут один кадр. */
-  shot(caption: string, action?: (w: World) => void): void {
+  shot(caption: string, action?: (w: World) => void, opts: ShotOptions = {}): void {
     const w = this.w;
     w.sql = [];
     w.db = null;
@@ -74,13 +91,15 @@ class Director {
     this.fresh = false;
     for (const a of Object.values(w.actors)) a.say = null;
     action?.(w);
+    if (!opts.sql) w.sql = [];
     const card = w.card as string | null; // action мог выставить титр
     if (card) w.events.push({ kind: card.includes("🎉") ? "party" : "card" });
-    this.steps.push({ act: this.act, caption, state: structuredClone(w) });
+    const state = structuredClone(w);
+    this.steps.push({ act: this.act, caption, state, hold: opts.hold ?? holdFor(caption, state) });
   }
 }
 
-// --- Глаголы сценария: операции модели + реплики и перемещения ---
+// --- Глаголы сценария: операции модели + реплики, SQL и перемещения ---
 
 function race(w: World): void {
   w.race = true;
@@ -102,22 +121,27 @@ function setClock(w: World, t: number): void {
   w.clock = t;
 }
 
-function say(w: World, who: ActorId, line: string | null, sql?: string): void {
-  w.actors[who].say = line;
-  if (sql) w.sql.push(`${w.actors[who].label} ▸ ${sql}`);
+function sql(w: World, who: ActorId, text: string): void {
+  w.sql.push(`${w.actors[who].label} ▸ ${text}`);
 }
 
-/** Подойти к стеллажу и выбрать задачу; встать у найденной полки или в очередь. */
+function say(w: World, who: ActorId, line: string | null): void {
+  w.actors[who].say = line;
+}
+
+/** Подойти к стеллажу и выбрать задачу; встать у найденной полки или в очередь. С блокировкой — в транзакции. */
 function look(w: World, who: ActorId, lock: LockMode = "none", line: string | null = null): void {
   selectTask(w, who, lock);
   place(w, who);
-  say(w, who, line, SQL.select(lock));
+  say(w, who, line);
+  sql(w, who, (lock === "none" ? "" : "BEGIN;\n") + SQL.select(lock));
 }
 
 /** Поставить воркера туда, где его держит запрос: в очередь за замком или к найденной полке. */
 function place(w: World, who: ActorId): void {
   const a = w.actors[who];
-  if (a.scan?.waitingFor != null) a.at = { kind: "queue", row: a.scan.waitingFor };
+  const wait = waitingFor(a);
+  if (wait !== null) a.at = { kind: "queue", row: wait };
   else if (a.seen !== null) a.at = shelf(a.seen);
 }
 
@@ -126,24 +150,37 @@ function take(w: World, who: ActorId, id: number): void {
   updateTask(w, who, id, { status: "in_progress" });
   commit(w, who);
   w.actors[who].carrying = id;
-  say(w, who, null, `${SQL.take(id)}; COMMIT`);
+  sql(w, who, `${SQL.take(id)}; COMMIT`);
 }
 
-/** Условный UPDATE … AND status='new' + COMMIT; берёт, только если задел строку. */
-function takeIfNew(w: World, who: ActorId, id: number, loserLine: string): void {
-  updateTask(w, who, id, { status: "in_progress" }, (d) => d.status === "new");
+/** Условный UPDATE … AND status='new' в транзакции: задел строку — посылка в руках; занято — ждёт. */
+function cas(w: World, who: ActorId, id: number): void {
+  const a = w.actors[who];
+  updateTask(w, who, id, { status: "in_progress" }, { status: "new" });
+  place(w, who);
+  if (a.affected === 1) a.carrying = id;
+  sql(w, who, `BEGIN;\n${SQL.takeIfNew(id)}  ${a.pending ? "⏳ ждёт COMMIT" : rows(a.affected ?? 0)}`);
+}
+
+/** COMMIT; ждавшие UPDATE просыпаются и получают свой результат. */
+function commitTx(w: World, who: ActorId): void {
+  const waiting = Object.values(w.actors).filter((a) => a.pending);
   commit(w, who);
-  const won = w.actors[who].affected === 1;
-  if (won) w.actors[who].carrying = id;
-  say(w, who, won ? "моя!" : loserLine, `${SQL.takeIfNew(id)}; COMMIT  → ${won ? 1 : 0} строк`);
+  sql(w, who, "COMMIT");
+  for (const a of waiting) {
+    if (a.pending) continue;
+    if (a.affected === 1) a.carrying = a.seen;
+    sql(w, a.id, rows(a.affected ?? 0));
+  }
 }
 
 /** Довезти до двери и отметить done (без талонов). */
 function drop(w: World, who: ActorId, id: number): void {
-  w.actors[who].at = door;
+  w.actors[who].at = door(id);
   deliver(w, who, id);
   complete(w, who, id, false);
   w.actors[who].carrying = null;
+  sql(w, who, `${SQL.done(id)}; COMMIT`);
 }
 
 function grabWithLease(w: World, who: ActorId): number {
@@ -152,7 +189,8 @@ function grabWithLease(w: World, who: ActorId): number {
   const a = w.actors[who];
   a.at = shelf(id);
   a.carrying = id;
-  say(w, who, `талон #${a.token}`, SQL.claim);
+  say(w, who, `талон #${a.token}`);
+  sql(w, who, SQL.claim);
   return id;
 }
 
@@ -162,280 +200,268 @@ export function clock(t: number): string {
   return `12:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
-/** Финал акта 5 у двери: idempotent=false — версия хука (клиент без ключа заказа). */
-function doorFinale(w: World, idempotent: boolean): void {
-  const b = w.actors.B;
-  b.at = door;
-  deliver(w, "B", 1, idempotent);
-  complete(w, "B", 1, true);
-  b.carrying = null;
-  const b2 = w.actors.B2;
-  b2.at = door;
-  deliver(w, "B2", 1, idempotent);
-  complete(w, "B2", 1, true);
-  b2.carrying = null;
-}
 
 export function buildSteps(): Step<World>[] {
   const d = new Director();
 
   // 1. Нормальный мир → час пик.
   d.scene(ACT.race);
-  d.shot("Сортировочный цех. Стеллаж — таблица tasks, полки — строки. Курьеры — три пода одного сервиса.");
-  d.shot("Pod A спрашивает: что свободно? Первая новая — #1.", (w) => look(w, "A", "none", "что свободно?"));
-  d.shot("A помечает #1 «в работе». До COMMIT правку видит только он (жёлтая), а строка под замком.", (w) => {
-    updateTask(w, "A", 1, { status: "in_progress" });
-    say(w, "A", null, SQL.take(1));
-  });
-  d.shot("COMMIT — теперь «в работе» видят все. Замок снят.", (w) => {
-    commit(w, "A");
-    w.actors.A.carrying = 1;
+  d.shot("Полка — задача. Курьеры — три пода одного сервиса.", (w) => look(w, "A", "none", "что свободно?"));
+  d.shot("", (w) => {
+    take(w, "A", 1);
     w.actors.A.at = road;
-    say(w, "A", null, "COMMIT");
     w.db = "Бери. Распишись. Следующий.";
   });
-  d.shot("B приходит позже: #1 уже в работе, ему достаётся #2.", (w) => {
+  d.shot("", (w) => {
     drop(w, "A", 1);
     look(w, "B");
-  });
-  d.shot("Работает. Пока курьеры не приходят одновременно.", (w) => {
-    w.actors.A.at = home;
     take(w, "B", 2);
     w.actors.B.at = road;
-  });
-  d.shot("Час пик. A подходит к стеллажу: свободна #3.", (w) => {
+    w.db = "Распишись. Следующий.";
+  }, { hold: 1.8 });
+  d.shot("Час пик.", (w) => {
     drop(w, "B", 2);
+    w.actors.A.at = home;
     look(w, "A", "none", "полка 3 свободна!");
   });
   d.term("Race condition · check-then-act");
-  d.shot("B смотрит долей секунды позже. A ещё ничего не записал — для B #3 тоже свободна.", (w) => {
+  d.shot("A ещё ничего не записал.", (w) => {
     look(w, "B", "none", "полка 3 свободна!");
     say(w, "A", "полка 3 свободна!");
     race(w);
-    w.db = "Была. Когда вы смотрели.";
+    w.db = "Свободна. Пока что.";
   });
-  d.shot("Стоп-кадр. Посмотреть и взять — два шага. Между ними влезет сосед.", (w) => {
+  d.shot("", (w) => {
     w.race = true;
     w.card = "ОКНО ГОНКИ\n\nSELECT ──── сюда влезет сосед ──── UPDATE";
-    w.db = "Я показываю только то, что уже записано.\nЧто будет через миг — не моё дело.";
+    w.db = "Я показал, что было. Дальше сами.";
   });
-  d.shot("A берёт #3. B тоже: его UPDATE ставит статус по id и ничего не проверяет.", (w) => {
+  d.shot("UPDATE по id ничего не проверяет.", (w) => {
     take(w, "A", 3);
     take(w, "B", 3);
-  });
-  d.shot("Дубль: клиент получил #3 дважды.", (w) => {
+  }, { sql: true });
+  d.shot("", (w) => {
     drop(w, "A", 3);
     drop(w, "B", 3);
-    w.client = "Две одинаковые?!";
+    w.client = { row: 3, text: "Две одинаковые?!" };
   });
 
   // 2. Наивные фиксы — монтаж.
   d.scene(ACT.naive);
-  d.shot("Фикс №1: перед UPDATE ещё раз проверим статус.", (w) => {
-    look(w, "A");
-    look(w, "B");
-  });
-  d.shot("Оба перепроверили — оба видят new. Окно гонки не закрылось. Оно переехало.", (w) => {
+  d.shot("Фикс №1: перепроверить. Окно не закрылось — переехало.", (w) => {
     look(w, "A", "none", "точно new? ✓");
     look(w, "B", "none", "точно new? ✓");
     race(w);
   });
-  d.shot("И снова оба взяли #1.", (w) => {
+  d.shot("", (w) => {
     take(w, "A", 1);
     take(w, "B", 1);
   });
   d.scene(ACT.naive);
-  d.shot("Фикс №2: обернём GetTasks в sync.Mutex.", (w) => {
+  d.shot("Фикс №2: sync.Mutex.", (w) => {
     mutex(w, "B");
     say(w, "B", "Я повесил замок!");
     w.db = "На свой рюкзак.";
   });
   d.term("Local lock ≠ distributed lock");
-  d.shot("A тоже берёт мьютекс — свой. Mutex видит только свой под; соседи — в других процессах.", (w) => {
+  d.shot("", (w) => {
     mutex(w, "A");
     look(w, "A", "none", "mu.Lock() ✓");
     look(w, "B");
     race(w);
-  });
-  d.shot("Договариваться надо в базе.", (w) => {
-    w.actors.A.mutex = false;
-    w.actors.B.mutex = false;
-    w.card = "Внутри кода пода это не чинится.\nОбщее у подов — только база.";
+    w.card = "Mutex видит только свой под.\nОбщее у подов — только база.";
   });
 
   // 3a. Толпа: условный UPDATE.
   d.scene(ACT.crowd);
-  d.shot("Способ 1: условный UPDATE — «бери, только если всё ещё new», и проверь, сколько строк задел.", (w) => {
+  d.shot("Способ 1: «бери, только если ещё new».", (w) => {
     look(w, "A");
     look(w, "B");
     look(w, "C");
   });
+  d.shot("Остальные ждут его COMMIT.", (w) => {
+    cas(w, "A", 1);
+    cas(w, "B", 1);
+    cas(w, "C", 1);
+  }, { sql: true });
   d.term("Compare-and-set · optimistic locking");
-  d.shot("Кто первый отметил — того и полка. Остальным — ноль строк.", (w) => {
-    takeIfNew(w, "A", 1, "");
-    takeIfNew(w, "B", 1, "0 строк…");
-    takeIfNew(w, "C", 1, "0 строк…");
-  });
-  d.shot("Проигравшие бегут к #2 — и снова толпа.", (w) => {
+  d.shot("", (w) => {
+    commitTx(w, "A");
+    say(w, "B", "0 строк…");
+    say(w, "C", "0 строк…");
+  }, { sql: true });
+  d.shot("Дублей нет. Но кто-то всегда проигрывает.", (w) => {
     w.actors.A.at = road;
-    look(w, "B");
     look(w, "C");
-  });
-  d.shot("Корректно: дублей нет. Но каждая полка — толкотня, и кто-то всегда проигрывает.", (w) => {
-    takeIfNew(w, "C", 2, "");
-    takeIfNew(w, "B", 2, "Опять ноль строк…");
+    look(w, "B");
+    cas(w, "C", 2);
+    cas(w, "B", 2);
+    commitTx(w, "C");
+    say(w, "B", "Опять ноль строк…");
   });
 
   // 3b. Конвой: FOR UPDATE.
   d.scene(ACT.convoy);
-  d.shot("Способ 2: SELECT … FOR UPDATE. A берёт #1 и вешает замок до конца своей транзакции.", (w) =>
-    look(w, "A", "for_update"));
+  d.shot("Способ 2: A вешает замок на #1.", (w) => look(w, "A", "for_update"), { sql: true });
   d.term("Pessimistic locking");
-  d.shot("B хочет то же и встаёт в очередь. Замок держит база — поэтому его видят все поды.", (w) => {
+  d.shot("Хотя #2–#4 свободны.", (w) => {
     look(w, "B", "for_update");
+    look(w, "C", "for_update", "Я стою за тем, кто стоит за тем, кто держит.");
     w.db = "Занято. Жди.";
   });
-  d.shot("C — за ним. Хотя #2, #3 и #4 свободны.", (w) =>
-    look(w, "C", "for_update", "Я стою за тем, кто стоит за тем, кто держит."));
-  d.shot("Сколько ждёт B? Ровно столько, сколько длится транзакция A.", (w) => {
+  d.shot("Ждут ровно столько, сколько длится транзакция A.", (w) => {
     setClock(w, w.clock + 3);
     updateTask(w, "A", 1, { status: "in_progress" });
-    say(w, "A", "не тороплюсь…", SQL.take(1));
+    say(w, "A", "не тороплюсь…");
   });
-  d.shot("COMMIT. B перепроверил #1 — уже не new — и взял #2. А C теперь ждёт B: замок на #1 перешёл к нему.", (w) => {
+  d.shot("C теперь ждёт B.", (w) => {
     commit(w, "A");
+    sql(w, "A", "COMMIT");
     w.actors.A.carrying = 1;
     w.actors.A.at = road;
     place(w, "B");
     place(w, "C");
     say(w, "B", "#2!");
-  });
-  d.shot("B закончил — C тащится дальше: #1 и #2 уже в работе, ему #3. Конвой.", (w) => {
+  }, { sql: true });
+  d.shot("", (w) => {
     setClock(w, w.clock + 3);
     updateTask(w, "B", 2, { status: "in_progress" });
     commit(w, "B");
     w.actors.B.carrying = 2;
     w.actors.B.at = road;
     place(w, "C");
-  });
-  d.shot("Дублей нет. Зато ждёшь, пока чужая транзакция договорит.", (w) => {
-    w.card = "FOR UPDATE: дублей нет,\nно все стоят в очереди за замком.";
+    w.card = "FOR UPDATE: дублей нет,\nно все стоят в очереди.";
   });
 
   // 3c. Обход: SKIP LOCKED.
   d.scene(ACT.skip);
-  d.shot("Способ 3: FOR UPDATE SKIP LOCKED. A берёт #1 под замок.", (w) => look(w, "A", "skip_locked"));
+  d.shot("Способ 3: SKIP LOCKED.", (w) => look(w, "A", "skip_locked"), { sql: true });
   d.term("Non-blocking claim · SKIP LOCKED");
-  d.shot("B видит замок, пожимает плечами и берёт следующую.", (w) =>
-    look(w, "B", "skip_locked", "Занято? Ну и ладно."));
-  d.shot("C — #3. Никто никого не ждёт.", (w) => {
+  d.shot("", (w) => {
+    look(w, "B", "skip_locked", "Занято? Ну и ладно.");
     look(w, "C", "skip_locked");
     w.db = "Наконец-то воспитанный.";
   });
-  d.shot("Все трое отмечают свои посылки и коммитят.", (w) => {
+  d.shot("Без дублей и без очереди.", (w) => {
     for (const who of ["A", "B", "C"] as const) {
-      const id = w.actors[who].seen!;
-      take(w, who, id);
+      take(w, who, w.actors[who].seen!);
       w.actors[who].at = road;
     }
   });
-  d.shot("Без дублей и без очереди.", (w) => {
+  d.shot("", (w) => {
     drop(w, "A", 1);
     drop(w, "B", 2);
     drop(w, "C", 3);
     w.card = "FOR UPDATE SKIP LOCKED\nЗанято — иди к следующей.";
   });
 
-  // 4. Курьер завис → талон.
+  // 4. Курьер завис / упал → талон.
   d.scene(ACT.lease);
-  d.shot("Ну всё, починили?", (w) => {
+  d.shot("", (w) => {
     w.card = "Починили! 🎉";
   });
-  d.shot("Доставка долгая. Держать транзакцию — и замок — всё это время дорого.", (w) => {
+  d.shot("Вариант 1: держать транзакцию, пока везём.", (w) => {
     look(w, "B", "skip_locked");
+    updateTask(w, "B", 1, { status: "in_progress" });
+    sql(w, "B", `${SQL.take(1)}\n  -- без COMMIT: везём внутри транзакции`);
     w.actors.B.carrying = 1;
     w.actors.B.at = road;
-    w.card = "Держать транзакцию всю доставку:\n• занято соединение из пула\n• VACUUM не может подмести\n• завис курьер — замок навсегда";
-  });
-  d.shot("B завис на внешнем API без таймаута. Он жив, соединение открыто — #1 под замком.", (w) => {
+  }, { sql: true });
+  d.shot("B завис на внешнем API.", (w) => {
     setClock(w, 5);
     freeze(w, "B", true);
-    say(w, "B", "📞 …");
-    w.db = "Упал бы — я бы сам снял замки.\nХуже, когда живой и молчит.";
+    say(w, "B", "📞 Ваш звонок очень важен для нас…");
+    w.db = "Упал бы — соединение закрылось бы,\nзамки бы снял. А он жив.";
   });
-  d.shot("Проходит 10 минут. Остальные обходят #1 — а её никто не везёт.", (w) => {
+  d.shot("10 минут. Все обходят #1. Её никто не везёт.", (w) => {
     setClock(w, 600);
     look(w, "A", "skip_locked");
     look(w, "C", "skip_locked");
   });
+  d.shot("Убили под — замок снялся сам.", (w) => {
+    crash(w, "B");
+    const b = w.actors.B; // под перезапустился: тот же B, новое соединение
+    b.present = true;
+    b.frozen = false;
+    b.at = home;
+    w.events.push({ kind: "appear" });
+  });
   d.scene(ACT.lease);
-  d.shot("Решение: короткая транзакция выдаёт талон с номером и сроком — и сразу COMMIT.", (w) => {
-    w.card = "Взял талон — закрыл транзакцию.\nРаботай без замка на складе.";
+  d.w.clock = 610; // часы склада идут дальше, назад не прыгают
+  d.shot("Вариант 2: отметить «в работе» и сразу COMMIT.", (w) => {
+    look(w, "B", "skip_locked");
+    take(w, "B", 1);
+    w.actors.B.at = road;
+  }, { sql: true });
+  d.shot("#1 «в работе» навсегда.", (w) => {
+    crash(w, "B");
+    setClock(w, 660);
+    look(w, "A", "skip_locked");
+    look(w, "C", "skip_locked");
+    w.db = "В работе. Жив ли он — не знаю.";
+  });
+  d.scene(ACT.lease);
+  d.w.clock = 660;
+  d.shot("", (w) => {
+    w.card = "Lease: при захвате — «в работе» + срок по часам БД.\nНе успел — берёт другой.";
   });
   d.term("Lease");
-  d.shot("B получил талон до 12:00:30. Замка на складе нет — транзакция уже закрыта.", (w) => {
+  d.shot("", (w) => {
+    setClock(w, 670);
     grabWithLease(w, "B");
-    w.db = "Я не держу полки вечно. Талон до 12:00:30.\nПо моим часам.";
-  });
-  d.shot("12:00:05. B снова завис на том же API.", (w) => {
-    setClock(w, 5);
+    w.db = "Талон до 12:11:40. По моим часам.";
+  }, { sql: true });
+  d.shot("B проверил срок — и снова завис.", (w) => {
+    setClock(w, 675);
     w.actors.B.at = road;
+    say(w, "B", "До :40 — успею.");
     freeze(w, "B", true);
-    say(w, "B", "📞 …");
   });
-  d.shot("12:00:31. Срок по часам склада вышел.", (w) => {
-    setClock(w, 31);
-    w.events.push({ kind: "expire" });
-    w.db = "Талон #7f3a просрочен.";
+  d.shot("", (w) => {
+    setClock(w, 701);
+    w.db = "Срок вышел. Заберёт тот, кто спросит.";
   });
-  d.shot("Другой воркер того же пода B подбирает просроченную #1 — с новым талоном.", (w) => {
-    w.actors.B2.present = true;
-    w.events.push({ kind: "appear" });
-    grabWithLease(w, "B2");
+  d.shot("C берёт #1.", (w) => {
+    w.events.push({ kind: "expire" }); // просрочку замечает захват, а не таймер базы
+    grabWithLease(w, "C");
   });
-  d.shot("Посылка снова едет.", (w) => {
-    w.actors.B2.at = road;
-  });
-  const afterLease = structuredClone(d.w);
 
-  // 5. Два B → та же дверь.
-  d.scene(ACT.zombie, structuredClone(afterLease));
-  d.shot("12:00:40. Старый воркер B отвис. Он не знает, сколько простоял.", (w) => {
-    setClock(w, 40);
+  // 5. B и C → та же дверь.
+  d.scene(ACT.zombie, structuredClone(d.w));
+  d.shot("", (w) => {
+    setClock(w, 710);
     freeze(w, "B", false);
-    say(w, "B", "По моим — ещё 12:00:20!");
-    w.db = "Здесь время — моё.";
+    say(w, "B", "Талон до :40, я проверял в :15!");
+    w.db = "Проверял — в :15. Сейчас :50.";
   });
-  d.shot("Имя одно на двоих. Различает их только талон.", (w) => {
-    say(w, "B", "Я — B.");
-    say(w, "B2", "Нет, я — B.");
-    w.db = "Мне всё равно, как вас зовут.\nТалон покажите.";
-  });
-  d.shot("Старый B отмечает доставку по талону #7f3a — 0 строк. Запись на складе цела. Но посылка уже у клиента.", (w) => {
+  d.term("At-least-once · idempotency key");
+  d.shot("Запись цела. Посылка уже у клиента.", (w) => {
     const b = w.actors.B;
-    b.at = door;
+    b.at = door(1);
     deliver(w, "B", 1, true);
     complete(w, "B", 1, true);
     b.carrying = null;
-    say(w, "B", "…а посылку я уже отвёз.", `${SQL.doneByToken(1, "7f3a")}  → 0 строк`);
-    w.db = "Талон #7f3a сгорел.\nСейчас действует #c21e.";
-  });
-  d.term("At-least-once · idempotency key");
-  d.shot("Новый B приходит к той же двери. Клиент узнаёт заказ по ключу.", (w) => {
-    const b2 = w.actors.B2;
-    b2.at = door;
-    deliver(w, "B2", 1, true);
-    complete(w, "B2", 1, true);
-    b2.carrying = null;
-    say(w, "B2", null, `${SQL.doneByToken(1, "c21e")}  → 1 строка`);
-    w.client = "Заказ 42? Уже получил. Спасибо.";
-  });
-  d.shot("Доставка — минимум один раз. «Ровно один» обеспечивает дверь.", (w) => {
+    say(w, "B", "…а посылку я уже отвёз.");
+    sql(w, "B", `${SQL.doneByToken(1, "7f3a")}  ${rows(0)}`);
+    w.db = "Талон #7f3a сгорел.";
+  }, { sql: true });
+  d.shot("", (w) => {
+    const c = w.actors.C;
+    c.at = door(1);
+    deliver(w, "C", 1, true);
+    complete(w, "C", 1, true);
+    c.carrying = null;
+    sql(w, "C", `${SQL.doneByToken(1, "c21e")}  ${rows(1)}`);
+    w.client = { row: 1, text: "Заказ 1? Уже получил. Спасибо." };
+  }, { sql: true });
+  d.shot("", (w) => {
     w.db = "Ровно один раз? Это не ко мне. Это к двери.";
+  });
+  d.shot("", (w) => {
     w.card = "Склад бережёт свою запись.\nДвойной эффект ловит получатель.";
   });
 
-  // 6. Шпаргалка.
+  // 6. Шпаргалка — после ролика текста можно много.
   d.scene(ACT.cheat);
   d.shot("Шпаргалка: запрос целиком.", (w) => {
     w.card =
@@ -446,37 +472,56 @@ export function buildSteps(): Step<World>[] {
       "   WHERE (status='new' OR (status='in_progress' AND lease_until<now()))\n" +
       "     AND attempts < 5\n" +
       "   ORDER BY id LIMIT 10 FOR UPDATE SKIP LOCKED)\n" +
-      "RETURNING id, claim_token;\n\n" +
+      "RETURNING id, claim_token, lease_until;\n\n" +
       "done / продление — только WHERE id=$1 AND claim_token=$2\n" +
       "индекс: ON tasks(id) WHERE status='new' + по lease_until\n" +
       "attempts ≥ 5 → полка возвратов · порядок — не строгий FIFO\n" +
       "эффекты идемпотентны: доставка at-least-once";
-  });
+  }, { hold: 12 });
   d.shot("Что мы прошли — этими словами и отвечать.", (w) => {
     w.card =
       "Competing consumers — несколько воркеров на одну очередь\n" +
       "Race condition · check-then-act — посмотрел, потом взял\n" +
       "Local lock ≠ distributed lock — mutex видит только свой процесс\n" +
-      "Compare-and-set — UPDATE … WHERE status='new', проверить affected rows\n" +
+      "Compare-and-set — UPDATE … WHERE status='new', проверить affected rows;\n" +
+      "    читаем без замка, но запись ждёт незакоммиченного соперника\n" +
       "Pessimistic locking — FOR UPDATE; цена — head-of-line blocking\n" +
       "SKIP LOCKED — та же блокировка строки, но без ожидания; не строгий FIFO\n" +
-      "Lease — талон со сроком по часам БД, транзакция короткая\n" +
+      "Lease — «в работе» + срок по часам БД, ставится при захвате\n" +
       "Завершение по токену владельца — тот же CAS, бережёт только запись в БД\n" +
       "At-least-once + idempotency key = effectively-once";
-  });
+  }, { hold: 15 });
+  d.shot("Что спросят на собесе.", (w) => {
+    w.card =
+      "FOR UPDATE — только в транзакции: tx.QueryRow, не db.QueryRow\n" +
+      "CAS: проверять RowsAffected(); проигравший ждёт COMMIT победителя\n" +
+      "Долгая транзакция: соединение, VACUUM, замок — до таймаута\n" +
+      "    idle_in_transaction_session_timeout / transaction_timeout (выкл.)\n" +
+      "    пропал узел — до TCP keepalive (~2 ч) или tcp_user_timeout\n" +
+      "Закоммитил in_progress и упал — застряло навсегда → lease\n" +
+      "Пауза между проверкой срока и действием — тот же check-then-act:\n" +
+      "    запись бережёт токен в WHERE, эффект — только идемпотентность\n" +
+      "Токен, а не имя пода: имя повторяется (горутины в поде, StatefulSet\n" +
+      "    после рестарта) — новый токен на каждый захват\n" +
+      "Идемпотентность у получателя — INSERT … ON CONFLICT DO NOTHING\n" +
+      "    в одной транзакции с самим эффектом";
+  }, { hold: 15 });
 
-  // 0. Хук — тот же финал акта 5, но клиент без ключа заказа. Ставится в начало.
+  // 0. Хук — исход акта 5 без идемпотентности у двери, но без талонов и сроков: их зритель
+  // ещё не знает. Ставится в начало.
   const hook = new Director();
-  hook.scene(ACT.hook, structuredClone(afterLease));
-  hook.shot("Оба курьера всё сделали правильно. Клиенту списали дважды.", (w) => {
-    w.clock = 40;
-    w.actors.B.frozen = false;
-    doorFinale(w, false);
-    w.client = "Списано дважды?!";
-    w.card = "Как так?";
+  hook.scene(ACT.hook);
+  hook.shot("Каждый был уверен, что посылка его.", (w) => {
+    w.actors.A.present = false;
+    for (const who of ["B", "C"] as const) {
+      w.actors[who].at = door(1);
+      deliver(w, who, 1);
+    }
+    complete(w, "C", 1, false);
+    w.client = { row: 1, text: "Мне два одинаковых заказа?" };
   });
   hook.scene(ACT.hook);
-  hook.shot("О чём этот ролик.", (w) => {
+  hook.shot("", (w) => {
     w.card = "Competing consumers:\nнесколько подов, одна очередь.\nКак не сделать работу дважды?";
   });
 

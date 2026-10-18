@@ -46,6 +46,29 @@ export class SvgPen implements Pen {
     });
   }
 
+  line(key: string, attrs: Attrs): void {
+    const { marker, ...rest } = attrs;
+    const line = marker === "arrow" ? { ...rest, "marker-end": `url(#${this.arrowHead(String(rest.stroke ?? "#000"))})` } : rest;
+    this.apply(key, this.node(key, "line"), line);
+  }
+
+  /** Наконечник стрелки своего цвета: один <marker> на цвет на весь SVG. */
+  private arrowHead(color: string): string {
+    const id = `arrow-${color.replace(/[^a-z0-9]/gi, "")}`;
+    if (this.root.querySelector(`#${id}`)) return id;
+    let defs = this.root.querySelector("defs");
+    if (!defs) {
+      defs = document.createElementNS(NS, "defs");
+      this.root.prepend(defs);
+    }
+    defs.insertAdjacentHTML(
+      "beforeend",
+      `<marker id="${id}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">` +
+        `<path d="M0,0 L10,5 L0,10 z" fill="${color}"/></marker>`,
+    );
+    return id;
+  }
+
   group(key: string, x: number, y: number, children: () => void): void {
     const node = this.node(key, "g");
     node.classList.add("mv");

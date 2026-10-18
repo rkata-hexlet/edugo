@@ -1,10 +1,11 @@
-import { STAGE, type Scene } from "./contract";
+import { STAGE, type Scene, type Step } from "./contract";
 import { WebAudioSound } from "./audio";
 import { SvgPen } from "./pen";
 import "./player.css";
 
-/** Сколько показывать кадр при автопроигрывании: база + время на чтение подписи. */
-const frameMs = (caption: string, speed: number) => (1500 + caption.length * 35) / speed;
+/** Сколько показывать кадр при автопроигрывании: заданное сценой или база + время на чтение подписи. */
+const frameMs = (step: Step<unknown>, speed: number) =>
+  (step.hold !== undefined ? step.hold * 1000 : 1500 + step.caption.length * 35) / speed;
 
 /**
  * Плеер: кадры сцены, подпись, звук, управление (кнопки, ←/→, пробел, M), номер кадра в #hash —
@@ -71,7 +72,7 @@ export function mountPlayer<S>(host: HTMLElement, scene: Scene<S>): void {
   const tick = () => {
     if (index >= steps.length - 1) return stop();
     show(index + 1);
-    timer = setTimeout(tick, frameMs(steps[index].caption, Number(speedSelect.value)));
+    timer = setTimeout(tick, frameMs(steps[index], Number(speedSelect.value)));
   };
   const toggle = () => {
     if (timer !== undefined) return stop();
@@ -79,7 +80,7 @@ export function mountPlayer<S>(host: HTMLElement, scene: Scene<S>): void {
     sound.cut();
     scene.sound?.(sound, steps[index].state);
     playBtn.textContent = "❚❚";
-    timer = setTimeout(tick, frameMs(steps[index].caption, Number(speedSelect.value)));
+    timer = setTimeout(tick, frameMs(steps[index], Number(speedSelect.value)));
   };
 
   const toggleMute = () => {
