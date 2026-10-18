@@ -52,6 +52,7 @@ export interface Actor {
   token: string | null; // токен, который воркер считает своим
   mutex: boolean; // держит свой sync.Mutex
   frozen: boolean; // завис (внешний API без таймаута, GC-пауза)
+  checkedAt: number | null; // когда под последний раз проверил срок своей аренды (по часам БД)
   say: string | null; // реплика в пузыре
 }
 
@@ -60,6 +61,7 @@ export interface Letter {
   row: number;
   by: ActorId;
   replayed: boolean; // повтор с тем же ключом идемпотентности: Почта вернула прошлый ответ
+  keyed: boolean; // письмо отправлено с ключом идемпотентности (номер заказа)
 }
 
 export type Focus = ActorId | `row:${number}` | "table" | "mail" | "board" | "clock" | "sql";
@@ -98,6 +100,8 @@ export interface World {
   chapter: number | null; // номер кейса — в углу всю главу
   board: Board | null; // табло попыток главы
   leaseCols: boolean; // показать колонки claim_token и lease_until
+  ghost: { row: number; token: string } | null; // прежний токен строки — зачёркнутым, кадр перехвата
+  stamp: string | null; // штамп перехода («⟲ вернёмся…») — мир перемотан
   /** О чём сейчас говорит диктор: A/B/C, row:N, table, mail, board, clock, sql. Остальное приглушено. */
   focus: Focus[] | null;
   term: string | null; // ярлык акта: формальное имя проблемы/паттерна
@@ -111,7 +115,7 @@ const TOKENS = ["7f3a", "c21e", "9b04", "e6d1", "40ac", "d58f"];
 export function world(rowCount = 6): World {
   const actor = (id: ActorId, label: string): Actor => ({
     id, label, present: true, carrying: null, seen: null, scan: null,
-    pending: null, affected: null, token: null, mutex: false, frozen: false, say: null,
+    pending: null, affected: null, token: null, mutex: false, frozen: false, checkedAt: null, say: null,
   });
   return {
     clock: 0,
@@ -133,6 +137,8 @@ export function world(rowCount = 6): World {
     chapter: null,
     board: null,
     leaseCols: false,
+    ghost: null,
+    stamp: null,
     focus: null,
     term: null,
     issued: 0,
@@ -232,7 +238,7 @@ function apply(w: World, a: Actor, r: Row, set: Partial<RowData>, where: Partial
   const cur = visible(r, a.id);
   if (where && !Object.entries(where).every(([k, v]) => cur[k as keyof RowData] === v)) {
     a.affected = 0;
-    w.events.push({ kind: "zero", by: a.id });
+    w.events.push({ kind: "zero", by: a.id, row: r.id });
     return;
   }
   r.lockedBy = a.id;
@@ -293,9 +299,12 @@ export function crash(w: World, who: ActorId): void {
   w.events.push({ kind: "crash" });
 }
 
+/** Срок аренды задачи, с: lease_until = now() + LEASE_TTL. */
+export const LEASE_TTL = 30;
+
 /** Захват с токеном и сроком одним оператором в autocommit:
  *  UPDATE … SET claim_token, lease_until=now()+ttl WHERE id=(SELECT … FOR UPDATE SKIP LOCKED). */
-export function claimLease(w: World, who: ActorId, ttl = 30): number | null {
+export function claimLease(w: World, who: ActorId, ttl = LEASE_TTL): number | null {
   selectTask(w, who, "skip_locked", true);
   const a = w.actors[who];
   const id = a.seen;
@@ -319,7 +328,7 @@ export function complete(w: World, who: ActorId, id: number, byToken: boolean): 
 export function send(w: World, who: ActorId, id: number, keyed = false): void {
   const already = w.letters.some((l) => l.row === id && !l.replayed);
   const replayed = keyed && already;
-  w.letters.push({ row: id, by: who, replayed });
+  w.letters.push({ row: id, by: who, replayed, keyed });
   w.events.push({ kind: replayed ? "replay" : "send", row: id, by: who });
   if (!replayed && already) w.events.push({ kind: "duplicate", row: id, by: who });
 }
@@ -334,9 +343,14 @@ export function duplicates(w: World): number[] {
 /** Задача застряла без срока: замок держит зависший/упавший под или «в работе» без lease у пода,
  *  который её не делает. Талон со сроком — ожидание ограничено, это не «застряла». */
 export function stuck(w: World): boolean {
+  return stuckRows(w).length > 0;
+}
+
+/** id задач, застрявших без срока (см. stuck). */
+export function stuckRows(w: World): number[] {
   const dead = (id: ActorId | null) => id !== null && (w.actors[id].frozen || !w.actors[id].present);
   const holder = (r: Row) => ACTORS.find((id) => w.actors[id].carrying === r.id) ?? null;
-  return w.rows.some((r) =>
+  return w.rows.filter((r) =>
     dead(r.lockedBy) ||
-    (r.status === "in_progress" && r.leaseUntil === null && (holder(r) === null || dead(holder(r)))));
+    (r.status === "in_progress" && r.leaseUntil === null && (holder(r) === null || dead(holder(r))))).map((r) => r.id);
 }

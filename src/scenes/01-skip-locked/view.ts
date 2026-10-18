@@ -1,6 +1,8 @@
 import type { Pen } from "../../engine/contract";
 import { clock } from "./script";
-import { ACTORS, duplicates, waitingFor, type Actor, type ActorId, type Focus, type Lamp, type Row, type World } from "./sim";
+import {
+  ACTORS, LEASE_TTL, duplicates, stuckRows, waitingFor, type Actor, type ActorId, type Focus, type Lamp, type Row, type World,
+} from "./sim";
 
 // MVP-отрисовка: серые фигуры и подписи. Полировка — после утверждения сюжета.
 // Поды стоят на месте; что они делают, говорят стрелки и цвет — только из состояния кадра.
@@ -69,7 +71,7 @@ function bubble(pen: Pen, key: string, x: number, y: number, text: string, maxCh
   });
 }
 
-function drawRow(pen: Pen, w: World, r: Row): void {
+function drawRow(pen: Pen, w: World, r: Row, stuck: Set<number>): void {
   const seenByRace = w.race && ACTORS.some((id) => w.actors[id].seen === r.id);
   const owners = carriers(w, r.id);
   const status = r.draft && r.draft.status !== r.status ? `${r.status} → ${r.draft.status}` : r.status;
@@ -80,7 +82,7 @@ function drawRow(pen: Pen, w: World, r: Row): void {
   const cells = [
     String(r.id),
     status === "done" ? "done ✓" : status,
-    r.token ? `#${r.token}` : "—",
+    r.token ? `🎫${r.token}` : "—",
     r.leaseUntil !== null ? clock(r.leaseUntil) : "—",
   ];
   const width = tableEnd(w) - TABLE.x;
@@ -91,8 +93,34 @@ function drawRow(pen: Pen, w: World, r: Row): void {
         x: col.x, width: col.w, height: TABLE.rowH, fill, stroke: C.line,
         ...(i === 1 && r.draft ? { "stroke-dasharray": "5 4" } : {}),
       });
-      pen.text(`row:${r.id}:t${i}`, { x: col.x + 10, y: 29, "font-size": 15, "font-family": MONO, fill: C.ink }, cells[i]);
+      const tokenColor = i === 2 && r.token ? tokenOwnerColor(w, r.token) : C.ink; // талон — цветом пода, которому выдан
+      pen.text(`row:${r.id}:t${i}`, { x: col.x + 10, y: 29, "font-size": 15, "font-family": MONO, fill: tokenColor }, cells[i]);
     });
+    if (w.leaseCols && r.leaseUntil !== null) drawLeaseBar(pen, w, r);
+    if (w.ghost?.row === r.id) {
+      // Прежний токен — зачёркнутым рядом с новым: владелец сменился.
+      pen.text(`row:${r.id}:ghost`, {
+        x: COLS[2].x + 76, y: 28, "font-size": 11, "font-family": MONO, fill: tokenOwnerColor(w, w.ghost.token),
+        "text-decoration": "line-through", opacity: 0.8,
+      }, w.ghost.token);
+    }
+    if (stuck.has(r.id)) {
+      pen.text(`row:${r.id}:stuck`, { x: -28, y: 33, "font-size": 26, "font-weight": 700, fill: C.red }, "?"); // слева, не на тексте
+    }
+    // 0 строк по чужому токену: талон пода рядом с талоном строки — плашкой под строкой (поверх соседней,
+    // она в этот момент приглушена), а не справа, где поды и стрелки.
+    const lost = w.events.find((e) => e.kind === "zero" && e.row === r.id && e.by && w.actors[e.by].token && w.actors[e.by].token !== r.token);
+    if (lost?.by && r.token) {
+      const loser = lost.by;
+      const theirs = r.token;
+      const mine = w.actors[loser].token!;
+      pen.group(`row:${r.id}:vs`, COLS[2].x, TABLE.rowH + 2, () => {
+        pen.rect(`row:${r.id}:vs:bg`, { width: 240, height: 30, rx: 8, fill: C.white, stroke: C.red, "stroke-width": 2 });
+        pen.text(`row:${r.id}:vs:a`, { x: 10, y: 21, "font-size": 15, "font-family": MONO, fill: POD[loser].color }, `🎫${mine}`);
+        pen.text(`row:${r.id}:vs:ne`, { x: 104, y: 22, "font-size": 18, "font-weight": 700, fill: C.red }, "≠");
+        pen.text(`row:${r.id}:vs:b`, { x: 130, y: 21, "font-size": 15, "font-family": MONO, fill: tokenOwnerColor(w, theirs) }, `🎫${theirs}`);
+      });
+    }
     if (seenByRace) {
       pen.rect(`row:${r.id}:race`, {
         x: -6, y: -6, width: width + 12, height: TABLE.rowH + 12, fill: "none", stroke: C.red, "stroke-width": 4, rx: 6,
@@ -106,13 +134,42 @@ function drawRow(pen: Pen, w: World, r: Row): void {
   }, fade(w, "table", `row:${r.id}`));
 }
 
+/** Цвет пода, которому выдан токен (он считает его своим); иначе — нейтральный. */
+function tokenOwnerColor(w: World, token: string): string {
+  const owner = ACTORS.find((id) => w.actors[id].token === token);
+  return owner ? POD[owner].color : C.ink;
+}
+
+/** Полоса срока под ячейками токена и срока: от захвата до дедлайна (зелёная) и после (красная),
+ *  курсор «сейчас» по часам БД, метка «✓», когда держатель проверял срок. */
+function drawLeaseBar(pen: Pen, w: World, r: Row): void {
+  const x0 = COLS[2].x + 6;
+  const len = COLS[3].x + COLS[3].w - 6 - x0;
+  const t0 = r.leaseUntil! - LEASE_TTL;
+  const span = LEASE_TTL * 1.5;
+  const at = (t: number) => x0 + Math.max(0, Math.min(1, (t - t0) / span)) * len;
+  const deadline = at(r.leaseUntil!);
+  pen.rect(`row:${r.id}:bar:ok`, { x: x0, y: 37, width: deadline - x0, height: 5, fill: C.green, opacity: 0.6 });
+  pen.rect(`row:${r.id}:bar:late`, { x: deadline, y: 37, width: x0 + len - deadline, height: 5, fill: C.red, opacity: 0.6 });
+  pen.group(`row:${r.id}:now`, at(w.clock), 32, () => {
+    pen.rect(`row:${r.id}:now:mark`, { x: -1, width: 3, height: 14, fill: C.ink });
+  });
+  for (const id of ACTORS) {
+    const a = w.actors[id];
+    if (a.checkedAt === null || a.carrying !== r.id || a.token !== r.token) continue; // проверял именно эту аренду
+    // Под полосой: курсор «сейчас» стоит в той же точке, пока проверка только что была.
+    pen.text(`row:${r.id}:check:${id}`, { x: at(a.checkedAt) - 5, y: 55, "font-size": 13, "font-weight": 700, fill: POD[id].color }, "✓");
+  }
+}
+
 function drawTable(pen: Pen, w: World): void {
   cols(w).forEach((col, i) =>
     pen.text(`hdr:${i}`, { x: TABLE.x + col.x + 10, y: TABLE.y - 10, "font-size": 13, "font-family": MONO, fill: C.muted }, col.title));
   const left = w.rows.filter((r) => r.status !== "done").length;
   pen.text("left", { ...fade(w, "table"), x: TABLE.x, y: 98, "font-size": 15, "font-weight": 600, fill: left ? C.ink : C.green },
     left ? `осталось ${left} из ${w.rows.length}` : `осталось 0 из ${w.rows.length} ✓`);
-  for (const r of w.rows) drawRow(pen, w, r);
+  const stuck = new Set(stuckRows(w));
+  for (const r of w.rows) drawRow(pen, w, r, stuck);
 }
 
 function podStatus(w: World, a: Actor): string {
@@ -140,7 +197,8 @@ function drawPod(pen: Pen, w: World, a: Actor): void {
       fill: a.frozen ? C.frozen : C.white, stroke: waiting ? C.lock : p.color, "stroke-width": 3,
     });
     pen.text(`pod:${a.id}:name`, { x: 10, y: 20, "font-size": 14, "font-weight": 600, fill: p.color }, a.label);
-    pen.text(`pod:${a.id}:st`, { x: 10, y: 40, "font-size": 13, fill: C.ink }, podStatus(w, a));
+    pen.text(`pod:${a.id}:st`, { x: 10, y: 40, "font-size": 13, fill: a.token ? p.color : C.ink }, podStatus(w, a));
+    if (a.frozen) pen.text(`pod:${a.id}:zz`, { x: POD_BOX.w - 18, y: -6, "font-size": 24 }, "💤"); // завис — видно издалека
   }, fade(w, a.id));
 }
 
@@ -171,8 +229,10 @@ function drawPodArrows(pen: Pen, w: World): void {
     }
   }
   // Пропустил занятую (SKIP LOCKED): дуга-перескок у строки, вниз к следующей.
+  const drawn = new Set<string>(); // повторные пропуски той же строки тем же подом — одной дугой
   w.events.forEach((e, i) => {
-    if (e.kind !== "skip" || e.row === undefined || !e.by) return;
+    if (e.kind !== "skip" || e.row === undefined || !e.by || drawn.has(`${e.by}:${e.row}`)) return;
+    drawn.add(`${e.by}:${e.row}`);
     const x = end + 8 + ACTORS.indexOf(e.by) * 16;
     const y = rowMid(e.row);
     pen.path(`arr:skip:${i}`, {
@@ -215,7 +275,8 @@ function drawMailBody(pen: Pen, w: World): void {
   w.letters.forEach((l, i) => {
     const again = sent.has(l.row);
     if (!l.replayed) sent.add(l.row);
-    const text = l.replayed ? `заказ ${l.row} ↺ уже отправлено` : again ? `заказ ${l.row} ✉ ДУБЛЬ` : `заказ ${l.row} ✉`;
+    const key = l.keyed ? " 🔑" : "";
+    const text = l.replayed ? `заказ ${l.row}${key} ↺ повтор` : again ? `заказ ${l.row} ✉ ДУБЛЬ` : `заказ ${l.row} ✉${key}`;
     const fill = l.replayed ? C.muted : again ? C.red : C.ink;
     pen.text(`mail:l${i}`, { x: MAIL.x + 14, y: MAIL.line0 + i * MAIL.lineH, "font-size": 14, "font-family": MONO, fill }, text);
   });
@@ -268,18 +329,21 @@ function drawSqlBody(pen: Pen, w: World): void {
   pen.text("sql:body", { x: 52, y: 530, "font-size": 12, "font-family": MONO, fill: C.ink }, w.sql.join("\n") || " ");
 }
 
-/** Титр: длинный (шпаргалка) — по центру; короткий — слева поверх SQL-панели, табло не закрывает. */
+/** Титр — слева поверх SQL-панели, табло не закрывает. */
 function drawCard(pen: Pen, text: string): void {
   const lines = text.split("\n");
-  const long = lines.length > 4;
-  const size = lines.length > 8 ? 15 : long ? 24 : 19;
-  const width = long ? 920 : 540;
-  const height = Math.max(long ? 110 : 90, lines.length * size * 1.3 + 50);
-  const [x, top] = long ? [640 - 460, 360 - height / 2] : [40, 700 - height];
-  pen.group("card", x, top, () => {
-    pen.rect("card:bg", { width, height, rx: 14, fill: C.white, stroke: C.ink, "stroke-width": 2, opacity: 0.97 });
-    pen.text("card:t", { x: 36, y: 30 + size, "font-size": size, "font-family": lines.length > 8 ? MONO : "inherit", fill: C.ink }, text);
+  const size = 19;
+  const height = Math.max(90, lines.length * size * 1.3 + 50);
+  pen.group("card", 40, 700 - height, () => {
+    pen.rect("card:bg", { width: 540, height, rx: 14, fill: C.white, stroke: C.ink, "stroke-width": 2, opacity: 0.97 });
+    pen.text("card:t", { x: 36, y: 30 + size, "font-size": size, fill: C.ink }, text);
   });
+}
+
+/** Штамп перехода: мир перемотан («⟲ вернёмся…»). Полоса внизу кадра. */
+function drawStamp(pen: Pen, text: string): void {
+  pen.rect("stamp:bg", { x: 0, y: 652, width: 1280, height: 48, fill: C.ink, opacity: 0.88 }); // внизу: поды и таблица видны
+  pen.text("stamp:t", { x: 640, y: 684, "font-size": 22, "font-weight": 600, fill: C.white, "text-anchor": "middle" }, text);
 }
 
 /** Плашка главы во весь экран: номер кейса и его вопрос. */
@@ -316,5 +380,6 @@ export function render(pen: Pen, w: World): void {
 
   if (w.card) drawCard(pen, w.card);
   if (w.plate) drawPlate(pen, w.plate);
+  if (w.stamp) drawStamp(pen, w.stamp);
   if (w.db) bubble(pen, "db:say", 225, 80, w.db, 46); // поверх плашки: кладовщик комментирует и её
 }

@@ -1,6 +1,6 @@
 import { STAGE, type Scene, type Step } from "./contract";
 import { WebAudioSound } from "./audio";
-import { Narrator, VOICE_DELAY_MS } from "./narrator";
+import { Narrator, POST_VOICE_MS, VOICE_DELAY_MS } from "./narrator";
 import { SvgPen } from "./pen";
 import "./player.css";
 
@@ -102,13 +102,12 @@ export function mountPlayer<S>(host: HTMLElement, scene: Scene<S>): void {
       if (mine === turn && timeUp && spoken) tick();
     };
     timer = setTimeout(() => ((timeUp = true), next()), frameMs(steps[index], speed()));
-    narrate(() => ((spoken = true), next()));
+    const afterVoice = steps[index].narration ? POST_VOICE_MS / speed() : 0;
+    narrate(() => setTimeout(() => ((spoken = true), next()), afterVoice));
   };
   const tick = () => {
     if (index >= steps.length - 1) return stop();
     show(index + 1);
-    // Кадр для чтения на паузе: дошли — остановились, голос договаривает; ▶ поведёт дальше.
-    if (steps[index].pause) return (stop(), narrate());
     holdThenNext();
   };
   const toggle = () => {

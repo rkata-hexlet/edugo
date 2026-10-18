@@ -19,7 +19,6 @@ export const ACT = {
   case2: "Кейс 2",
   stuck: "2.1 Завис или упал",
   zombie: "2.2 Зомби",
-  cheat: "Шпаргалка",
 } as const;
 
 const SQL = {
@@ -74,14 +73,14 @@ const rows = (n: number) => `→ ${n} ${n === 1 ? "строка" : "строк"}
 /** Время кадра: база + чтение всего текста в кадре (правило «Текст в кадре» в CLAUDE.md). */
 export function holdFor(caption: string, w: World): number {
   const says = Object.values(w.actors).map((a) => a.say ?? "");
-  const text = [caption, w.card ?? "", w.plate ?? "", w.db ?? "", w.mail ?? "", ...says, ...w.sql].join("");
+  const text = [caption, w.card ?? "", w.plate ?? "", w.stamp ?? "", w.db ?? "", w.mail ?? "", ...says, ...w.sql].join("");
   return Math.round((1.5 + 0.035 * text.length) * 10) / 10;
 }
 
 interface ShotOptions {
   /** Показать SQL-панель: только где SQL надо прочитать. Глаголы пишут SQL всегда — панель полная. */
   sql?: boolean;
-  /** Своё время кадра, с: плашка или шпаргалка. */
+  /** Своё время кадра, с: плашка главы. */
   hold?: number;
   /** Оценка текущей попытки на табло — в кадре, где результат уже виден. */
   verdict?: [Lamp, Lamp];
@@ -89,8 +88,6 @@ interface ShotOptions {
   voice?: string;
   /** О чём говорит диктор — это ярко, остальное приглушено. */
   focus?: Focus[];
-  /** Автопроигрывание останавливается на этом кадре. */
-  pause?: boolean;
 }
 
 class Director {
@@ -135,6 +132,8 @@ class Director {
     w.race = false;
     w.card = null;
     w.plate = null;
+    w.ghost = null;
+    w.stamp = null;
     w.term = this.label;
     w.focus = opts.focus ?? null;
     w.events = this.fresh ? [{ kind: "page" }] : [];
@@ -150,7 +149,6 @@ class Director {
     this.steps.push({
       act: this.act, caption, state, hold: opts.hold ?? holdFor(caption, state),
       ...(opts.voice ? { narration: opts.voice } : {}),
-      ...(opts.pause ? { pause: true } : {}),
     });
   }
 }
@@ -228,10 +226,12 @@ function markTaken(w: World, who: ActorId): void {
 
 /** Захват одним оператором: UPDATE … WHERE id IN (SELECT … FOR UPDATE SKIP LOCKED). COMMIT — отдельно,
  *  чтобы показать, как параллельные операторы обходят ещё не закоммиченный захват соседа. */
-function claim(w: World, who: ActorId): void {
+function claim(w: World, who: ActorId): boolean {
   selectTask(w, who, "skip_locked");
-  markTaken(w, who);
   sql(w, who, SQL.claimSkip);
+  if (w.actors[who].seen === null) return false; // свободных нет — 0 строк
+  markTaken(w, who);
+  return true;
 }
 
 /** Под закончил с задачей: ни держит, ни смотрит — стрелки к строке гаснут. */
@@ -253,6 +253,20 @@ function grabWithLease(w: World, who: ActorId): void {
   if (id === null) throw new Error(`сценарий: ${who} не нашёл задачу`);
   w.actors[who].carrying = id;
   sql(w, who, SQL.claim);
+}
+
+/** A и C разбирают всё, что могут взять (SKIP LOCKED), и делают работу: вред застрявшей задачи — «осталось 1». */
+function workRest(w: World): void {
+  for (let progress = true; progress; ) {
+    progress = false;
+    for (const who of ["A", "C"] as const) {
+      if (!claim(w, who)) continue;
+      const id = w.actors[who].carrying!;
+      commit(w, who);
+      finish(w, who, id);
+      progress = true;
+    }
+  }
 }
 
 /** Зомби и перехвативший доделывают #1: письмо и done по своему токену. keyed — письма с ключом. */
@@ -441,13 +455,16 @@ export function buildSteps(): Step<World>[] {
     voice: "Остальные задачи разбираются так же: дубли гасит условие «статус новый» под блокировкой, а ожидание убирает SKIP LOCKED.",
   });
 
-  // КЕЙС 2 — воркер завис.
+  // КЕЙС 2 — воркер завис. Нить главы: жив ли B? Со стороны медленного не отличить от мёртвого.
   d.scene(ACT.case2);
   d.chapter(2, ["не застревает", "письмо одно"]);
   d.shot("", (w) => {
     w.plate = "КЕЙС 2 из 2\nВоркер завис. Чья теперь задача?";
     w.db = "Починили? Посмотрим.";
-  }, { hold: 3.5, voice: "Теперь вторая глава: а если воркер завис? Посмотрим, застрянет ли задача и уйдёт ли одно письмо." });
+  }, {
+    hold: 3.5,
+    voice: "Глава вторая: до сих пор поды были живы, а теперь один замолчит. Что будет с задачей и письмами?",
+  });
 
   // 2.1 Завис или упал → lease.
   d.scene(ACT.stuck);
@@ -455,58 +472,69 @@ export function buildSteps(): Step<World>[] {
   d.shot("", (w) => {
     look(w, "B", "skip_locked");
     markTaken(w, "B"); // транзакция открыта: в таблице всё ещё new, но под замком B
-    say(w, "B", "📞 Ваш звонок очень важен для нас…");
     freeze(w, "B", true);
-  }, { focus: ["B", "row:1"], voice: "Начнём с очевидного: держим транзакцию, пока идёт работа. B берёт задачу и зависает на внешнем API." });
+  }, {
+    focus: ["B", "row:1"],
+    voice: "Сначала держим транзакцию на время работы: B берёт задачу и замирает в ожидании ответа чужого сервиса.",
+  });
   d.shot("", (w) => {
     setClock(w, 600);
-    for (const who of ["A", "C"] as const) {
-      claim(w, who);
-      commit(w, who);
-    }
+    workRest(w);
     w.db = "Упал бы — замки бы снял. А он жив.";
   }, {
-    verdict: ["red", "green"], focus: ["clock", "row:1", "A", "C"],
-    voice: "Проходит десять минут: блокировка держится до конца транзакции, поэтому остальные обходят задачу, и она застревает.",
+    verdict: ["red", "green"], focus: ["clock", "table", "row:1"],
+    voice: "Проходит десять минут, остальные задачи давно разобраны, а первая висит: блокировка держится до конца транзакции B.",
   });
   d.scene(ACT.stuck);
   d.w.clock = 610; // часы БД идут дальше, назад не прыгают
   d.attempt("«в работе» и сразу COMMIT");
   d.shot("", (w) => {
+    w.stamp = "⟲ Попробуем иначе: не держать транзакцию";
     take(w, "B", 1);
-    crash(w, "B");
-  }, { focus: ["B", "row:1"], voice: "Второй вариант — не держать транзакцию. B ставит задаче статус «в работе» и сразу делает COMMIT, так что блокировки больше нет. Но посреди работы B падает." });
+  }, {
+    focus: ["B", "row:1"],
+    voice: "Ждать конца такой транзакции можно часами, а соединение всё это время занято, так что первый вариант не годится. Попробуем иначе: B ставит статус «в работе» и сразу делает COMMIT, и блокировки больше нет.",
+  });
+  d.shot("", (w) => crash(w, "B"), { focus: ["B"], voice: "Но посреди работы B падает." });
   d.shot("", (w) => {
-    for (const who of ["A", "C"] as const) {
-      claim(w, who);
-      commit(w, who);
-    }
+    workRest(w);
     w.db = "В работе. Жив ли он — не знаю.";
-  }, { verdict: ["red", "green"], focus: ["A", "C", "row:1"], voice: "Остальные видят «в работе» и поэтому обходят её навсегда." });
+  }, {
+    verdict: ["red", "green"], focus: ["table", "row:1"],
+    voice: "Остальные видят «в работе» и не знают, жив ли B. Медленного со стороны не отличить от мёртвого, поэтому задача висит навсегда.",
+  });
+  d.shot("", undefined, {
+    focus: ["board"],
+    voice: "Выходит, оба варианта плохи по-своему. С транзакцией дорого, и задача ждёт зависшего, хотя падение база разрулит сама. Без транзакции дёшево, но после падения задача висит навсегда. Значит, нужен способ, который справится с обоими случаями.",
+  });
   d.scene(ACT.stuck);
   d.w.clock = 670;
   d.w.leaseCols = true;
   d.attempt("lease: токен и срок");
   d.term("Lease");
   d.shot("", (w) => {
+    w.stamp = "⟲ Третий вариант: срок аренды";
     grabWithLease(w, "B");
-    w.db = "До 12:11:40. По моим часам.";
   }, {
     sql: true, focus: ["B", "row:1", "clock"],
-    voice: "Выходит, нужен срок годности: при захвате тем же оператором ставим токен и срок по часам базы. Это и есть lease.",
+    voice: "Раз со стороны не понять, жив B или нет, договоримся о сроке: при захвате одним запросом база выдаёт токен и срок по своим часам. Это lease.",
   });
   d.shot("", (w) => {
     setClock(w, 675);
-    say(w, "B", "До :40 — успею.");
+    w.actors.B.checkedAt = w.clock;
+    say(w, "B", "Запас есть — успею.");
     freeze(w, "B", true);
-  }, { focus: ["B", "clock"], voice: "Время идёт. B уверен, что успеет, но всё-таки зависает." });
+  }, { focus: ["B", "row:1"], voice: "B проверяет срок, видит запас и именно в этот момент зависает." });
   d.shot("", (w) => {
     setClock(w, 701);
-    w.events.push({ kind: "expire" }); // просрочку замечает захват, а не таймер базы
+    w.events.push({ kind: "expire" });
+  }, { focus: ["row:1", "clock"], voice: "Срок вышел, но в строке ничего не меняется: срок здесь просто значение в колонке." });
+  d.shot("", (w) => {
+    w.ghost = { row: 1, token: w.rows[0].token! };
     grabWithLease(w, "C");
   }, {
-    sql: true, focus: ["C", "row:1", "sql", "clock"],
-    voice: "Срок вышел, но база сама ничего не освобождает: просрочку замечает следующий захват, и C берёт задачу с новым токеном.",
+    sql: true, focus: ["C", "row:1", "sql"],
+    voice: "Просрочку замечает следующий захват, и C забирает задачу с новым токеном.",
   });
   const beforeZombie = structuredClone(d.w);
 
@@ -515,88 +543,55 @@ export function buildSteps(): Step<World>[] {
   d.shot("", (w) => {
     setClock(w, 710);
     freeze(w, "B", false);
-    say(w, "B", "Срок до :40, а проверял я в :15!");
     send(w, "B", 1);
-    complete(w, "B", 1, true);
-    release(w, "B");
-    sql(w, "B", `${SQL.doneByToken(1, "7f3a")}  ${rows(0)}`);
   }, {
-    sql: true, focus: ["B", "mail", "sql"],
-    voice: "Просыпается B и отправляет письмо, но токен в базе уже чужой, поэтому обновление ничего не меняет.",
+    focus: ["B", "row:1", "mail"],
+    voice: "B просыпается и действует по старой проверке: он отправляет письмо, не зная, что задача уже не его. Это тот же check-then-act.",
   });
   d.shot("", (w) => {
+    complete(w, "B", 1, true);
+    sql(w, "B", `${SQL.doneByToken(1, "7f3a")}  ${rows(0)}`);
+  }, {
+    sql: true, focus: ["B", "row:1", "sql"],
+    voice: "Отметку B делает после письма, как и положено, но база её не пускает: токен в строке чужой. А письмо уже ушло, и отозвать его нельзя.",
+  });
+  d.shot("", (w) => {
+    release(w, "B");
     send(w, "C", 1);
     complete(w, "C", 1, true);
     release(w, "C");
-    sql(w, "C", `${SQL.doneByToken(1, "c21e")}  ${rows(1)}`);
   }, {
-    verdict: ["green", "red"], focus: ["B", "C", "mail", "row:1"],
-    voice: "C тоже отправляет письмо: строка в таблице одна, а писем два. Это тот же check-then-act.",
+    verdict: ["green", "red"], focus: ["C", "mail", "row:1"],
+    voice: "Новый владелец C тоже отправляет письмо. В итоге строка в таблице одна, а писем два. База уберегла свою запись, но письмо ей не подвластно.",
   });
   d.scene(ACT.zombie, structuredClone(beforeZombie)); // то же самое, но письма с ключом
   d.attempt("lease + Idempotency-Key");
   d.shot("", (w) => {
+    w.stamp = "⟲ Вернёмся к моменту до пробуждения B";
     bothFinish(w, true);
     w.mail = "Заказ 1? Уже отправлено.";
   }, {
     focus: ["mail"],
-    voice: "Поэтому чинить надо у получателя: к письму добавим ключ идемпотентности — номер заказа, не токен. Повтор с тем же ключом не выполняется, возвращается прежний ответ.",
+    voice: "Вернёмся к моменту до пробуждения B и добавим письму ключ идемпотентности, номер заказа: Почта увидит повтор и вернёт прежний ответ.",
   });
   d.term("At-least-once · idempotency key");
   d.shot("", undefined, {
     verdict: ["green", "green"], focus: ["board"],
-    voice: "Ведь исполнение у нас at-least-once, повторы возможны, поэтому дубли гасит получатель.",
+    voice: "Без ключа не обойтись: медленного не отличить от мёртвого, поэтому задачу иногда забирают у живого, и она выполняется дважды. Это at-least-once, и повторы гасит получатель.",
   });
-  d.shot("", (w) => {
-    w.db = "Ровно один раз? Это не ко мне. Это к получателю.";
-  }, { voice: "Итак, нужны и lease, и ключ: база защищает запись, а двойной эффект гасит получатель." });
-
-  // Шпаргалка.
-  d.scene(ACT.cheat);
-  d.chapter(null);
-  d.shot("Шпаргалка: запрос целиком.", (w) => {
-    w.card =
-      "UPDATE tasks SET status='in_progress',\n" +
-      "       claim_token=gen_random_uuid(), attempts=attempts+1,\n" +
-      "       lease_until=now()+interval '30s'\n" +
-      " WHERE id IN (SELECT id FROM tasks\n" +
-      "   WHERE (status='new' OR (status='in_progress' AND lease_until<now()))\n" +
-      "     AND attempts < 5\n" +
-      "   ORDER BY id LIMIT 10 FOR UPDATE SKIP LOCKED)\n" +
-      "RETURNING id, claim_token, lease_until;\n\n" +
-      "done / продление — только WHERE id=$1 AND claim_token=$2\n" +
-      "индекс: ON tasks(id) WHERE status='new' + по lease_until\n" +
-      "attempts ≥ 5 → dead-letter queue · порядок — не строгий FIFO\n" +
-      "эффекты идемпотентны: доставка at-least-once";
-  }, { hold: 8, pause: true, voice: "Дальше идут запрос целиком и конспект: читайте в своём темпе, ролик подождёт." });
-  d.shot("Что мы прошли: термины и суть.", (w) => {
-    w.card =
-      "Competing consumers — несколько воркеров на одну очередь\n" +
-      "Race condition · check-then-act — посмотрел, потом взял\n" +
-      "Local lock ≠ distributed lock — mutex видит только свой процесс\n" +
-      "Compare-and-set — UPDATE … WHERE status='new', проверить affected rows\n" +
-      "Pessimistic locking — FOR UPDATE; цена — очередь (head-of-line blocking)\n" +
-      "SKIP LOCKED — занято, бери следующую; дубли убирает WHERE под замком\n" +
-      "Lease — «в работе» + срок по часам БД, ставится при захвате\n" +
-      "Завершение по токену владельца — бережёт только запись в БД\n" +
-      "At-least-once + idempotency key = effectively-once\n\n" +
-      "База бережёт свою запись. Двойной эффект гасит получатель.";
-  }, { hold: 8 });
-  d.shot("Подводные камни: на что смотреть в коде.", (w) => {
-    w.card =
-      "FOR UPDATE — только в транзакции: tx.QueryRow, не db.QueryRow\n" +
-      "CAS: проверять RowsAffected(); проигравший ждёт COMMIT победителя\n" +
-      "Долгая транзакция: соединение, VACUUM, замок — до таймаута\n" +
-      "    idle_in_transaction_session_timeout / transaction_timeout (выкл.)\n" +
-      "    пропал узел — до TCP keepalive (~2 ч) или tcp_user_timeout\n" +
-      "Закоммитил in_progress и упал — застряло навсегда → lease\n" +
-      "Пауза между проверкой срока и действием — тот же check-then-act:\n" +
-      "    запись бережёт токен в WHERE, эффект — только идемпотентность\n" +
-      "Токен, а не имя пода: имя повторяется (горутины в поде, StatefulSet\n" +
-      "    после рестарта) — новый токен на каждый захват\n" +
-      "Ключ идемпотентности — заказ + тип письма; повтор возвращает прошлый ответ\n" +
-      "    свой получатель: INSERT … ON CONFLICT DO NOTHING в одной транзакции с эффектом";
-  }, { hold: 8 });
+  // Итог: три защиты — каждая на своём месте экрана.
+  d.shot("", undefined, {
+    focus: ["row:1", "clock"],
+    voice: "Подведём итог. Срок аренды, то есть lease, не даёт задаче застрять навсегда.",
+  });
+  d.shot("", undefined, {
+    focus: ["row:1"],
+    voice: "Токен не даёт проснувшемуся воркеру распоряжаться чужой задачей: отмечаем её только по своему токену.",
+  });
+  d.shot("", undefined, {
+    focus: ["mail"],
+    voice: "А ключ идемпотентности не даёт письму уйти дважды: его проверяет получатель. Только вместе эти три защиты справляются с зависшим воркером.",
+  });
 
   return d.steps;
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { estimateMs, speakable, VOICE_DELAY_MS } from "../../engine/narrator";
+import { estimateMs, POST_VOICE_MS, speakable, VOICE_DELAY_MS } from "../../engine/narrator";
 import { ACT, PRONOUNCE, buildSteps } from "./script";
 import {
   claimLease, commit, complete, crash, duplicates, rollback, rowById, selectTask, send, stuck, updateTask, waitingFor, world,
@@ -269,11 +269,9 @@ describe("сценарий не врёт", () => {
     expect(checked).toBe(9);
   });
 
-  it("диктор есть во всех кадрах ролика (кроме двух последних кадров шпаргалки) и не читает SQL", () => {
-    const voiced = steps.slice(0, -2);
-    expect(voiced.every((s) => s.narration), "кадр без голоса").toBe(true);
-    expect(steps.slice(-2).every((s) => !s.narration)).toBe(true);
-    for (const s of voiced) expect(s.narration).not.toMatch(/SELECT|WHERE id|BEGIN|COMMIT;/);
+  it("диктор есть во всех кадрах ролика и не читает SQL", () => {
+    expect(steps.every((s) => s.narration), "кадр без голоса").toBe(true);
+    for (const s of steps) expect(s.narration).not.toMatch(/SELECT|WHERE id|BEGIN|COMMIT;/);
   });
 
   it("закадр без телеграфного стиля: не больше одного тире на кадр (CLAUDE.md «Закадровый голос»)", () => {
@@ -289,13 +287,13 @@ describe("сценарий не врёт", () => {
     expect(screen.filter((t) => /собес/i.test(t))).toEqual([]);
   });
 
-  // Временно 4:50 (сейчас ≈4:49: знакомство с миром + микрошаги + пауза перед голосом) — до решения
-  // пользователя после прослушивания; цель была 3:30. Не поднимать молча: каждое повышение — в «Обсуждения».
-  it("хронометраж ≤ 4:50: кадр длится, пока не истечёт hold и не договорит диктор", () => {
+  // Длительность не ограничиваем (решение пользователя: «по длительности не заморачивайся») —
+  // только страховка от случайного раздувания сценария.
+  it("хронометраж в разумных пределах (≤ 7 мин): кадр длится, пока не истечёт hold и не договорит диктор", () => {
     // как в плеере: кадр держится, пока не истёк hold и не договорил диктор (он начинает через VOICE_DELAY_MS)
-    const voice = (s: (typeof steps)[number]) => (s.narration ? (VOICE_DELAY_MS + estimateMs(s.narration)) / 1000 : 0);
+    const voice = (s: (typeof steps)[number]) => (s.narration ? (VOICE_DELAY_MS + estimateMs(s.narration) + POST_VOICE_MS) / 1000 : 0);
     const seconds = steps.reduce((sum, s) => sum + Math.max(s.hold ?? 0, voice(s)), 0);
-    expect(seconds).toBeLessThanOrEqual(290);
+    expect(seconds).toBeLessThanOrEqual(420);
   });
 
   it("ярлык акта появляется не раньше своей механики и держится до конца акта", () => {
@@ -310,7 +308,7 @@ describe("сценарий не врёт", () => {
       expect(fs.slice(0, first + 1).some((w) => kinds(w).includes(kind)), act).toBe(true); // механика уже показана
       expect(fs.slice(first).every((w) => w.term === fs[first].term), act).toBe(true);
     }
-    const bare = [ACT.hook, ACT.intro, ACT.case1, ACT.case2, ACT.cheat] as string[];
+    const bare = [ACT.hook, ACT.intro, ACT.case1, ACT.case2] as string[];
     expect(steps.filter((s) => bare.includes(s.act)).every((s) => s.state.term === null)).toBe(true);
   });
 });

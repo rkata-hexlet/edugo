@@ -68,6 +68,8 @@ export function speakable(text: string, pronounce: Record<string, string>): stri
 
 /** Пауза перед голосом диктора, мс (при скорости 1×): взгляд успевает увидеть новое состояние кадра. */
 export const VOICE_DELAY_MS = 500;
+/** Пауза после голоса, мс: последний результат кадра успевает быть увиденным до смены кадра. */
+export const POST_VOICE_MS = 700;
 
 /** Разговорный темп ~2.5 слова/с — столько же ждём, когда голоса нет. */
 export function estimateMs(text: string): number {
