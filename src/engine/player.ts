@@ -1,4 +1,5 @@
 import { STAGE, type Scene } from "./contract";
+import { WebAudioSound } from "./audio";
 import { SvgPen } from "./pen";
 import "./player.css";
 
@@ -6,8 +7,8 @@ import "./player.css";
 const frameMs = (caption: string, speed: number) => (1500 + caption.length * 35) / speed;
 
 /**
- * Плеер: кадры сцены, подпись, управление (кнопки, ←/→, пробел), номер кадра в #hash —
- * чтобы при обсуждении можно было сослаться на «кадр 14».
+ * Плеер: кадры сцены, подпись, звук, управление (кнопки, ←/→, пробел, M), номер кадра в #hash —
+ * чтобы при обсуждении можно было сослаться на «кадр 14». Звучит только шаг вперёд.
  */
 export function mountPlayer<S>(host: HTMLElement, scene: Scene<S>): void {
   const steps = scene.steps();
@@ -27,6 +28,7 @@ export function mountPlayer<S>(host: HTMLElement, scene: Scene<S>): void {
         <select class="speed">
           <option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option>
         </select>
+        <button class="mute" title="M — звук"></button>
         <span class="counter"></span>
       </nav>
     </div>`;
@@ -38,15 +40,23 @@ export function mountPlayer<S>(host: HTMLElement, scene: Scene<S>): void {
   const counter = $<HTMLElement>(".counter");
   const playBtn = $<HTMLButtonElement>(".play");
   const speedSelect = $<HTMLSelectElement>(".speed");
+  const muteBtn = $<HTMLButtonElement>(".mute");
   const pen = new SvgPen($<SVGSVGElement>(".stage"));
+  const sound = new WebAudioSound();
+  sound.muted = loadMuted();
+  const paintMute = () => (muteBtn.textContent = sound.muted ? "🔇" : "🔊");
+  paintMute();
 
   const fromHash = Number(new URLSearchParams(location.hash.slice(1)).get("step"));
   let index = Number.isInteger(fromHash) && fromHash >= 1 && fromHash <= steps.length ? fromHash - 1 : 0;
   let timer: number | undefined;
 
   const show = (i: number) => {
+    const prev = index;
     index = Math.max(0, Math.min(steps.length - 1, i));
     const step = steps[index];
+    sound.cut();
+    if (index === prev + 1) scene.sound?.(sound, step.state);
     pen.frame(() => scene.render(pen, step.state));
     caption.textContent = step.caption;
     counter.textContent = `кадр ${index + 1} / ${steps.length}`;
@@ -66,20 +76,51 @@ export function mountPlayer<S>(host: HTMLElement, scene: Scene<S>): void {
   const toggle = () => {
     if (timer !== undefined) return stop();
     if (index >= steps.length - 1) show(0);
+    sound.cut();
+    scene.sound?.(sound, steps[index].state);
     playBtn.textContent = "❚❚";
     timer = setTimeout(tick, frameMs(steps[index].caption, Number(speedSelect.value)));
   };
 
+  const toggleMute = () => {
+    sound.muted = !sound.muted;
+    if (sound.muted) sound.cut();
+    saveMuted(sound.muted);
+    paintMute();
+  };
+
+  host.addEventListener("pointerdown", () => sound.unlock());
   $(".prev").addEventListener("click", () => (stop(), show(index - 1)));
   $(".next").addEventListener("click", () => (stop(), show(index + 1)));
   playBtn.addEventListener("click", toggle);
+  muteBtn.addEventListener("click", toggleMute);
   actSelect.addEventListener("change", () => (stop(), show(Number(actSelect.value))));
   document.addEventListener("keydown", (e) => {
     if (e.target instanceof HTMLSelectElement) return;
+    sound.unlock();
     if (e.key === "ArrowLeft") (stop(), show(index - 1));
     else if (e.key === "ArrowRight") (stop(), show(index + 1));
     else if (e.key === " ") (e.preventDefault(), toggle());
+    else if (e.key === "m" || e.key === "ь") toggleMute();
   });
 
   show(index);
+}
+
+const MUTE_KEY = "edugo:muted";
+
+function loadMuted(): boolean {
+  try {
+    return localStorage.getItem(MUTE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function saveMuted(muted: boolean): void {
+  try {
+    localStorage.setItem(MUTE_KEY, muted ? "1" : "0");
+  } catch {
+    // без localStorage просто не запоминаем
+  }
 }

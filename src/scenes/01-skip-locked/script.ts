@@ -45,10 +45,12 @@ class Director {
   readonly steps: Step<World>[] = [];
   w: World = world();
   private act = "";
+  private fresh = false;
 
   scene(act: string, w: World = world()): void {
     this.act = act;
     this.w = w;
+    this.fresh = this.steps.length > 0;
   }
 
   /** Применить действия и записать кадр. Реплики, SQL и титры живут один кадр. */
@@ -59,13 +61,37 @@ class Director {
     w.client = null;
     w.race = false;
     w.card = null;
+    w.events = this.fresh ? [{ kind: "page" }] : [];
+    this.fresh = false;
     for (const a of Object.values(w.actors)) a.say = null;
     action?.(w);
+    const card = w.card as string | null; // action мог выставить титр
+    if (card) w.events.push({ kind: card.includes("🎉") ? "party" : "card" });
     this.steps.push({ act: this.act, caption, state: structuredClone(w) });
   }
 }
 
 // --- Глаголы сценария: операции модели + реплики и перемещения ---
+
+function race(w: World): void {
+  w.race = true;
+  w.events.push({ kind: "race" });
+}
+
+function mutex(w: World, who: ActorId): void {
+  w.actors[who].mutex = true;
+  w.events.push({ kind: "mutex" });
+}
+
+function freeze(w: World, who: ActorId, frozen: boolean): void {
+  w.actors[who].frozen = frozen;
+  w.events.push({ kind: frozen ? "freeze" : "unfreeze" });
+}
+
+function setClock(w: World, t: number): void {
+  w.events.push({ kind: "clock", n: t - w.clock });
+  w.clock = t;
+}
 
 function say(w: World, who: ActorId, line: string | null, sql?: string): void {
   w.actors[who].say = line;
@@ -175,7 +201,7 @@ export function buildSteps(): Step<World>[] {
   d.shot("B смотрит долей секунды позже. A ещё ничего не записал — для B #3 тоже свободна.", (w) => {
     look(w, "B", "none", "полка 3 свободна!");
     say(w, "A", "полка 3 свободна!");
-    w.race = true;
+    race(w);
     w.db = "Была. Когда вы смотрели.";
   });
   d.shot("Стоп-кадр. Посмотреть и взять — два шага. Между ними влезет сосед.", (w) => {
@@ -202,7 +228,7 @@ export function buildSteps(): Step<World>[] {
   d.shot("Оба перепроверили — оба видят new. Окно гонки не закрылось. Оно переехало.", (w) => {
     look(w, "A", "none", "точно new? ✓");
     look(w, "B", "none", "точно new? ✓");
-    w.race = true;
+    race(w);
   });
   d.shot("И снова оба взяли #1.", (w) => {
     take(w, "A", 1);
@@ -210,15 +236,15 @@ export function buildSteps(): Step<World>[] {
   });
   d.scene(ACT.naive);
   d.shot("Фикс №2: обернём GetTasks в sync.Mutex.", (w) => {
-    w.actors.B.mutex = true;
+    mutex(w, "B");
     say(w, "B", "Я повесил замок!");
     w.db = "На свой рюкзак.";
   });
   d.shot("A тоже берёт мьютекс — свой. Mutex видит только свой под; соседи — в других процессах.", (w) => {
-    w.actors.A.mutex = true;
+    mutex(w, "A");
     look(w, "A", "none", "mu.Lock() ✓");
     look(w, "B");
-    w.race = true;
+    race(w);
   });
   d.shot("Договариваться надо в базе.", (w) => {
     w.actors.A.mutex = false;
@@ -259,7 +285,7 @@ export function buildSteps(): Step<World>[] {
   d.shot("C — за ним. Хотя #2, #3 и #4 свободны.", (w) =>
     look(w, "C", "for_update", "Я стою за тем, кто стоит за тем, кто держит."));
   d.shot("Сколько ждёт B? Ровно столько, сколько длится транзакция A.", (w) => {
-    w.clock += 3;
+    setClock(w, w.clock + 3);
     updateTask(w, "A", 1, { status: "in_progress" });
     say(w, "A", "не тороплюсь…", SQL.take(1));
   });
@@ -272,7 +298,7 @@ export function buildSteps(): Step<World>[] {
     say(w, "B", "#2!");
   });
   d.shot("B закончил — C тащится дальше: #1 и #2 уже в работе, ему #3. Конвой.", (w) => {
-    w.clock += 3;
+    setClock(w, w.clock + 3);
     updateTask(w, "B", 2, { status: "in_progress" });
     commit(w, "B");
     w.actors.B.carrying = 2;
@@ -318,13 +344,13 @@ export function buildSteps(): Step<World>[] {
     w.card = "Держать транзакцию всю доставку:\n• занято соединение из пула\n• VACUUM не может подмести\n• завис курьер — замок навсегда";
   });
   d.shot("B завис на внешнем API без таймаута. Он жив, соединение открыто — #1 под замком.", (w) => {
-    w.clock = 5;
-    w.actors.B.frozen = true;
+    setClock(w, 5);
+    freeze(w, "B", true);
     say(w, "B", "📞 …");
     w.db = "Упал бы — я бы сам снял замки.\nХуже, когда живой и молчит.";
   });
   d.shot("Проходит 10 минут. Остальные обходят #1 — а её никто не везёт.", (w) => {
-    w.clock = 600;
+    setClock(w, 600);
     look(w, "A", "skip_locked");
     look(w, "C", "skip_locked");
   });
@@ -337,17 +363,19 @@ export function buildSteps(): Step<World>[] {
     w.db = "Я не держу полки вечно. Талон до 12:00:30.\nПо моим часам.";
   });
   d.shot("12:00:05. B снова завис на том же API.", (w) => {
-    w.clock = 5;
+    setClock(w, 5);
     w.actors.B.at = road;
-    w.actors.B.frozen = true;
+    freeze(w, "B", true);
     say(w, "B", "📞 …");
   });
   d.shot("12:00:31. Срок по часам склада вышел.", (w) => {
-    w.clock = 31;
+    setClock(w, 31);
+    w.events.push({ kind: "expire" });
     w.db = "Талон #7f3a просрочен.";
   });
   d.shot("Другой воркер того же пода B подбирает просроченную #1 — с новым талоном.", (w) => {
     w.actors.B2.present = true;
+    w.events.push({ kind: "appear" });
     grabWithLease(w, "B2");
   });
   d.shot("Посылка снова едет.", (w) => {
@@ -358,8 +386,8 @@ export function buildSteps(): Step<World>[] {
   // 5. Два B → та же дверь.
   d.scene(ACT.zombie, structuredClone(afterLease));
   d.shot("12:00:40. Старый воркер B отвис. Он не знает, сколько простоял.", (w) => {
-    w.clock = 40;
-    w.actors.B.frozen = false;
+    setClock(w, 40);
+    freeze(w, "B", false);
     say(w, "B", "По моим — ещё 12:00:20!");
     w.db = "Здесь время — моё.";
   });

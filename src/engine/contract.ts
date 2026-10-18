@@ -17,6 +17,27 @@ export interface Pen {
   group(key: string, x: number, y: number, children: () => void): void;
 }
 
+export type Wave = "sine" | "square" | "sawtooth" | "triangle";
+
+/** Голос персонажа для бормотания без слов. */
+export interface Voice {
+  pitch: number; // базовая высота, Гц
+  rate: number; // слогов в секунду
+  wave: Wave;
+  spread: number; // разброс высоты слогов, полутонов
+  gain: number; // громкость 0..1
+}
+
+/**
+ * Узкий порт звука: процедурные примитивы. Время `at` и `dur` — в секундах от начала кадра.
+ * Реализация решает про громкость, mute и разрешение браузера на звук.
+ */
+export interface Sound {
+  tone(o: { freq: number; to?: number; dur: number; wave?: Wave; gain?: number; at?: number }): void;
+  noise(o: { dur: number; freq?: number; q?: number; gain?: number; at?: number }): void;
+  babble(voice: Voice, text: string, at?: number): void;
+}
+
 /** Один кадр: просчитанное состояние симуляции и подпись для зрителя. */
 export interface Step<S> {
   act: string;
@@ -30,4 +51,6 @@ export interface Scene<S> {
   title: string;
   steps(): Step<S>[];
   render(pen: Pen, state: S): void;
+  /** Озвучить кадр. Плеер зовёт при шаге вперёд и при старте воспроизведения. */
+  sound?(sound: Sound, state: S): void;
 }

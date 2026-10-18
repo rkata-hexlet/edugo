@@ -59,6 +59,17 @@ export interface Delivery {
   rejected: boolean; // клиент отклонил повтор по ключу идемпотентности
 }
 
+/** Событие кадра — для звука. Пишут операции модели и глаголы сценария, не отрисовка. */
+export type EventKind =
+  | "lock" | "relock" | "skip" | "wait" | "wake" | "commit" | "one" | "zero"
+  | "deliver" | "duplicate" | "rejected" | "ticket"
+  | "race" | "mutex" | "freeze" | "unfreeze" | "appear" | "expire" | "clock" | "card" | "party" | "page";
+
+export interface SimEvent {
+  kind: EventKind;
+  n?: number; // для clock — на сколько секунд прыгнули часы
+}
+
 export interface World {
   clock: number;
   rows: Row[];
@@ -71,6 +82,7 @@ export interface World {
   card: string | null; // титр поверх сцены
   issued: number; // сколько талонов выдано
   queued: number; // счётчик очереди за блокировками
+  events: SimEvent[]; // что случилось в этом кадре
 }
 
 const TOKENS = ["7f3a", "c21e", "9b04", "e6d1", "40ac", "d58f"];
@@ -99,6 +111,7 @@ export function world(rowCount = 4): World {
     card: null,
     issued: 0,
     queued: 0,
+    events: [],
   };
 }
 
@@ -137,22 +150,27 @@ export function selectTask(w: World, who: ActorId, lock: LockMode = "none", leas
  * FOR UPDATE — ждать. Дождавшись, строка блокируется и перепроверяется по свежей версии;
  * не подходит — остаётся заблокированной, но не возвращается, берём следующего кандидата.
  */
-function advance(w: World, a: Actor): void {
+function advance(w: World, a: Actor, woke = false): void {
   const s = a.scan!;
   while (s.candidates.length > 0) {
     const r = rowById(w, s.candidates[0]);
     if (r.lockedBy !== null && r.lockedBy !== a.id) {
       if (s.lock === "skip_locked") {
         s.candidates.shift();
+        w.events.push({ kind: "skip" });
         continue;
       }
-      if (s.waitingFor !== r.id) s.since = w.clock;
+      if (s.waitingFor !== r.id) {
+        s.since = w.clock;
+        if (!woke) w.events.push({ kind: "wait" });
+      }
       s.waitingFor = r.id;
       return;
     }
     s.candidates.shift();
     s.waitingFor = null;
     r.lockedBy = a.id;
+    w.events.push({ kind: woke ? "relock" : "lock" });
     if (claimable(visible(r, a.id), s.lease, w.clock)) {
       a.seen = r.id;
       a.scan = null;
@@ -175,11 +193,13 @@ export function updateTask(
   const a = w.actors[who];
   if (where && !where(cur)) {
     a.affected = 0;
+    w.events.push({ kind: "zero" });
     return;
   }
   r.lockedBy = who;
   r.draft = { status: cur.status, token: cur.token, leaseUntil: cur.leaseUntil, ...set };
   a.affected = 1;
+  if (where) w.events.push({ kind: "one" });
 }
 
 /** COMMIT: правки становятся видны всем, блокировки снимаются, ждавшие просыпаются. */
@@ -192,11 +212,15 @@ export function commit(w: World, who: ActorId): void {
     r.lockedBy = null;
     released.push(r.id);
   }
+  if (released.length > 0) w.events.push({ kind: "commit" });
   // Ждавшие просыпаются в порядке очереди; кто не успел — ждёт уже нового владельца.
   const waiters = ACTORS.map((id) => w.actors[id])
     .filter((a) => a.scan?.waitingFor != null && released.includes(a.scan.waitingFor))
     .sort((x, y) => x.scan!.order - y.scan!.order);
-  for (const a of waiters) advance(w, a);
+  for (const a of waiters) {
+    advance(w, a, true);
+    if (a.scan === null) w.events.push({ kind: "wake" });
+  }
 }
 
 /** Захват с талоном одним оператором в autocommit:
@@ -207,6 +231,7 @@ export function claimLease(w: World, who: ActorId, ttl = 30): number | null {
   const id = a.seen;
   if (id === null) return null;
   const token = TOKENS[w.issued++ % TOKENS.length];
+  w.events.push({ kind: "ticket" });
   updateTask(w, who, id, { status: "in_progress", token, leaseUntil: w.clock + ttl });
   commit(w, who);
   a.token = token;
@@ -223,7 +248,10 @@ export function complete(w: World, who: ActorId, id: number, byToken: boolean): 
 /** Отдать посылку клиенту. idempotent — клиент отклоняет повтор по ключу заказа. */
 export function deliver(w: World, who: ActorId, id: number, idempotent = false): void {
   const already = w.deliveries.some((d) => d.row === id && !d.rejected);
-  w.deliveries.push({ row: id, by: who, rejected: idempotent && already });
+  const rejected = idempotent && already;
+  w.deliveries.push({ row: id, by: who, rejected });
+  w.events.push({ kind: rejected ? "rejected" : "deliver" });
+  if (!rejected && already) w.events.push({ kind: "duplicate" });
 }
 
 /** id посылок, которые клиент реально получил больше одного раза. */
