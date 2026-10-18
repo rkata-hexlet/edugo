@@ -3,29 +3,45 @@ import type { Sound, Voice, Wave } from "./contract";
 /**
  * Sound поверх Web Audio. AudioContext создаётся лениво — по первому жесту пользователя
  * (браузеры не дают звук без него). Пока выключен или контекста нет — тишина.
+ * С готовым `OfflineAudioContext` (рендер в mp4) звук пишется в буфер: `at` отсчитывается от `base`.
  */
 export class WebAudioSound implements Sound {
-  private ctx: AudioContext | null = null;
+  private ctx: BaseAudioContext | null = null;
   private master: GainNode | null = null;
   private noiseBuf: AudioBuffer | null = null;
   muted = false;
   /** Множитель громкости бормотания: под голосом диктора персонажи звучат тише. */
   babbleGain = 1;
+  /** Офлайн-рендер: начало текущего кадра на шкале буфера, с. */
+  base = 0;
+  private offline = false;
+
+  /** Офлайн-рендер: звуки — в буфер контекста, а не в динамики. */
+  static offline(ctx: OfflineAudioContext): WebAudioSound {
+    const s = new WebAudioSound();
+    s.ctx = ctx;
+    s.offline = true;
+    s.master = ctx.createGain();
+    s.master.gain.value = 0.5;
+    s.master.connect(ctx.destination);
+    return s;
+  }
 
   /** Вызывать из обработчика клика/клавиши. */
   unlock(): void {
+    if (this.offline) return;
     if (!this.ctx) {
       this.ctx = new AudioContext();
       this.master = this.ctx.createGain();
       this.master.gain.value = 0.5;
       this.master.connect(this.ctx.destination);
     }
-    if (this.ctx.state === "suspended") void this.ctx.resume();
+    if (this.ctx.state === "suspended") void (this.ctx as AudioContext).resume();
   }
 
   /** Оборвать звуки предыдущего кадра (перемотка, быстрое листание). */
   cut(): void {
-    if (!this.ctx || !this.master) return;
+    if (!this.ctx || !this.master || this.offline) return;
     this.master.disconnect();
     this.master = this.ctx.createGain();
     this.master.gain.value = 0.5;
@@ -68,7 +84,8 @@ export class WebAudioSound implements Sound {
     }
   }
 
-  private out(): { ctx: AudioContext; t0: number } | null {
+  private out(): { ctx: BaseAudioContext; t0: number } | null {
+    if (this.offline) return { ctx: this.ctx!, t0: this.base };
     if (this.muted || !this.ctx || !this.master || this.ctx.state !== "running") return null;
     return { ctx: this.ctx, t0: this.ctx.currentTime + 0.02 };
   }
@@ -83,7 +100,7 @@ export class WebAudioSound implements Sound {
     return env;
   }
 
-  private noiseBuffer(ctx: AudioContext): AudioBuffer {
+  private noiseBuffer(ctx: BaseAudioContext): AudioBuffer {
     if (this.noiseBuf) return this.noiseBuf;
     const buf = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
     const data = buf.getChannelData(0);

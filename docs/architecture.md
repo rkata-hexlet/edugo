@@ -46,6 +46,11 @@
   персонажей под диктором тише; после голоса — пауза `POST_VOICE_MS`. Звучит только шаг вперёд и
   старт воспроизведения; перемотка обрывает звук. Шрифты (`@fontsource`: Inter, JetBrains Mono)
   ждёт до первого кадра, не дольше `FONTS_MS`.
+- Шкала записи (`engine/timeline.ts`): `frameMs` (время кадра), `frameSeconds` (дольше из кадра и
+  голоса), `timeline` (заставка → кадры → финал), `frameAt`. Общая для плеера и рендера.
+- Рендер в mp4 (`?capture&render`, `exposeRender` в `player.ts` → `window.__edugo`; `scripts/render.mjs`):
+  перемотка на момент t с остановкой анимаций, звук через `WebAudioSound.offline(OfflineAudioContext)`,
+  WAV кусками, склейка ffmpeg. `?capture` без render — живая запись с голосом (ADR-0003, docs/recording.md).
 - Оболочка (`engine/shell.ts`, стили `engine/player.css`) — только DOM: кадр 16:9 по окну,
   подпись и субтитры диктора оверлеем внутри кадра (попадают в запись), панель (play, прогресс
   сегментами по актам, скорость, CC, звук, полный экран), которая прячется при проигрывании без
@@ -80,7 +85,9 @@
 
 ## Граф зависимостей
 ```
+scripts/render.mjs ──(puppeteer, ?capture&render)──► страница плеера
 main.ts ──► engine/player ──► engine/pen ──► engine/contract
+                    ├──────► engine/timeline ──► engine/narrator
                     └──────► engine/shell ──► engine/contract
    └──────► scenes/NN/index ──► script ──► sim
                          ├────► view ──► sim, script(clock), kit

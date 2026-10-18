@@ -1,18 +1,15 @@
-import { type Scene, type Step } from "./contract";
+import type { Scene } from "./contract";
 import { WebAudioSound } from "./audio";
 import { Narrator, POST_VOICE_MS, VOICE_DELAY_MS } from "./narrator";
 import { SvgPen } from "./pen";
 import { Shell } from "./shell";
+import { COVER_S, frameAt, frameMs, timeline } from "./timeline";
 import "@fontsource/inter/400.css";
 import "@fontsource/inter/600.css";
 import "@fontsource/inter/700.css";
 import "@fontsource/jetbrains-mono/400.css";
 import "@fontsource/jetbrains-mono/700.css";
 import "./player.css";
-
-/** Сколько показывать кадр при автопроигрывании: заданное сценой или база + время на чтение подписи. */
-const frameMs = (step: Step<unknown>, speed: number) =>
-  (step.hold !== undefined ? step.hold * 1000 : 1500 + step.caption.length * 35) / speed;
 
 const SPEEDS = [1, 1.5, 2, 0.5];
 
@@ -58,10 +55,11 @@ export function mountPlayer<S>(host: HTMLElement, scene: Scene<S>): void {
 
   const fromHash = Number(new URLSearchParams(location.hash.slice(1)).get("step"));
   const linked = Number.isInteger(fromHash) && fromHash >= 1 && fromHash <= steps.length;
-  let index = linked ? fromHash - 1 : 0;
-  // Обложка — для зрителя с чистой ссылкой; ссылка на кадр, dev-режим и запись открывают кадр сразу.
   const params = new URLSearchParams(location.search);
-  shell.cover(!linked && !params.has("dev") && !params.has("capture"));
+  const render = params.has("render");
+  let index = render ? -1 : linked ? fromHash - 1 : 0;
+  // Обложка — для зрителя с чистой ссылкой (и в записи — как заставка); ссылка на кадр и dev открывают кадр сразу.
+  shell.cover(!linked && !params.has("dev"));
   let timer: number | undefined;
   let turn = 0; // поколение автопроигрывания: старые таймеры и концы фраз игнорируются
   let voiceDelay: number | undefined;
@@ -111,7 +109,8 @@ export function mountPlayer<S>(host: HTMLElement, scene: Scene<S>): void {
     narrate(() => setTimeout(() => ((spoken = true), next()), afterVoice));
   };
   const tick = () => {
-    if (index >= last) return (stop(), shell.outro(true));
+    // Конец — финальная карточка; заголовок вкладки — сигнал скрипту записи, что можно останавливать.
+    if (index >= last) return (stop(), shell.outro(true), (document.title = `${document.title} · конец`));
     show(index + 1);
     holdThenNext();
   };
@@ -158,7 +157,87 @@ export function mountPlayer<S>(host: HTMLElement, scene: Scene<S>): void {
     else if (key === "d" || key === "в") shell.dev();
   });
 
+  if (render) return void fontsLoaded().then(() => exposeRender(scene, steps, shell, show));
   void fontsLoaded().then(() => show(index));
+}
+
+/** Хуки офлайн-рендера в mp4 (`?capture&render`, scripts/render.mjs): перемотка на момент t и звук в WAV. */
+export interface RenderApi {
+  ready: true;
+  total: number;
+  /** Показать момент t, с: обложка, кадр с анимациями, остановленными в нужной точке, или финал. */
+  seek(t: number): void;
+  /** Отрендерить звук всей записи; возвращает размер WAV в байтах. */
+  renderAudio(): Promise<number>;
+  /** Кусок WAV в base64. */
+  audioChunk(offset: number, length: number): string;
+}
+
+function exposeRender<S>(scene: Scene<S>, steps: ReturnType<Scene<S>["steps"]>, shell: Shell, show: (i: number) => void): void {
+  const tl = timeline(steps);
+  shell.toggleSubs(); // голоса в записи нет — субтитры диктора в кадре
+  let current = -1;
+  let fresh: Animation[] = [];
+  let wav: Uint8Array = new Uint8Array();
+  const api: RenderApi = {
+    ready: true,
+    total: tl.total,
+    seek(t) {
+      shell.cover(t < COVER_S);
+      shell.outro(t >= tl.end);
+      if (t < COVER_S || t >= tl.end) return;
+      const i = frameAt(tl.starts, t);
+      if (i !== current) {
+        for (const a of fresh) a.finish(); // эффекты прошлого кадра — в конечное состояние
+        show(i);
+        getComputedStyle(document.body).opacity; // применить стили: новые анимации и переходы созданы
+        fresh = document.getAnimations().filter((a) => a.playState !== "finished");
+        for (const a of fresh) a.pause();
+        current = i;
+      }
+      const ms = (t - tl.starts[i]) * 1000;
+      for (const a of fresh) a.currentTime = ms;
+    },
+    async renderAudio() {
+      const rate = 44100;
+      const ctx = new OfflineAudioContext(1, Math.ceil(tl.total * rate), rate);
+      const sound = WebAudioSound.offline(ctx);
+      steps.forEach((step, i) => {
+        sound.base = tl.starts[i];
+        sound.babbleGain = step.narration ? 0.35 : 1;
+        scene.sound?.(sound, step.state);
+      });
+      wav = encodeWav(await ctx.startRendering());
+      return wav.length;
+    },
+    audioChunk(offset, length) {
+      let bin = "";
+      for (const b of wav.subarray(offset, offset + length)) bin += String.fromCharCode(b);
+      return btoa(bin);
+    },
+  };
+  (window as unknown as { __edugo: RenderApi }).__edugo = api;
+}
+
+/** PCM 16 бит, моно. */
+function encodeWav(buf: AudioBuffer): Uint8Array {
+  const data = buf.getChannelData(0);
+  const out = new DataView(new ArrayBuffer(44 + data.length * 2));
+  const str = (o: number, s: string) => [...s].forEach((c, i) => out.setUint8(o + i, c.charCodeAt(0)));
+  str(0, "RIFF");
+  out.setUint32(4, 36 + data.length * 2, true);
+  str(8, "WAVEfmt ");
+  out.setUint32(16, 16, true);
+  out.setUint16(20, 1, true);
+  out.setUint16(22, 1, true);
+  out.setUint32(24, buf.sampleRate, true);
+  out.setUint32(28, buf.sampleRate * 2, true);
+  out.setUint16(32, 2, true);
+  out.setUint16(34, 16, true);
+  str(36, "data");
+  out.setUint32(40, data.length * 2, true);
+  data.forEach((v, i) => out.setInt16(44 + i * 2, Math.max(-1, Math.min(1, v)) * 0x7fff, true));
+  return new Uint8Array(out.buffer);
 }
 
 const MUTE_KEY = "edugo:muted";

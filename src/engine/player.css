@@ -305,6 +305,26 @@ body {
 .capture .subs {
   bottom: 3cqw;
 }
+.capture,
+.capture .stage {
+  cursor: none;
+}
+/* В записи субтитры — главный носитель голоса: крупнее; кнопка «смотреть» на заставке не нужна. */
+.capture .subs .narration {
+  font-size: 2.1cqw;
+  max-width: 76cqw;
+}
+.capture .subs .caption {
+  font-size: 2.3cqw;
+}
+.capture .cover .big {
+  visibility: hidden;
+}
+/* Рендер в mp4: кадр во весь вьюпорт, без скруглений и рамки. */
+.capture .frame {
+  border-radius: 0;
+  box-shadow: none;
+}
 
 /* Dev-режим (?dev / D): список актов и номер кадра — для обсуждения, не для зрителя. */
 .dev {
