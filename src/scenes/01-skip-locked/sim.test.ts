@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { ACT, buildSteps } from "./script";
 import {
-  claimLease, commit, complete, deliver, duplicates, rowById, selectTask, updateTask, world, type World,
+  claimLease, commit, complete, deliver, duplicates, rowById, selectTask, updateTask, world,
+  type EventKind, type World,
 } from "./sim";
 
 describe("модель Postgres", () => {
@@ -147,6 +148,21 @@ describe("сценарий не врёт", () => {
   it("талон: B2 перехватил #1 после истечения, замков нет", () => {
     const s = last(ACT.lease);
     expect(rowById(s, 1)).toMatchObject({ token: "c21e", lockedBy: null });
+  });
+
+  it("ярлык акта появляется не раньше своей механики и держится до конца акта", () => {
+    const mechanic: Record<string, EventKind> = {
+      [ACT.race]: "race", [ACT.naive]: "mutex", [ACT.crowd]: "zero", [ACT.convoy]: "wait",
+      [ACT.skip]: "skip", [ACT.lease]: "ticket", [ACT.zombie]: "rejected",
+    };
+    for (const [act, kind] of Object.entries(mechanic)) {
+      const frames = steps.filter((s) => s.act === act).map((s) => s.state);
+      const first = frames.findIndex((w) => w.term !== null);
+      expect(first, act).toBeGreaterThan(0);
+      expect(frames[first].events.map((e) => e.kind), act).toContain(kind);
+      expect(frames.slice(first).every((w) => w.term === frames[first].term), act).toBe(true);
+    }
+    expect(steps.filter((s) => [ACT.hook, ACT.cheat].includes(s.act as never)).every((s) => s.state.term === null)).toBe(true);
   });
 
   it("два B: старый получил 0 строк, клиент отклонил повтор, дубля нет", () => {

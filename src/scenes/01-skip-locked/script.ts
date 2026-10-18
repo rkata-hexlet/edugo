@@ -46,11 +46,19 @@ class Director {
   w: World = world();
   private act = "";
   private fresh = false;
+  private label: string | null = null;
 
+  /** Новая сцена; ярлык переживает смену сцены внутри акта и сбрасывается на новом акте. */
   scene(act: string, w: World = world()): void {
+    if (act !== this.act) this.label = null;
     this.act = act;
     this.w = w;
     this.fresh = this.steps.length > 0;
+  }
+
+  /** Ярлык акта — со следующего кадра, когда механика уже показана. */
+  term(label: string): void {
+    this.label = label;
   }
 
   /** Применить действия и записать кадр. Реплики, SQL и титры живут один кадр. */
@@ -61,6 +69,7 @@ class Director {
     w.client = null;
     w.race = false;
     w.card = null;
+    w.term = this.label;
     w.events = this.fresh ? [{ kind: "page" }] : [];
     this.fresh = false;
     for (const a of Object.values(w.actors)) a.say = null;
@@ -198,6 +207,7 @@ export function buildSteps(): Step<World>[] {
     drop(w, "B", 2);
     look(w, "A", "none", "полка 3 свободна!");
   });
+  d.term("Race condition · check-then-act");
   d.shot("B смотрит долей секунды позже. A ещё ничего не записал — для B #3 тоже свободна.", (w) => {
     look(w, "B", "none", "полка 3 свободна!");
     say(w, "A", "полка 3 свободна!");
@@ -240,6 +250,7 @@ export function buildSteps(): Step<World>[] {
     say(w, "B", "Я повесил замок!");
     w.db = "На свой рюкзак.";
   });
+  d.term("Local lock ≠ distributed lock");
   d.shot("A тоже берёт мьютекс — свой. Mutex видит только свой под; соседи — в других процессах.", (w) => {
     mutex(w, "A");
     look(w, "A", "none", "mu.Lock() ✓");
@@ -259,6 +270,7 @@ export function buildSteps(): Step<World>[] {
     look(w, "B");
     look(w, "C");
   });
+  d.term("Compare-and-set · optimistic locking");
   d.shot("Кто первый отметил — того и полка. Остальным — ноль строк.", (w) => {
     takeIfNew(w, "A", 1, "");
     takeIfNew(w, "B", 1, "0 строк…");
@@ -278,6 +290,7 @@ export function buildSteps(): Step<World>[] {
   d.scene(ACT.convoy);
   d.shot("Способ 2: SELECT … FOR UPDATE. A берёт #1 и вешает замок до конца своей транзакции.", (w) =>
     look(w, "A", "for_update"));
+  d.term("Pessimistic locking");
   d.shot("B хочет то же и встаёт в очередь. Замок держит база — поэтому его видят все поды.", (w) => {
     look(w, "B", "for_update");
     w.db = "Занято. Жди.";
@@ -312,6 +325,7 @@ export function buildSteps(): Step<World>[] {
   // 3c. Обход: SKIP LOCKED.
   d.scene(ACT.skip);
   d.shot("Способ 3: FOR UPDATE SKIP LOCKED. A берёт #1 под замок.", (w) => look(w, "A", "skip_locked"));
+  d.term("Non-blocking claim · SKIP LOCKED");
   d.shot("B видит замок, пожимает плечами и берёт следующую.", (w) =>
     look(w, "B", "skip_locked", "Занято? Ну и ладно."));
   d.shot("C — #3. Никто никого не ждёт.", (w) => {
@@ -358,6 +372,7 @@ export function buildSteps(): Step<World>[] {
   d.shot("Решение: короткая транзакция выдаёт талон с номером и сроком — и сразу COMMIT.", (w) => {
     w.card = "Взял талон — закрыл транзакцию.\nРаботай без замка на складе.";
   });
+  d.term("Lease");
   d.shot("B получил талон до 12:00:30. Замка на складе нет — транзакция уже закрыта.", (w) => {
     grabWithLease(w, "B");
     w.db = "Я не держу полки вечно. Талон до 12:00:30.\nПо моим часам.";
@@ -405,6 +420,7 @@ export function buildSteps(): Step<World>[] {
     say(w, "B", "…а посылку я уже отвёз.", `${SQL.doneByToken(1, "7f3a")}  → 0 строк`);
     w.db = "Талон #7f3a сгорел.\nСейчас действует #c21e.";
   });
+  d.term("At-least-once · idempotency key");
   d.shot("Новый B приходит к той же двери. Клиент узнаёт заказ по ключу.", (w) => {
     const b2 = w.actors.B2;
     b2.at = door;
@@ -421,7 +437,7 @@ export function buildSteps(): Step<World>[] {
 
   // 6. Шпаргалка.
   d.scene(ACT.cheat);
-  d.shot("Шпаргалка для собеседования.", (w) => {
+  d.shot("Шпаргалка: запрос целиком.", (w) => {
     w.card =
       "UPDATE tasks SET status='in_progress',\n" +
       "       claim_token=gen_random_uuid(), attempts=attempts+1,\n" +
@@ -436,6 +452,18 @@ export function buildSteps(): Step<World>[] {
       "attempts ≥ 5 → полка возвратов · порядок — не строгий FIFO\n" +
       "эффекты идемпотентны: доставка at-least-once";
   });
+  d.shot("Что мы прошли — этими словами и отвечать.", (w) => {
+    w.card =
+      "Competing consumers — несколько воркеров на одну очередь\n" +
+      "Race condition · check-then-act — посмотрел, потом взял\n" +
+      "Local lock ≠ distributed lock — mutex видит только свой процесс\n" +
+      "Compare-and-set — UPDATE … WHERE status='new', проверить affected rows\n" +
+      "Pessimistic locking — FOR UPDATE; цена — head-of-line blocking\n" +
+      "SKIP LOCKED — та же блокировка строки, но без ожидания; не строгий FIFO\n" +
+      "Lease — талон со сроком по часам БД, транзакция короткая\n" +
+      "Завершение по токену владельца — тот же CAS, бережёт только запись в БД\n" +
+      "At-least-once + idempotency key = effectively-once";
+  });
 
   // 0. Хук — тот же финал акта 5, но клиент без ключа заказа. Ставится в начало.
   const hook = new Director();
@@ -446,6 +474,10 @@ export function buildSteps(): Step<World>[] {
     doorFinale(w, false);
     w.client = "Списано дважды?!";
     w.card = "Как так?";
+  });
+  hook.scene(ACT.hook);
+  hook.shot("О чём этот ролик.", (w) => {
+    w.card = "Competing consumers:\nнесколько подов, одна очередь.\nКак не сделать работу дважды?";
   });
 
   return [...hook.steps, ...d.steps];

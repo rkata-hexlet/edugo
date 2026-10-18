@@ -80,6 +80,7 @@ export interface World {
   client: string | null; // реплика клиента у двери
   race: boolean; // подсветить окно гонки
   card: string | null; // титр поверх сцены
+  term: string | null; // ярлык акта: формальное имя проблемы/паттерна
   issued: number; // сколько талонов выдано
   queued: number; // счётчик очереди за блокировками
   events: SimEvent[]; // что случилось в этом кадре
@@ -109,6 +110,7 @@ export function world(rowCount = 4): World {
     client: null,
     race: false,
     card: null,
+    term: null,
     issued: 0,
     queued: 0,
     events: [],

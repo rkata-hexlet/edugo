@@ -156,6 +156,13 @@ function drawSql(pen: Pen, w: World): void {
   pen.text("sql:body", { x: 52, y: 494, "font-size": 12, "font-family": MONO, fill: C.ink }, w.sql.join("\n") || " ");
 }
 
+/** Ярлык акта — тёмная плашка над стеллажом справа: формальное имя того, что показала сцена. */
+function drawTerm(pen: Pen, term: string): void {
+  const width = term.length * 9.4 + 28;
+  pen.rect("term:bg", { x: 560, y: 92, width, height: 30, rx: 15, fill: C.ink });
+  pen.text("term:t", { x: 574, y: 112, "font-size": 15, "font-family": MONO, fill: C.white }, term);
+}
+
 function drawCard(pen: Pen, text: string): void {
   const lines = text.split("\n");
   const size = lines.length > 8 ? 15 : 24;
@@ -181,6 +188,7 @@ export function render(pen: Pen, w: World): void {
     pen.text(`hdr:${i}`, { x: SHELF.x + col.x + 10, y: SHELF.y - 12, "font-size": 13, "font-family": MONO, fill: C.muted }, col.title));
   for (const r of w.rows) drawRow(pen, w, r);
 
+  if (w.term) drawTerm(pen, w.term);
   drawSql(pen, w);
   drawClient(pen, w);
 
