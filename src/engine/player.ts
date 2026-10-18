@@ -59,8 +59,9 @@ export function mountPlayer<S>(host: HTMLElement, scene: Scene<S>): void {
   const fromHash = Number(new URLSearchParams(location.hash.slice(1)).get("step"));
   const linked = Number.isInteger(fromHash) && fromHash >= 1 && fromHash <= steps.length;
   let index = linked ? fromHash - 1 : 0;
-  // Обложка — для зрителя с чистой ссылкой; ссылка на кадр и dev-режим открывают кадр сразу.
-  shell.cover(!linked && !new URLSearchParams(location.search).has("dev"));
+  // Обложка — для зрителя с чистой ссылкой; ссылка на кадр, dev-режим и запись открывают кадр сразу.
+  const params = new URLSearchParams(location.search);
+  shell.cover(!linked && !params.has("dev") && !params.has("capture"));
   let timer: number | undefined;
   let turn = 0; // поколение автопроигрывания: старые таймеры и концы фраз игнорируются
   let voiceDelay: number | undefined;

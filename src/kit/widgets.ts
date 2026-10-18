@@ -1,0 +1,131 @@
+import type { Attrs, Pen, Span, TextContent } from "../engine/contract";
+import { COLOR, FONT, SIZE } from "./theme";
+
+// Виджеты серии: панель, пузырь реплики с хвостом, пилюля, лампа, окно SQL, полноэкранная плашка.
+// Размеры текстовых рамок — по `pen.measure`, а не по числу символов.
+
+/** Плоская тень: смещённая подложка без фильтров. */
+const SHADOW = 4;
+
+/** Поверхность с плоской тенью. */
+export function panel(
+  pen: Pen, key: string,
+  o: { x: number; y: number; w: number; h: number; fill?: string; stroke?: string; rx?: number; shadow?: boolean; attrs?: Attrs },
+): void {
+  const rx = o.rx ?? 16;
+  if (o.shadow !== false) pen.rect(`${key}:shadow`, { x: o.x, y: o.y + SHADOW, width: o.w, height: o.h, rx, fill: COLOR.shadow, ...o.attrs });
+  pen.rect(`${key}:bg`, {
+    x: o.x, y: o.y, width: o.w, height: o.h, rx,
+    fill: o.fill ?? COLOR.surface, stroke: o.stroke ?? COLOR.line, "stroke-width": 1.5, ...o.attrs,
+  });
+}
+
+export type Tail = "left" | "down" | "up";
+
+/**
+ * Пузырь реплики: светлый на тёмной сцене. `(x, y)` — кончик хвоста. Хвост "left" — пузырь справа
+ * от точки; "down" — над ней, "up" — под ней; `align: "end"` — пузырь уходит влево от кончика.
+ */
+export function bubble(
+  pen: Pen, key: string, text: string,
+  o: { x: number; y: number; tail: Tail; align?: "start" | "end"; size?: number; attrs?: Attrs },
+): { w: number; h: number } {
+  const size = o.size ?? SIZE.say;
+  const font = { "font-size": size, "font-family": FONT.sans, "font-weight": 600 };
+  const m = pen.measure(text, font);
+  const padX = 16;
+  const padY = 10;
+  const w = Math.ceil(m.width) + padX * 2;
+  const h = Math.ceil(m.height) + padY * 2;
+  const tail = 12;
+  let bx: number;
+  let by: number;
+  let tri: string;
+  if (o.tail === "left") {
+    bx = o.x + tail;
+    by = o.y - h / 2;
+    tri = `M ${o.x} ${o.y} L ${bx + 2} ${o.y - 8} L ${bx + 2} ${o.y + 8} Z`;
+  } else {
+    const inset = 28;
+    bx = o.align === "end" ? o.x - w + inset : o.x - inset;
+    by = o.tail === "down" ? o.y - tail - h : o.y + tail;
+    const edge = o.tail === "down" ? by + h - 2 : by + 2;
+    tri = `M ${o.x} ${o.y} L ${o.x - 9} ${edge} L ${o.x + 9} ${edge} Z`;
+  }
+  pen.group(key, 0, 0, () => {
+    pen.rect(`${key}:shadow`, { x: bx, y: by + SHADOW, width: w, height: h, rx: 14, fill: COLOR.shadow });
+    pen.path(`${key}:tail`, { d: tri, fill: COLOR.ink, stroke: "none" });
+    pen.rect(`${key}:bg`, { x: bx, y: by, width: w, height: h, rx: 14, fill: COLOR.ink });
+    // Базовая линия первой строки: верх + отступ + кегль × 0.8 (высота заглавных у Inter).
+    pen.text(`${key}:t`, { x: bx + padX, y: by + padY + size * 0.8, fill: COLOR.bg, ...font }, text);
+  }, o.attrs);
+  return { w, h };
+}
+
+/** Пилюля с текстом; (x, y) — левый верхний угол. Возвращает ширину. */
+export function pill(
+  pen: Pen, key: string, content: TextContent,
+  o: { x: number; y: number; fill: string; color: string; stroke?: string; size?: number; mono?: boolean; bold?: boolean; attrs?: Attrs },
+): number {
+  const size = o.size ?? SIZE.body;
+  const font = { "font-size": size, "font-family": o.mono ? FONT.mono : FONT.sans, "font-weight": o.bold === false ? 400 : 600 };
+  const h = Math.round(size * 1.8);
+  const w = Math.ceil(pen.measure(content, font).width) + h;
+  pen.group(key, o.x, o.y, () => {
+    pen.rect(`${key}:bg`, { width: w, height: h, rx: h / 2, fill: o.fill, ...(o.stroke ? { stroke: o.stroke, "stroke-width": 1.5 } : {}) });
+    pen.text(`${key}:t`, { x: h / 2, y: h / 2 + size * 0.36, fill: o.color, ...font }, content);
+  }, o.attrs);
+  return w;
+}
+
+export type LampState = "red" | "yellow" | "green" | null;
+const LAMP: Record<Exclude<LampState, null>, string> = { red: COLOR.error, yellow: COLOR.warn, green: COLOR.ok };
+
+/** Светодиод табло; null — ещё не проверяли (пустой пунктир). (x, y) — центр. */
+export function lamp(pen: Pen, key: string, x: number, y: number, state: LampState, r = 10): void {
+  if (!state) {
+    pen.rect(key, { x: x - r, y: y - r, width: 2 * r, height: 2 * r, rx: r, fill: "none", stroke: COLOR.faint, "stroke-width": 1.5, "stroke-dasharray": "3 3" });
+    return;
+  }
+  pen.group(key, 0, 0, () => {
+    pen.rect(`${key}:glow`, { x: x - r - 4, y: y - r - 4, width: 2 * r + 8, height: 2 * r + 8, rx: r + 4, fill: LAMP[state], opacity: 0.22 });
+    pen.rect(`${key}:dot`, { x: x - r, y: y - r, width: 2 * r, height: 2 * r, rx: r, fill: LAMP[state] });
+  });
+}
+
+/** Окно редактора с SQL: строки — уже раскрашенные куски. Возвращает размер окна. */
+export function sqlWindow(
+  pen: Pen, key: string, lines: Span[][],
+  o: { x: number; bottom: number; size?: number; attrs?: Attrs },
+): { w: number; h: number } {
+  const size = o.size ?? SIZE.body;
+  const font = { "font-size": size, "font-family": FONT.mono };
+  const spans = lines.flatMap((line, i) => (i === 0 ? line : [{ text: "\n" }, ...line]));
+  const m = pen.measure(spans, font);
+  const top = 28;
+  const w = Math.ceil(m.width) + 36;
+  const h = top + Math.ceil(m.height) + 12;
+  const y = o.bottom - h;
+  pen.group(key, o.x, y, () => {
+    panel(pen, `${key}:win`, { x: 0, y: 0, w, h, fill: "#11172e", rx: 12 });
+    ["#ff5f57", "#febc2e", "#28c840"].forEach((fill, i) =>
+      pen.rect(`${key}:dot${i}`, { x: 16 + i * 16, y: 10, width: 9, height: 9, rx: 4.5, fill, opacity: 0.75 }));
+    pen.text(`${key}:t`, { x: 18, y: top + size * 0.8, ...font }, spans);
+  }, o.attrs);
+  return { w, h };
+}
+
+/** Полноэкранная плашка главы: надзаголовок и вопрос. */
+export function plate(pen: Pen, key: string, head: string, question: string, stage: { w: number; h: number }): void {
+  pen.group(key, 0, 0, () => {
+    pen.rect(`${key}:bg`, { x: 0, y: 0, width: stage.w, height: stage.h, fill: COLOR.bg, opacity: 0.96 });
+    pen.text(`${key}:head`, {
+      x: stage.w / 2, y: stage.h / 2 - 50, "font-size": SIZE.title, "font-family": FONT.sans, "font-weight": 600,
+      fill: COLOR.muted, "text-anchor": "middle", "letter-spacing": 6,
+    }, head.toUpperCase());
+    pen.text(`${key}:q`, {
+      x: stage.w / 2, y: stage.h / 2 + 30, "font-size": SIZE.plate, "font-family": FONT.sans, "font-weight": 700,
+      fill: COLOR.ink, "text-anchor": "middle",
+    }, question);
+  });
+}

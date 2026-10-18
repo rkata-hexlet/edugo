@@ -202,7 +202,7 @@ function cas(w: World, who: ActorId, id: number): void {
   const a = w.actors[who];
   updateTask(w, who, id, { status: "in_progress" }, { status: "new" });
   if (a.affected === 1) a.carrying = id;
-  sql(w, who, `BEGIN;\n${SQL.takeIfNew(id)}  ${a.pending ? "⏳ ждёт COMMIT" : rows(a.affected ?? 0)}`);
+  sql(w, who, `BEGIN;\n${SQL.takeIfNew(id)}  ${a.pending ? "-- ждёт COMMIT" : rows(a.affected ?? 0)}`);
 }
 
 /** COMMIT; ждавшие UPDATE просыпаются и получают свой результат. */

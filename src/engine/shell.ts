@@ -40,7 +40,7 @@ export interface ShellEvents {
 /**
  * Оболочка плеера: кадр 16:9 по размеру окна, подпись и субтитры оверлеем внутри кадра (попадают
  * в запись), панель с прогрессом по актам (прячется при проигрывании), обложка, финальная карточка,
- * dev-полоса (`?dev` / D) со списком актов и номером кадра. Состояние держит плеер — здесь только DOM.
+ * dev-полоса (`?dev` / D) со списком актов и номером кадра; `?capture` — режим записи без панели. Состояние держит плеер — здесь только DOM.
  */
 export class Shell {
   readonly stage: SVGSVGElement;
@@ -130,7 +130,10 @@ export class Shell {
       this.swallowTap = e.pointerType !== "mouse" && frame.classList.contains("idle");
       this.wake();
     });
-    this.dev(new URLSearchParams(location.search).has("dev"));
+    const params = new URLSearchParams(location.search);
+    this.dev(params.has("dev"));
+    // Запись (`?capture`): только кадр с подписью и субтитрами — без панели, обложки и dev-полосы.
+    this.$<HTMLElement>(".player").classList.toggle("capture", params.has("capture"));
   }
 
   /** Показать кадр index: прогресс, акт, подпись, субтитр, dev-счётчик. */
