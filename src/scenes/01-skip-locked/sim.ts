@@ -116,6 +116,8 @@ export interface World {
   issued: number; // сколько токенов выдано
   queued: number; // счётчик очереди за блокировками
   events: SimEvent[]; // что случилось в этом кадре
+  frame: number; // номер кадра — ключ разовых эффектов отрисовки (новый ключ = эффект проигрывается)
+  scene: number; // номер сцены («свежий стол») — строки въезжают заново
 }
 
 const TOKENS = ["7f3a", "c21e", "9b04", "e6d1", "40ac", "d58f"];
@@ -155,6 +157,8 @@ export function world(rowCount = 6): World {
     issued: 0,
     queued: 0,
     events: [],
+    frame: 0,
+    scene: 0,
   };
 }
 

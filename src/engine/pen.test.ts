@@ -94,6 +94,19 @@ describe("SvgPen: уход", () => {
   });
 });
 
+describe("SvgPen: перемотка без движения", () => {
+  it("instant: новые узлы — без анимации навсегда, класс no-anim снят после кадра", () => {
+    pen.frame(() => pen.rect("a", { id: "a" }), { instant: true });
+    expect(svg.querySelector<SVGRectElement>("#a")!.style.animation).toBe("none");
+    expect(svg.classList.contains("no-anim")).toBe(false);
+    pen.frame(() => {
+      pen.rect("a", { id: "a" });
+      pen.rect("b", { id: "b" });
+    });
+    expect(svg.querySelector<SVGRectElement>("#b")!.style.animation).toBe("");
+  });
+});
+
 describe("SvgPen: группа", () => {
   it("transform: поворот и масштаб вокруг origin, один и тот же список функций", () => {
     pen.frame(() => pen.group("g", 10, 20, () => {}, { id: "g" }));

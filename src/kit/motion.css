@@ -1,0 +1,145 @@
+/* Словарь движений серии (motion-designer v4.3). Все изменения кадра — в первые 450 мс: голос
+   начинается с 500 мс. Класс вешает эпизод по World.events или состоянию кадра; разовый эффект —
+   новый ключ узла (новый узел = анимация проигрывается один раз). Перемотка: плеер ставит .no-anim,
+   а новые узлы перемотки получают animation: none (pen.ts). */
+
+/* Анимируемые группы — только со сдвигом (без rotate/scale в transform): индивидуальные свойства
+   scale/translate складываются с transform, а точка отсчёта — центр самого элемента. */
+.stage [class*="fx-"] {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+/* Приглушение и смена цвета — плавно. */
+.stage .mv {
+  transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.35s ease;
+}
+.stage text,
+.stage line,
+.stage path {
+  transition: opacity 0.35s ease;
+}
+.stage rect {
+  transition: fill 0.3s, stroke 0.3s, opacity 0.35s ease;
+}
+
+/* Появление: пузыри, лампы, значки. */
+@keyframes fx-pop {
+  0% { scale: 0.55; opacity: 0; }
+  70% { scale: 1.06; opacity: 1; }
+  100% { scale: 1; }
+}
+.stage .fx-pop {
+  animation: fx-pop 0.28s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+/* Ярлык-термин и строка письма: въезд слева. */
+@keyframes fx-slide {
+  from { translate: -24px 0; opacity: 0; }
+  to { translate: 0 0; opacity: 1; }
+}
+.stage .fx-slide {
+  animation: fx-slide 0.35s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+/* Плашка главы и титр: проявление с подъёмом. */
+@keyframes fx-rise {
+  from { translate: 0 14px; opacity: 0; }
+  to { translate: 0 0; opacity: 1; }
+}
+.stage .fx-rise {
+  animation: fx-rise 0.4s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+@keyframes fx-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.stage .fx-fade {
+  animation: fx-fade 0.35s ease both;
+}
+
+/* Штамп перемотки: удар печати. */
+@keyframes fx-stamp {
+  0% { scale: 1.5; opacity: 0; rotate: -4deg; }
+  60% { scale: 0.96; opacity: 1; rotate: 1deg; }
+  100% { scale: 1; rotate: 0deg; }
+}
+.stage .fx-stamp {
+  animation: fx-stamp 0.26s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+/* Стрелка прорисовывается от пода к цели: pathLength=1, штрих 1 — от смещения 1 к 0. */
+@keyframes fx-draw {
+  from { stroke-dashoffset: 1; }
+  to { stroke-dashoffset: 0; }
+}
+.stage .fx-draw {
+  stroke-dasharray: 1;
+  animation: fx-draw 0.35s cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+/* Персонажи. Выиграл — подпрыгнул; проиграл — тряска; проснулся — вздрогнул; кивок — слон на COMMIT. */
+@keyframes fx-hop {
+  0%, 100% { translate: 0 0; }
+  40% { translate: 0 -10px; }
+  70% { translate: 0 2px; }
+}
+.stage .fx-hop {
+  animation: fx-hop 0.42s cubic-bezier(0.3, 0.7, 0.4, 1) both;
+}
+@keyframes fx-shake {
+  0%, 100% { translate: 0 0; }
+  20% { translate: -6px 0; }
+  40% { translate: 5px 0; }
+  60% { translate: -4px 0; }
+  80% { translate: 2px 0; }
+}
+.stage .fx-shake {
+  animation: fx-shake 0.36s ease both;
+}
+@keyframes fx-jolt {
+  0%, 100% { scale: 1 1; }
+  35% { scale: 1.08 0.9; }
+  65% { scale: 0.96 1.06; }
+}
+.stage .fx-jolt {
+  animation: fx-jolt 0.32s ease both;
+}
+@keyframes fx-nod {
+  0%, 100% { translate: 0 0; rotate: 0deg; }
+  45% { translate: 0 4px; rotate: 6deg; }
+}
+.stage .fx-nod {
+  animation: fx-nod 0.4s ease both;
+}
+@keyframes fx-pulse {
+  0%, 100% { scale: 1; }
+  40% { scale: 1.12; }
+}
+.stage .fx-pulse {
+  animation: fx-pulse 0.4s ease both;
+}
+
+/* Свежий стол: строки въезжают каскадом сверху вниз. */
+.stage .fx-cascade > g {
+  animation: fx-slide 0.3s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.stage .fx-cascade > g:nth-child(2) { animation-delay: 0.03s; }
+.stage .fx-cascade > g:nth-child(3) { animation-delay: 0.06s; }
+.stage .fx-cascade > g:nth-child(4) { animation-delay: 0.09s; }
+.stage .fx-cascade > g:nth-child(5) { animation-delay: 0.12s; }
+.stage .fx-cascade > g:nth-child(6) { animation-delay: 0.15s; }
+
+/* Перемотка и прыжки по кадрам — без движения. */
+.stage.no-anim *,
+.stage.no-anim *::before {
+  transition: none !important;
+  animation: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stage [class*="fx-"],
+  .stage .fx-cascade > g {
+    animation: none !important;
+  }
+}

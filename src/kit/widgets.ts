@@ -107,7 +107,7 @@ export function lamp(pen: Pen, key: string, x: number, y: number, state: LampSta
     pen.rect(`${key}:glow`, { x: x - r - 4, y: y - r - 4, width: 2 * r + 8, height: 2 * r + 8, rx: r + 4, fill: LAMP[state], opacity: 0.22 });
     pen.rect(`${key}:dot`, { x: x - r, y: y - r, width: 2 * r, height: 2 * r, rx: r, fill: LAMP[state] });
     icon(pen, `${key}:g`, glyph[state], x - r * 0.75, y - r * 0.75, r * 1.5, COLOR.bg);
-  });
+  }, { class: "fx-pop" }); // новая оценка на табло вспыхивает
 }
 
 /** Окно редактора с SQL: строки — уже раскрашенные куски. Возвращает размер окна. */
@@ -142,7 +142,7 @@ export function plate(pen: Pen, key: string, head: string, question: string, sta
     }, head.toUpperCase());
     pen.text(`${key}:q`, {
       x: stage.w / 2, y: stage.h / 2 + 30, "font-size": SIZE.plate, "font-family": FONT.sans, "font-weight": 700,
-      fill: COLOR.ink, "text-anchor": "middle",
+      fill: COLOR.ink, "text-anchor": "middle", class: "fx-rise",
     }, question);
-  });
+  }, { class: "fx-fade" });
 }

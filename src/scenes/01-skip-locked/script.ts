@@ -102,6 +102,7 @@ class Director {
   private chapterNo: number | null = null;
   private board: Board | null = null;
   private doubtOf: ActorId | null = null;
+  private sceneNo = 0;
 
   /** Новая сцена (свежие 6 задач); ярлык переживает смену сцены внутри акта и сбрасывается на новом акте. */
   scene(act: string, w: World = world()): void {
@@ -109,6 +110,7 @@ class Director {
     this.act = act;
     this.w = w;
     this.fresh = this.steps.length > 0;
+    this.sceneNo++;
   }
 
   /** Ярлык акта — со следующего кадра, когда механика уже показана. */
@@ -155,6 +157,8 @@ class Director {
     w.board = structuredClone(this.board);
     if (w.board && opts.attempt !== undefined) w.board.focus = opts.attempt;
     w.doubt = this.doubtOf;
+    w.frame = this.steps.length;
+    w.scene = this.sceneNo;
     if (w.card || w.plate) w.events.push({ kind: "card" });
     const state = structuredClone(w);
     this.steps.push({
@@ -339,7 +343,7 @@ export function buildSteps(): Step<World>[] {
   d.chapter(1, ["без дублей", "без ожидания"]);
   d.shot("", (w) => {
     w.plate = "КЕЙС 1 из 2\nКак раздать задачи и не подраться";
-  }, { hold: 2.5, voice: "В первой главе раздаём задачи без драки и смотрим на дубли и взаимное ожидание." });
+  }, { hold: 2.5, voice: "В первом кейсе раздаём задачи и следим за двумя вещами: нет ли дублей и не ждёт ли кто-то зря." });
 
   // 1.1 Гонка.
   d.scene(ACT.race);
@@ -483,7 +487,7 @@ export function buildSteps(): Step<World>[] {
     w.db = "Починили? Посмотрим.";
   }, {
     hold: 3.5,
-    voice: "Глава вторая: до сих пор поды были живы, а теперь один замолчит. Жив ли он, и что будет с задачей и письмами?",
+    voice: "Во втором кейсе один под замолчит, и жив ли он, неизвестно. Следим, не застрянет ли задача и одно ли уйдёт письмо.",
   });
 
   // 2.1 Завис или упал → lease.
@@ -531,7 +535,7 @@ export function buildSteps(): Step<World>[] {
   });
   d.shot("", undefined, {
     focus: ["board"], attempt: 0,
-    voice: "Выходит, оба варианта плохи по-своему. Транзакция обходится дорого, и задача ждёт зависшего пода, хотя после падения блокировку база снимет сама.",
+    voice: "Выходит, оба варианта плохи по-своему: транзакция обходится дорого, и задача ждёт зависшего пода.",
   });
   d.shot("", undefined, {
     focus: ["board"], attempt: 1,
@@ -588,10 +592,10 @@ export function buildSteps(): Step<World>[] {
     w.clash = { row: 1, by: "B" };
   }, {
     sql: true, focus: ["B", "row:1", "sql"],
-    voice: "Отметку B делает после письма, как и положено, но база её не пускает: токен в строке чужой. А письмо уже ушло, и отозвать его нельзя.",
+    voice: "B ставит отметку после письма, но база её не пускает: токен в строке чужой. А письмо уже ушло, и отозвать его нельзя.",
   });
   const afterClash = structuredClone(d.w);
-  d.shot("В таблице одна строка. Писем — два.", (w) => {
+  d.shot("", (w) => {
     release(w, "B");
     w.actors.B.thought = null;
     send(w, "C", 1);
@@ -602,7 +606,7 @@ export function buildSteps(): Step<World>[] {
     voice: "Новый владелец C тоже отправляет письмо. В итоге строка в таблице одна, а писем два. База уберегла свою запись, но письмо ей не подвластно.",
   });
   d.scene(ACT.zombie, structuredClone(beforeZombie)); // то же самое, но письма с ключом
-  d.attempt("lease + Idempotency-Key");
+  d.attempt("lease + ключ");
   d.shot("", (w) => {
     w.stamp = "⟲ Вернёмся: B ещё не проснулся";
     w.keyed = true;
@@ -622,7 +626,7 @@ export function buildSteps(): Step<World>[] {
   d.term("At-least-once · idempotency key");
   d.shot("", undefined, {
     verdict: ["green", "green"], focus: ["board"],
-    voice: "Без ключа не обойтись: раз медленного не отличить от мёртвого, задачу иногда забирают у живого, и она выполняется дважды. Это at-least-once, и повторы гасит получатель.",
+    voice: "Раз медленного не отличить от мёртвого, задачу иногда забирают у живого, а терять письмо нельзя. Получается at-least-once: повторы неизбежны, и гасит их получатель.",
   });
 
   // Итог: каждый образ пересыгран — те же кадры перехвата, отказа по токену и повтора в Почте.

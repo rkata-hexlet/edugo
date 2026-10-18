@@ -25,6 +25,7 @@ export class SvgPen implements Pen {
   private leaving = new Set<SVGElement>();
   private parent: SVGElement;
   private ruler?: SVGTextElement;
+  private instant = false;
   private measured = new Map<string, { width: number; height: number }>();
 
   constructor(private root: SVGSVGElement) {
@@ -39,15 +40,22 @@ export class SvgPen implements Pen {
     this.parent = this.layers.main;
   }
 
-  /** Нарисовать кадр. `instant` — без анимации ухода (перемотка, прыжок по актам). */
+  /**
+   * Нарисовать кадр. `instant` — перемотка, прыжок по актам: без переходов, анимаций и угасания.
+   * Переходы гасит класс `.no-anim` на время кадра (снимаем после принудительного пересчёта стилей —
+   * тогда изменения уже применены и переход не запустится); новым узлам — `animation: none` навсегда,
+   * иначе их анимация стартовала бы в момент снятия класса.
+   */
   frame(draw: () => void, { instant = false } = {}): void {
     this.used.clear();
     this.drawn.clear();
     this.placed.clear();
     this.parent = this.layers.main;
+    this.instant = instant;
     if (instant) {
       for (const node of this.leaving) node.remove();
       this.leaving.clear();
+      this.root.classList.add("no-anim");
     }
     draw();
     const gone = [...this.nodes].filter(([key]) => !this.used.has(key));
@@ -60,6 +68,10 @@ export class SvgPen implements Pen {
       if (goneNodes.has(node.parentNode as SVGElement)) continue;
       if (instant) node.remove();
       else this.leave(node);
+    }
+    if (instant) {
+      this.root.getBoundingClientRect(); // пересчитать стили, пока переходы выключены
+      this.root.classList.remove("no-anim");
     }
   }
 
@@ -176,6 +188,7 @@ export class SvgPen implements Pen {
     if (!node || node.tagName !== tag) {
       node?.remove();
       node = document.createElementNS(NS, tag) as SVGElement;
+      if (this.instant) node.style.animation = "none";
       this.nodes.set(key, node);
       this.attrNames.delete(key);
       this.texts.delete(key);

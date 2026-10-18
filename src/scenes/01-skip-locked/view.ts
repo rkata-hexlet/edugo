@@ -6,7 +6,7 @@ import { ACTOR, COLOR, DIM, FONT, SIZE } from "../../kit/theme";
 import { bubble, lamp, panel, pill, plate, sqlWindow } from "../../kit/widgets";
 import { clock } from "./script";
 import {
-  ACTORS, LEASE_TTL, duplicates, stuckRows, waitingFor, type Actor, type ActorId, type Focus, type Row, type World,
+  ACTORS, LEASE_TTL, duplicates, stuckRows, waitingFor, type Actor, type ActorId, type Focus, type Row, type SimEvent, type World,
 } from "./sim";
 
 // Поды стоят на месте; что они делают, говорят стрелки, цвет и значки — только из состояния кадра.
@@ -28,6 +28,8 @@ const BOTTOM = 650; // низ титра и окна SQL
 const DB = { x: 100, w: 130 }; // табличка Postgres справа от слона
 
 const MONO = { "font-family": FONT.mono, "font-size": SIZE.body };
+/** Сплошная стрелка прорисовывается от пода к цели при появлении (motion.css). */
+const DRAW = { pathLength: 1, class: "fx-draw" };
 const SANS = { "font-family": FONT.sans, "font-size": SIZE.body };
 
 const rowY = (id: number) => TABLE.y + (id - 1) * (TABLE.rowH + TABLE.gap);
@@ -38,6 +40,9 @@ const podMid = (id: ActorId) => POD_Y[id] + POD.h / 2;
 const lit = (w: World, ...ids: Focus[]) => !w.focus || ids.some((id) => w.focus!.includes(id));
 const fade = (w: World, ...ids: Focus[]) => ({ opacity: lit(w, ...ids) ? 1 : DIM });
 const carriers = (w: World, row: number) => ACTORS.filter((id) => w.actors[id].carrying === row);
+const happened = (w: World, kind: SimEvent["kind"], by?: ActorId) => w.events.some((e) => e.kind === kind && (by === undefined || e.by === by));
+/** Разовый эффект: при fx — новый ключ (узел создаётся заново, анимация проигрывается), иначе — постоянный. */
+const once = (key: string, w: World, fx: string | null): [string, Attrs] => (fx ? [`${key}:fx${w.frame}`, { class: fx }] : [key, {}]);
 
 /** Иконка + текст в строку; (x, y) — базовая линия текста. Возвращает правый край. */
 function iconText(pen: Pen, key: string, name: IconName, x: number, y: number, text: string, color: string, attrs: Attrs = SANS): number {
@@ -57,12 +62,12 @@ function drawRow(pen: Pen, w: World, r: Row, stuck: Set<number>): void {
   const holder = r.token ? ACTORS.find((id) => w.actors[id].token === r.token) : owners.length === 1 ? owners[0] : undefined;
   const ownerTint = r.status === "in_progress" && holder ? ACTOR[holder].tint : null;
   const statusFill = r.draft ? "#3b3720" : r.status === "done" ? "#163a33" : ownerTint ?? (r.status === "in_progress" ? COLOR.surface2 : COLOR.surface);
-  const expired = r.leaseUntil !== null && r.leaseUntil < w.clock && r.status === "in_progress";
   const width = tableEnd(w) - TABLE.x;
   const base = 25; // базовая линия текста в строке
   pen.group(`row:${r.id}`, TABLE.x, rowY(r.id), () => {
     cols(w).forEach((col, i) => {
-      const fill = i === 1 ? statusFill : i === 3 && expired ? "#4a1f2a" : COLOR.surface;
+      // Просрочка — только на полосе срока (курсор за дедлайном): сама строка не меняется.
+      const fill = i === 1 ? statusFill : COLOR.surface;
       pen.rect(`row:${r.id}:c${i}`, {
         x: col.x, width: col.w, height: TABLE.rowH, fill, stroke: i === 1 && r.draft ? COLOR.warn : COLOR.line, "stroke-width": 1.5,
         ...(i === 1 && r.draft ? { "stroke-dasharray": "6 4" } : {}),
@@ -73,9 +78,11 @@ function drawRow(pen: Pen, w: World, r: Row, stuck: Set<number>): void {
     else pen.text(`row:${r.id}:st`, { x: COLS[1].x + 12, y: base, fill: COLOR.ink, ...MONO }, status);
     if (w.leaseCols) {
       // Талон — цветом пода, которому выдан.
-      if (r.token) iconText(pen, `row:${r.id}:tok`, "ticket", COLS[2].x + 10, base, r.token, tokenOwnerColor(w, r.token), MONO);
+      // Новый токен (захват, перехват) появляется заметно: ключ узла — сам токен.
+      if (r.token) pen.group(`row:${r.id}:tok:${r.token}`, 0, 0, () =>
+        iconText(pen, `row:${r.id}:tok`, "ticket", COLS[2].x + 10, base, r.token!, tokenOwnerColor(w, r.token!), MONO), { class: "fx-pop" });
       else pen.text(`row:${r.id}:tok`, { x: COLS[2].x + 12, y: base, fill: COLOR.faint, ...MONO }, "—");
-      pen.text(`row:${r.id}:lease`, { x: COLS[3].x + 12, y: base, fill: expired ? COLOR.error : COLOR.ink, ...MONO },
+      pen.text(`row:${r.id}:lease`, { x: COLS[3].x + 12, y: base, fill: COLOR.ink, ...MONO },
         r.leaseUntil !== null ? clock(r.leaseUntil) : "—");
       if (r.leaseUntil !== null) drawLeaseBar(pen, w, r);
     }
@@ -97,7 +104,7 @@ function drawRow(pen: Pen, w: World, r: Row, stuck: Set<number>): void {
         iconText(pen, `row:${r.id}:vs:a`, "ticket", 12, 25, mine, ACTOR[loser].color, MONO);
         pen.text(`row:${r.id}:vs:ne`, { x: 104, y: 26, ...SANS, "font-size": 22, "font-weight": 700, fill: COLOR.error }, "≠");
         iconText(pen, `row:${r.id}:vs:b`, "ticket", 128, 25, r.token!, tokenOwnerColor(w, r.token!), MONO);
-      });
+      }, { class: "fx-pop" });
     }
     if (seenByRace) {
       pen.rect(`row:${r.id}:race`, {
@@ -145,7 +152,7 @@ function drawLeaseBar(pen: Pen, w: World, r: Row): void {
     pen.group(`row:${r.id}:check:${id}`, cx, y + 2, () => {
       pen.rect(`row:${r.id}:check:${id}:bg`, { x: -10, y: -10, width: 20, height: 20, rx: 10, fill: ACTOR[id].color });
       icon(pen, `row:${r.id}:check:${id}:i`, "check", -8, -8, 16, COLOR.bg);
-    });
+    }, { class: "fx-pop" });
   }
 }
 
@@ -159,7 +166,10 @@ function drawTable(pen: Pen, w: World): void {
     else iconText(pen, "left", "check", TABLE.x, 86, label, COLOR.ok, { ...SANS, "font-weight": 600 });
   }, fade(w, "table"));
   const stuck = new Set(stuckRows(w));
-  for (const r of w.rows) drawRow(pen, w, r, stuck);
+  // Свежий стол — строки въезжают каскадом: смена сцены видна как смена, а не как сбой.
+  pen.group(`rows:${w.scene}`, 0, 0, () => {
+    for (const r of w.rows) drawRow(pen, w, r, stuck);
+  }, happened(w, "page") ? { class: "fx-cascade" } : {});
 }
 
 /** Эмоция пода — из состояния кадра. */
@@ -188,6 +198,8 @@ function drawPodStatus(pen: Pen, w: World, a: Actor): void {
   if (w.events.some((e) => e.kind === "zero" && e.by === a.id)) items.push(["cross", "0 строк", COLOR.error]);
   if (a.scan?.waitingFor != null) items.push(["hourglass", `ждёт ${w.clock - a.scan.since} с`, color]);
   else if (a.pending) items.push(["hourglass", "ждёт", color]);
+  // Ключ идемпотентности — номер заказа, а не токен: у B и C он один и тот же (tech-expert).
+  if (w.keyed && a.carrying !== null) items.push(["key", `заказ ${a.carrying}`, COLOR.ink]);
   let x = BOB.w + 14;
   items.forEach(([name, text, c], i) => {
     x = iconText(pen, `pod:${a.id}:st${i}`, name, x, 52, text, c) + 10;
@@ -203,17 +215,29 @@ function drawPod(pen: Pen, w: World, a: Actor): void {
       dome(pen, `pod:${a.id}:dome`, { x: -10, y: -24, w: POD.w + 6, h: POD.h + 30, color });
       iconText(pen, `pod:${a.id}:mu`, "lock", POD.w - 62, -4, "mu", color, MONO);
     }
-    bob(pen, `pod:${a.id}:bob`, { x: 0, y: 0, color, tint, letter: a.id, mood, look: podLook(w, a), ghost: !a.present, dashed: mood === "wait" });
+    // Эмоция — движением: выиграл — подпрыгнул, проиграл — тряска, проснулся — вздрогнул, упал — проявился призрак.
+    // Упал: в кадре падения — призрак; дальше — серый силуэт, как у зависшего, только без «z»:
+    // со стороны «упал» и «завис» не отличить (нить главы 2), зритель знает правду из кадра падения.
+    const crashedNow = !a.present && happened(w, "crash");
+    const unknown = !a.present && !crashedNow;
+    const fx = mood === "won" ? "fx-hop" : mood === "lost" ? "fx-shake" : happened(w, "unfreeze", a.id) ? "fx-jolt"
+      : crashedNow ? "fx-fade" : null;
+    const [fxKey, fxAttrs] = once(`pod:${a.id}:fx`, w, fx);
+    pen.group(fxKey, 0, 0, () =>
+      bob(pen, `pod:${a.id}:bob`, {
+        x: 0, y: 0, color, tint, letter: a.id, mood: unknown ? "frozen" : mood, look: podLook(w, a), ghost: crashedNow, dashed: mood === "wait",
+      }),
+    fxAttrs);
     const nameColor = !a.present || a.frozen ? COLOR.muted : color;
     pen.text(`pod:${a.id}:name`, { x: BOB.w + 14, y: 24, ...SANS, "font-size": SIZE.say, "font-weight": 700, fill: nameColor },
-      a.present ? a.label : `${a.label} · упал`);
+      crashedNow ? `${a.label} · упал` : a.label);
     // «?» сбоку, а не над головой: вопрос задают остальные («жив ли он?»), а не сам под. Виден и у
     // упавшего — снаружи не отличить (нить главы 2).
     if (w.doubt === a.id) icon(pen, `pod:${a.id}:doubt`, "question", -40, -34, 34, COLOR.warn);
     if (!a.present) return;
     if (a.token) iconText(pen, `pod:${a.id}:tok`, "ticket", BOB.w + 92, 24, a.token, color, MONO);
     drawPodStatus(pen, w, a);
-    if (w.keyed) icon(pen, `pod:${a.id}:key`, "key", BOB.w + (a.token ? 166 : 92), 8, 20, COLOR.ink); // письма пойдут с ключом
+
     if (a.frozen) icon(pen, `pod:${a.id}:zz`, "sleep", 44, -34, 30, COLOR.muted); // завис — видно издалека
     if (w.events.some((e) => e.kind === "unfreeze" && e.by === a.id)) icon(pen, `pod:${a.id}:wake`, "bang", 46, -36, 28, COLOR.warn);
   }, fade(w, a.id));
@@ -241,12 +265,12 @@ function drawPodArrows(pen: Pen, w: World): void {
       pen.line(`arr:${id}:hold`, {
         x1: from.x, y1: from.y, x2: end, y2: rowMid(a.carrying),
         stroke: color, "stroke-width": stale ? 2.5 : 3.5, "stroke-linecap": "round", marker: "arrow",
-        opacity: stale ? op * 0.5 : op, ...(stale ? { "stroke-dasharray": "4 7" } : {}),
+        opacity: stale ? op * 0.5 : op, ...(stale ? { "stroke-dasharray": "4 7" } : DRAW),
       });
     } else if (a.seen !== null) {
       pen.line(`arr:${id}:look`, {
         x1: from.x, y1: from.y, x2: end, y2: rowMid(a.seen),
-        stroke: COLOR.muted, "stroke-width": 2, "stroke-linecap": "round", marker: "arrow", opacity: op,
+        stroke: COLOR.muted, "stroke-width": 2, "stroke-linecap": "round", marker: "arrow", opacity: op, ...DRAW,
       });
     }
   }
@@ -267,11 +291,12 @@ function drawPodArrows(pen: Pen, w: World): void {
 /** Почта: журнал писем; дубль — красным, повтор с ключом — значком ↺ и серым. */
 function drawMail(pen: Pen, w: World): void {
   drawMailArrows(pen, w); // под Почтой: стрелка упирается в журнал, а не перечёркивает его
-  pen.group("mail", 0, 0, () => drawMailBody(pen, w), fade(w, "mail"));
+  const [mailKey, mailFx] = once("mail", w, happened(w, "duplicate") ? "fx-shake" : null);
+  pen.group(mailKey, 0, 0, () => drawMailBody(pen, w), { ...fade(w, "mail"), ...mailFx });
   // Реплика Почты — в журнале, хвостом к последнему письму: ответ про него.
   if (w.mail) {
     const y = mailLineY(Math.max(0, w.letters.length - 1)) + 10;
-    pen.layer("top", () => bubble(pen, "mail:say", w.mail!, { x: MAIL.x + MAIL.w - 60, y, tail: "up", align: "end" }));
+    pen.layer("top", () => bubble(pen, "mail:say", w.mail!, { x: MAIL.x + MAIL.w - 60, y, tail: "up", align: "end", attrs: { class: "fx-pop" } }));
   }
 }
 
@@ -291,7 +316,7 @@ function drawMailArrows(pen: Pen, w: World): void {
       // От правого края слота, ниже талона: иначе стрелка вверх к журналу перечеркнёт «🎫 7f3a».
       x1: POD.x + POD.w, y1: POD_Y[e.by] + 42, x2: MAIL.x - 6, y2: mailLineY(line) - 6,
       stroke: color, "stroke-width": 3, "stroke-linecap": "round", marker: "arrow",
-      ...(e.kind === "replay" ? { "stroke-dasharray": "5 6" } : {}),
+      ...(e.kind === "replay" ? { "stroke-dasharray": "5 6" } : DRAW),
       ...fade(w, "mail", e.by),
     });
   });
@@ -312,13 +337,15 @@ function drawMailBody(pen: Pen, w: World): void {
     // Повтор, погашенный по ключу, — итог эпизода: зелёным, как «всё хорошо».
     const fill = l.replayed ? COLOR.ok : again ? COLOR.error : COLOR.ink;
     const key = `mail:l${i}`;
-    let x = iconText(pen, key, l.replayed ? "replay" : "mail", MAIL.x + 16, y, `заказ ${l.row}`, fill, MONO) + 8;
-    if (l.keyed) {
-      icon(pen, `${key}:key`, "key", x, y - 16, 20, COLOR.ink); // не жёлтый: жёлтый — цвет пода B
-      x += 28;
-    }
-    if (l.replayed) pen.text(`${key}:note`, { x, y, ...SANS, fill }, "повтор");
-    else if (again) pen.text(`${key}:note`, { x, y, ...SANS, "font-weight": 700, fill }, "ДУБЛЬ");
+    pen.group(`${key}:row`, 0, 0, () => {
+      let x = iconText(pen, key, l.replayed ? "replay" : "mail", MAIL.x + 16, y, `заказ ${l.row}`, fill, MONO) + 8;
+      if (l.keyed) {
+        icon(pen, `${key}:key`, "key", x, y - 16, 20, COLOR.ink); // не жёлтый: жёлтый — цвет пода B
+        x += 28;
+      }
+      if (l.replayed) pen.text(`${key}:note`, { x, y, ...SANS, fill }, "повтор");
+      else if (again) pen.text(`${key}:note`, { x, y, ...SANS, "font-weight": 700, fill }, "ДУБЛЬ");
+    }, { class: "fx-slide" }); // новое письмо въезжает в журнал
   });
 }
 
@@ -365,7 +392,7 @@ function drawCard(pen: Pen, text: string): void {
   pen.group("card", TABLE.x, BOTTOM - h, () => {
     panel(pen, "card", { x: 0, y: 0, w: wdt, h, fill: COLOR.surface2, stroke: COLOR.ink, rx: 16 });
     pen.text("card:t", { x: 32, y: 24 + 22 * 0.8 + (h - 48 - m.height) / 2, ...font, fill: COLOR.ink }, text);
-  });
+  }, { class: "fx-rise" });
 }
 
 /** Штамп перехода: мир перемотан («⟲ вернёмся…»). Всегда на одном месте — в шапке, между
@@ -379,21 +406,25 @@ function drawStamp(pen: Pen, text: string): void {
     pen.rect("stamp:bg", { width: wdt, height: 40, rx: 20, fill: COLOR.warn });
     icon(pen, "stamp:i", "replay", 14, 9, 22, COLOR.bg);
     pen.text("stamp:t", { x: 44, y: 27, ...font, fill: COLOR.bg }, label);
-  });
+  }, { class: "fx-stamp" });
 }
 
 function drawHeader(pen: Pen, w: World): void {
   // Postgres — слон-«кладовщик» и табличка с именем.
-  elephant(pen, "db:face", { x: TABLE.x + 4, y: 8, talking: !!w.db, scale: 1.08 });
+  // Слон кивает на COMMIT: база зафиксировала.
+  const [dbKey, dbFx] = once("db:nod", w, happened(w, "commit") ? "fx-nod" : null);
+  pen.group(dbKey, 0, 0, () => elephant(pen, "db:face", { x: TABLE.x + 4, y: 8, talking: !!w.db, scale: 1.08 }), dbFx);
   panel(pen, "db", { x: DB.x, y: 20, w: DB.w, h: 46, rx: 14, fill: COLOR.surface2, stroke: COLOR.postgres });
   pen.text("db:name", { x: DB.x + 16, y: 50, ...SANS, "font-size": SIZE.say, "font-weight": 700, fill: COLOR.ink }, "Postgres");
   let x = POD.x;
   if (w.chapter) x += pill(pen, "chapter", `КЕЙС ${w.chapter}`, { x, y: 22, fill: "none", color: COLOR.ink, stroke: COLOR.ink }) + 12;
   pill(pen, "rc", "READ COMMITTED", { x, y: 22, fill: COLOR.surface2, color: COLOR.muted, mono: true, bold: false });
-  pen.group("clock", 0, 0, () => {
+  const [clockKey, clockFx] = once("clock", w, happened(w, "clock") ? "fx-pulse" : null);
+  pen.group(clockKey, 0, 0, () => {
     icon(pen, "clock:i", "clock", 1080, 26, 26, COLOR.muted);
     pen.text("clock:t", { x: 1114, y: 48, "font-family": FONT.mono, "font-size": 24, "font-weight": 700, fill: COLOR.ink }, clock(w.clock));
-  }, fade(w, "clock"));
+    pen.text("clock:label", { x: 1240, y: 88, ...SANS, fill: COLOR.muted, "text-anchor": "end" }, "часы БД");
+  }, { ...fade(w, "clock"), ...clockFx });
 }
 
 export function render(pen: Pen, w: World): void {
@@ -401,7 +432,7 @@ export function render(pen: Pen, w: World): void {
   drawHeader(pen, w);
   drawTable(pen, w);
   // Ярлык-термин — контурный: залитые светлые пилюли — это реплики.
-  if (w.term) pill(pen, "term", w.term, { x: POD.x, y: 76, fill: COLOR.surface2, color: COLOR.ink, stroke: COLOR.ink, mono: true });
+  if (w.term) pill(pen, "term", w.term, { x: POD.x, y: 76, fill: COLOR.surface2, color: COLOR.ink, stroke: COLOR.ink, mono: true, attrs: { class: "fx-slide" } });
   drawBoard(pen, w);
   drawSql(pen, w);
   drawPodArrows(pen, w); // под фигурами: линия уходит за бокс, а не перечёркивает его
@@ -411,9 +442,9 @@ export function render(pen: Pen, w: World): void {
     for (const id of ACTORS) {
       const a = w.actors[id];
       // Реплика пода — слева от него, поверх стрелок: над подом нет места из-за антенны соседа.
-      if (a.present && a.say) bubble(pen, `say:${id}`, a.say, { x: POD.x - 6, y: POD_Y[id] + 24, tail: "right" });
+      if (a.present && a.say) bubble(pen, `say:${id}`, a.say, { x: POD.x - 6, y: POD_Y[id] + 24, tail: "right", attrs: { class: "fx-pop" } });
       // Мысль — там же, пунктиром: то, во что под верит (устаревшая проверка срока).
-      else if (a.present && a.thought) bubble(pen, `think:${id}`, a.thought, { x: POD.x - 6, y: POD_Y[id] + 24, tail: "right", thought: true, attrs: fade(w, id) });
+      else if (a.present && a.thought) bubble(pen, `think:${id}`, a.thought, { x: POD.x - 6, y: POD_Y[id] + 24, tail: "right", thought: true, attrs: { ...fade(w, id), class: "fx-pop" } });
     }
     if (w.card) drawCard(pen, w.card);
     if (w.plate) {
@@ -422,6 +453,6 @@ export function render(pen: Pen, w: World): void {
     }
     if (w.stamp) drawStamp(pen, w.stamp);
     // Поверх плашки: кладовщик комментирует и её.
-    if (w.db) bubble(pen, "db:say", w.db, { x: DB.x + DB.w + 10, y: 43, tail: "left" });
+    if (w.db) bubble(pen, "db:say", w.db, { x: DB.x + DB.w + 10, y: 43, tail: "left", attrs: { class: "fx-pop" } });
   });
 }
