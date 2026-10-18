@@ -2,14 +2,14 @@ import { describe, expect, it } from "vitest";
 import type { Sound, Voice } from "../../engine/contract";
 import { ACT, buildSteps } from "./script";
 import type { EventKind, World } from "./sim";
-import { sound } from "./sound";
+import { BABBLE_AT, EVENT_WINDOW, sound } from "./sound";
 
 /** Записывает вызовы вместо звука. */
 function recorder() {
-  const calls: { kind: "tone" | "noise" | "babble"; at: number; text?: string }[] = [];
+  const calls: { kind: "tone" | "noise" | "babble"; at: number; gain?: number; text?: string }[] = [];
   const s: Sound = {
-    tone: (o) => calls.push({ kind: "tone", at: o.at ?? 0 }),
-    noise: (o) => calls.push({ kind: "noise", at: o.at ?? 0 }),
+    tone: (o) => calls.push({ kind: "tone", at: o.at ?? 0, gain: o.gain }),
+    noise: (o) => calls.push({ kind: "noise", at: o.at ?? 0, gain: o.gain }),
     babble: (_v: Voice, text: string, at = 0) => calls.push({ kind: "babble", at, text }),
   };
   return { s, calls };
@@ -58,6 +58,22 @@ describe("журнал событий", () => {
     expect(kinds(frames(ACT.mutex)[0])[0]).toBe("page");
   });
 
+  it("перемотка, оценка на табло, «?», отказ по токену, перечёркнутый токен — звучат событиями", () => {
+    const all = steps.flatMap((x) => kinds(x.state));
+    for (const k of ["rewind", "verdict", "doubt", "clash", "ghost"] as const) expect(all, k).toContain(k);
+    // «?» звучит один раз — при появлении, а не каждый кадр, пока висит.
+    expect(all.filter((k) => k === "doubt")).toHaveLength(1);
+  });
+
+  it("итог повтором звучит как в первый раз и без «перелистывания»", () => {
+    const recap = frames(ACT.summary).map(kinds);
+    expect(recap).toHaveLength(3);
+    expect(recap.flat()).not.toContain("page");
+    expect(recap[0]).toContain("ghost");
+    expect(recap[1]).toContain("clash");
+    expect(recap[2]).toContain("replay");
+  });
+
   it("финал с ключом: повтор ↺, дубля нет", () => {
     const [k] = withEvent(ACT.zombie, "replay").map(kinds);
     expect(k).toContain("replay");
@@ -81,6 +97,20 @@ describe("озвучка кадров", () => {
       for (const c of calls.filter((x) => x.kind === "babble")) {
         expect(c.text).not.toMatch(/SELECT|UPDATE|COMMIT/);
         expect(c.text).toMatch(/[\p{L}\p{N}]/u);
+      }
+    }
+  });
+
+  it(`звуки событий начинаются в первые ${EVENT_WINDOW} с, бормотание — с ${BABBLE_AT} с, громкость ≤ 0.2`, () => {
+    for (const [i, step] of steps.entries()) {
+      const { s, calls } = recorder();
+      sound(s, step.state);
+      for (const c of calls) {
+        if (c.kind === "babble") expect(c.at, `кадр ${i + 1}`).toBeGreaterThanOrEqual(BABBLE_AT);
+        else {
+          expect(c.at, `кадр ${i + 1}`).toBeLessThanOrEqual(EVENT_WINDOW);
+          expect(c.gain ?? 0, `кадр ${i + 1}`).toBeLessThanOrEqual(0.2);
+        }
       }
     }
   });

@@ -103,14 +103,18 @@ class Director {
   private board: Board | null = null;
   private doubtOf: ActorId | null = null;
   private sceneNo = 0;
+  private lastDoubt: ActorId | null = null;
 
-  /** Новая сцена (свежие 6 задач); ярлык переживает смену сцены внутри акта и сбрасывается на новом акте. */
-  scene(act: string, w: World = world()): void {
+  /**
+   * Новая сцена (свежие 6 задач); ярлык переживает смену сцены внутри акта и сбрасывается на новом акте.
+   * `replay` — возврат к уже показанному моменту (перемотка, итог): без «перелистывания» и каскада стола.
+   */
+  scene(act: string, w: World = world(), { replay = false } = {}): void {
     if (act !== this.act) this.label = null;
     this.act = act;
     this.w = w;
-    this.fresh = this.steps.length > 0;
-    this.sceneNo++;
+    this.fresh = this.steps.length > 0 && !replay;
+    if (!replay) this.sceneNo++;
   }
 
   /** Ярлык акта — со следующего кадра, когда механика уже показана. */
@@ -152,7 +156,14 @@ class Director {
     for (const a of Object.values(w.actors)) a.say = null;
     action?.(w);
     if (!opts.sql) w.sql = [];
-    if (opts.verdict) this.board!.attempts.at(-1)!.lamps = opts.verdict;
+    // События подачи — для звука (звук берётся только из World.events, CLAUDE.md).
+    if (w.stamp) w.events.push({ kind: "rewind" });
+    if (opts.verdict) {
+      this.board!.attempts.at(-1)!.lamps = opts.verdict;
+      w.events.push({ kind: "verdict", lamps: opts.verdict });
+    }
+    if (this.doubtOf && this.doubtOf !== this.lastDoubt) w.events.push({ kind: "doubt", by: this.doubtOf });
+    this.lastDoubt = this.doubtOf;
     w.chapter = this.chapterNo;
     w.board = structuredClone(this.board);
     if (w.board && opts.attempt !== undefined) w.board.focus = opts.attempt;
@@ -206,6 +217,7 @@ function look(w: World, who: ActorId, lock: LockMode = "none"): void {
 
 /** UPDATE по id без проверок, autocommit: задача в работе. */
 function take(w: World, who: ActorId, id: number): void {
+  w.events.push({ kind: "relock" }); // короткий тихий щелчок «взял» (autocommit, замок на миг)
   updateTask(w, who, id, { status: "in_progress" });
   commit(w, who);
   w.actors[who].carrying = id;
@@ -569,6 +581,7 @@ export function buildSteps(): Step<World>[] {
   }, { focus: ["row:1", "clock"], voice: "Срок вышел, но в строке ничего не меняется: срок здесь просто значение в колонке." });
   d.shot("", (w) => {
     w.ghost = { row: 1, token: w.rows[0].token! };
+    w.events.push({ kind: "ghost" });
     grabWithLease(w, "C");
   }, {
     sql: true, focus: ["C", "row:1", "sql"],
@@ -590,6 +603,7 @@ export function buildSteps(): Step<World>[] {
     complete(w, "B", 1, true);
     sql(w, "B", `${SQL.doneByToken(1, "7f3a")}  ${rows(0)}`);
     w.clash = { row: 1, by: "B" };
+    w.events.push({ kind: "clash" });
   }, {
     sql: true, focus: ["B", "row:1", "sql"],
     voice: "B ставит отметку после письма, но база её не пускает: токен в строке чужой. А письмо уже ушло, и отозвать его нельзя.",
@@ -605,7 +619,7 @@ export function buildSteps(): Step<World>[] {
     verdict: ["green", "red"], focus: ["C", "mail", "row:1"],
     voice: "Новый владелец C тоже отправляет письмо. В итоге строка в таблице одна, а писем два. База уберегла свою запись, но письмо ей не подвластно.",
   });
-  d.scene(ACT.zombie, structuredClone(beforeZombie)); // то же самое, но письма с ключом
+  d.scene(ACT.zombie, structuredClone(beforeZombie), { replay: true }); // то же самое, но письма с ключом
   d.attempt("lease + ключ");
   d.shot("", (w) => {
     w.stamp = "⟲ Вернёмся: B ещё не проснулся";
@@ -631,21 +645,26 @@ export function buildSteps(): Step<World>[] {
 
   // Итог: каждый образ пересыгран — те же кадры перехвата, отказа по токену и повтора в Почте.
   d.doubt(null);
-  d.scene(ACT.summary, structuredClone(beforeZombie));
+  // Повтор звучит тем же звуком, что и в первый раз: события пишем заново.
+  d.scene(ACT.summary, structuredClone(beforeZombie), { replay: true });
   d.shot("", (w) => {
     w.actors.B.thought = null;
     w.ghost = { row: 1, token: w.actors.B.token! };
+    w.events.push({ kind: "ghost" }, { kind: "ticket" });
   }, {
     focus: ["row:1", "clock", "C"],
     voice: "Подведём итог. Срок аренды, то есть lease, не даёт задаче застрять навсегда: просроченную задачу заберёт первый же под, который придёт за работой.",
   });
-  d.scene(ACT.summary, structuredClone(afterClash));
-  d.shot("", (w) => (w.actors.B.thought = null), {
+  d.scene(ACT.summary, structuredClone(afterClash), { replay: true });
+  d.shot("", (w) => {
+    w.actors.B.thought = null;
+    w.events.push({ kind: "clash" });
+  }, {
     focus: ["row:1", "B"],
     voice: "Токен не даёт проснувшемуся поду распоряжаться чужой задачей: отметка проходит только по своему токену.",
   });
-  d.scene(ACT.summary, structuredClone(afterKeyed));
-  d.shot("", undefined, {
+  d.scene(ACT.summary, structuredClone(afterKeyed), { replay: true });
+  d.shot("", (w) => w.events.push({ kind: "replay", row: 1, by: "C" }), {
     focus: ["mail"],
     voice: "А ключ идемпотентности делает повторное письмо безвредным: получатель узнаёт повтор по ключу и просто возвращает прежний ответ. Только вместе эти три защиты справляются с зависшим подом.",
   });

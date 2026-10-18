@@ -79,13 +79,15 @@ export interface Board {
 export type EventKind =
   | "lock" | "relock" | "skip" | "wait" | "wake" | "commit" | "one" | "zero"
   | "send" | "duplicate" | "replay" | "ticket"
-  | "race" | "mutex" | "freeze" | "unfreeze" | "crash" | "expire" | "clock" | "card" | "page";
+  | "race" | "mutex" | "freeze" | "unfreeze" | "crash" | "expire" | "clock" | "card" | "page"
+  | "rewind" | "verdict" | "doubt" | "clash" | "ghost";
 
 export interface SimEvent {
   kind: EventKind;
   n?: number; // для clock — на сколько секунд прыгнули часы
   row?: number; // письмо — по какой задаче; skip — какую строку пропустили
   by?: ActorId; // кто отправил / пропустил / проиграл
+  lamps?: [Lamp, Lamp]; // verdict — оценка попытки на табло
 }
 
 export interface World {
