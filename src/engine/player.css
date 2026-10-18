@@ -1,39 +1,57 @@
+/* Оболочка плеера: тёмная страница, кадр 16:9 по окну, оверлеи внутри кадра. Палитра — разбор
+   motion-designer (docs/reviews/01-motion-designer-v4.3.md); перейдёт в kit/theme на этапе 3. */
 :root {
-  --bg: #f4f4f2;
-  --ink: #222;
-  --muted: #777;
-  --panel: #fff;
-  --line: #ccc;
+  --bg: #0e1325;
+  --bg-2: #161d38;
+  --surface: #1b2342;
+  --surface-2: #242e55;
+  --line: #34406e;
+  --ink: #eef1ff;
+  --muted: #8f9ac4;
+  --accent: #4da3ff;
+  --sans: Inter, system-ui, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, monospace;
+  color-scheme: dark;
 }
 body {
   margin: 0;
-  background: var(--bg);
+  background: radial-gradient(120% 120% at 50% 0%, var(--bg-2), var(--bg));
   color: var(--ink);
-  font: 16px/1.45 system-ui, sans-serif;
+  font: 16px/1.45 var(--sans);
 }
 .player {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 12px 16px 24px;
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  background: inherit;
 }
-.player header {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  flex-wrap: wrap;
+.player:fullscreen {
+  background: #000;
 }
-.player h1 {
-  font-size: 20px;
-  margin: 0;
+.player:fullscreen .frame {
+  border-radius: 0;
+  box-shadow: none;
+}
+
+/* Кадр вписан в окно с сохранением 16:9; размеры оверлеев — в долях ширины кадра (cqw). */
+.frame {
+  position: relative;
+  width: min(100vw, calc(100dvh * 16 / 9));
+  aspect-ratio: 16 / 9;
+  container-type: inline-size;
+  overflow: hidden;
+  border-radius: 12px;
+  box-shadow: 0 0 0 1px var(--line);
+  user-select: none;
 }
 .stage {
   display: block;
   width: 100%;
-  height: auto;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  margin-top: 8px;
+  height: 100%;
+  background: #fff; /* до ре-скина сцены (этап 3) кадр светлый */
+  font-family: var(--sans);
+  cursor: pointer;
 }
 .stage .mv {
   transition: transform 0.6s ease-in-out;
@@ -51,34 +69,270 @@ body {
 .stage rect {
   transition: fill 0.3s, stroke 0.3s;
 }
-.caption {
-  min-height: 3em;
-  font-size: 18px;
-  margin: 12px 4px;
+
+/* Подпись и субтитры диктора — над панелью, внутри кадра: попадают в запись. Подпись — часть
+   кадра (плотная плашка), субтитр — служебный CC (классический чёрный). */
+.subs {
+  --panel-h: calc(clamp(28px, 4cqw, 48px) + 2 * clamp(6px, 1.2cqw, 14px) + 1.4cqw);
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(var(--panel-h) + 1.2cqw);
+  display: grid;
+  justify-items: center;
+  gap: 0.6cqw;
+  pointer-events: none;
+  transition: bottom 0.3s;
 }
-/* Текст диктора — субтитром под подписью: для проверки текста и для просмотра без звука. */
-.narration {
-  min-height: 2.6em;
-  font-size: 15px;
-  color: #666;
-  font-style: italic;
-  margin: -4px 4px 12px;
+.frame.idle .subs {
+  bottom: 3cqw;
 }
-.player nav {
+.subs p {
+  margin: 0;
+  max-width: 70cqw;
+  padding: 0.35em 0.75em;
+  text-align: center;
+  text-wrap: balance;
+  line-height: 1.35;
+}
+.subs p:empty {
+  display: none;
+}
+.subs .caption {
+  border-radius: 0.5em;
+  background: rgb(8 11 24 / 0.88);
+  backdrop-filter: blur(6px);
+  color: var(--ink);
+  font-size: clamp(12px, 2cqw, 28px);
+}
+.subs .narration {
+  border-radius: 0.3em;
+  background: rgb(0 0 0 / 0.72);
+  color: #fff;
+  font-size: clamp(11px, 1.6cqw, 22px);
+}
+
+/* Панель: прячется во время проигрывания, когда мышь не двигается. */
+/* Плавающая пилюля: на светлом кадре градиент лёг бы серой полосой. После ре-скина (этап 3) — пересмотреть. */
+.panel {
+  position: absolute;
+  left: 2cqw;
+  right: 2cqw;
+  bottom: 1.4cqw;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: clamp(4px, 1cqw, 14px);
+  padding: clamp(6px, 1.2cqw, 14px) clamp(8px, 1.6cqw, 20px);
+  border-radius: 999px;
+  background: rgb(14 19 37 / 0.78);
+  backdrop-filter: blur(8px);
+  transition: opacity 0.3s, transform 0.3s;
 }
-.player button,
-.player select {
-  font: inherit;
-  padding: 4px 12px;
+.frame.idle .panel {
+  opacity: 0;
+  transform: translateY(30%);
+  pointer-events: none;
 }
-.counter {
+.frame.idle {
+  cursor: none;
+}
+.frame.idle .stage {
+  cursor: none;
+}
+.panel button {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  min-width: clamp(28px, 4cqw, 48px);
+  height: clamp(28px, 4cqw, 48px);
+  padding: 0 0.5em;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink);
+  font: 600 clamp(12px, 1.5cqw, 18px) var(--sans);
+  cursor: pointer;
+}
+.panel button:hover,
+.panel button:focus-visible {
+  background: var(--surface-2);
+  outline: none;
+}
+.panel button:focus-visible,
+.card button:focus-visible {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+.panel button.on {
+  background: var(--accent);
+  color: var(--bg);
+}
+.panel .speed {
+  min-width: 3.2em;
+  font-variant-numeric: tabular-nums;
+}
+.panel .act {
+  flex: none;
+  max-width: 22%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #b4bde6;
+  font-size: clamp(11px, 1.35cqw, 16px);
+}
+@container (width < 560px) {
+  .panel .act,
+  .panel .fs {
+    display: none;
+  }
+}
+@container (width < 420px) {
+  .panel .speed {
+    display: none;
+  }
+}
+
+/* Прогресс: сегмент на акт, ширина — по числу кадров, заливка — пройденная доля. */
+.progress {
+  flex: 1;
+  display: flex;
+  gap: max(2px, 0.3cqw);
+  height: clamp(24px, 2.4cqw, 32px);
+  align-items: center;
+  cursor: pointer;
+}
+.seg {
+  position: relative;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--line);
+  overflow: hidden;
+  transition: height 0.15s;
+}
+.progress:hover .seg {
+  height: 10px;
+}
+.seg i {
+  position: absolute;
+  inset: 0;
+  background: var(--accent);
+  transform-origin: left;
+  transform: scaleX(var(--done, 0));
+  transition: transform 0.3s;
+}
+
+/* Обложка и финальная карточка — поверх кадра. */
+.card {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  text-align: center;
+  padding: 6cqw;
+  background: radial-gradient(90% 90% at 50% 40%, rgb(36 46 85), rgb(14 19 37));
+  z-index: 2;
+}
+.card[hidden] {
+  display: none;
+}
+.frame.carded .panel,
+.frame.carded .subs {
+  visibility: hidden;
+}
+.card .ep {
+  margin: 0;
+  color: #a9b4e0;
+  font-size: clamp(12px, 1.7cqw, 22px);
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+}
+.card h1 {
+  margin: 1.2cqw 0 0;
+  font-size: clamp(24px, 6.4cqw, 84px);
+  line-height: 1.1;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.card .line {
+  margin: 1.6cqw 0 0;
+  max-width: 34em;
+  color: #c9d0f2;
+  font-size: clamp(13px, 2.2cqw, 30px);
+  line-height: 1.3;
+  text-wrap: balance;
+}
+/* Финал: итог — главная строка, название эпизода — в строке-подписи над ним. */
+.outro .line {
+  margin-top: 1.4cqw;
+  color: var(--ink);
+  font-size: clamp(16px, 3cqw, 40px);
+  font-weight: 600;
+}
+.card button {
+  margin-top: 3.4cqw;
+  border: 0;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--bg);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  font: 700 clamp(15px, 2cqw, 26px) var(--sans);
+  padding: 0.7em 1.6em;
+  cursor: pointer;
+  transition: transform 0.15s;
+}
+.card button.big {
+  display: grid;
+  place-items: center;
+  width: clamp(56px, 9cqw, 120px);
+  height: clamp(56px, 9cqw, 120px);
+  box-shadow: 0 0 0 0.9cqw rgb(77 163 255 / 0.18);
+  padding: 0 0 0 0.12em;
+  font-size: clamp(20px, 3.4cqw, 46px);
+}
+.card button.big:focus-visible {
+  box-shadow: 0 0 0 0.9cqw rgb(77 163 255 / 0.18), 0 0 0 2px var(--accent);
+}
+.card button:hover,
+.card button:focus-visible {
+  transform: scale(1.06);
+  outline: none;
+}
+
+/* Dev-режим (?dev / D): список актов и номер кадра — для обсуждения, не для зрителя. */
+.dev {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  z-index: 3;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 8px;
+  background: rgb(27 35 66 / 0.9);
   color: var(--muted);
-  margin-left: auto;
+  font: 12px var(--mono);
+  opacity: 0.85;
 }
-.player button.subs.on {
-  background: #222;
-  color: #fff;
+.dev[hidden] {
+  display: none;
+}
+.dev select {
+  font: inherit;
+  background: var(--surface-2);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+/* Без лишнего движения — по настройке системы. */
+@media (prefers-reduced-motion: reduce) {
+  .stage .mv,
+  .card button,
+  .subs,
+  .panel {
+    transition: none;
+  }
 }
