@@ -21,11 +21,11 @@ export function panel(
   });
 }
 
-export type Tail = "left" | "down" | "up";
+export type Tail = "left" | "right" | "down" | "up";
 
 /**
  * Пузырь реплики: светлый на тёмной сцене. `(x, y)` — кончик хвоста. Хвост "left" — пузырь справа
- * от точки; "down" — над ней, "up" — под ней; `align: "end"` — пузырь уходит влево от кончика.
+ * от точки, "right" — слева; "down" — над ней, "up" — под ней; `align: "end"` — пузырь уходит влево.
  */
 export function bubble(
   pen: Pen, key: string, text: string,
@@ -46,6 +46,10 @@ export function bubble(
     bx = o.x + tail;
     by = o.y - h / 2;
     tri = `M ${o.x} ${o.y} L ${bx + 2} ${o.y - 8} L ${bx + 2} ${o.y + 8} Z`;
+  } else if (o.tail === "right") {
+    bx = o.x - tail - w;
+    by = o.y - h / 2;
+    tri = `M ${o.x} ${o.y} L ${bx + w - 2} ${o.y - 8} L ${bx + w - 2} ${o.y + 8} Z`;
   } else {
     const inset = 28;
     bx = o.align === "end" ? o.x - w + inset : o.x - inset;

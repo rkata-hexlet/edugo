@@ -85,6 +85,16 @@ describe("отрисовка эпизода 01 (все кадры)", () => {
     expect(both).toEqual([]);
   });
 
+  it("штамп перемотки помещается в просвет шапки между Postgres и пилюлями кейса", () => {
+    const wide = frames.flatMap(({ n, pen }) => {
+      const t = pen.texts.find((x) => x.key === "stamp:t");
+      if (!t) return [];
+      const right = t.x + pen.measure(t.content, { "font-size": t.size }).width + 16;
+      return right > 700 - 12 ? [`кадр ${n}: правый край ${Math.round(right)}`] : [];
+    });
+    expect(wide).toEqual([]);
+  });
+
   it("текст не выходит за правый край кадра", () => {
     const wide = frames.flatMap(({ n, pen }) =>
       pen.texts.filter((t) => t.x > 1280).map((t) => `кадр ${n}: ${t.key} x=${t.x}`));

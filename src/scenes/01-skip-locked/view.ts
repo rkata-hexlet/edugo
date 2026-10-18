@@ -1,4 +1,5 @@
 import { STAGE, type Attrs, type Pen, type Span } from "../../engine/contract";
+import { BOB, bob, dome, elephant, mailFace, type Look, type MailMood, type Mood } from "../../kit/characters";
 import { icon, type IconName } from "../../kit/icons";
 import { highlightSql } from "../../kit/sql";
 import { ACTOR, COLOR, DIM, FONT, SIZE } from "../../kit/theme";
@@ -13,7 +14,7 @@ import {
 // Ниже SAFE_BOTTOM (kit/theme) — место плеера под подпись и субтитры.
 
 const POD_Y: Record<ActorId, number> = { A: 128, B: 244, C: 360 };
-const POD = { x: 720, w: 188, h: 64 };
+const POD = { x: 700, w: 230, h: 64 };
 const TABLE = { x: 40, y: 124, rowH: 38, gap: 5 };
 const COLS = [
   { title: "id", x: 0, w: 50 },
@@ -21,9 +22,10 @@ const COLS = [
   { title: "claim_token", x: 260, w: 150 },
   { title: "lease_until", x: 410, w: 130 },
 ];
-const MAIL = { x: 968, y: 130, w: 272, h: 270, line0: 202, lineH: 28 };
+const MAIL = { x: 984, y: 130, w: 256, h: 270, line0: 202, lineH: 28 };
 const BOARD = { x: 750, y: 466, w: 490, rowH: 26 };
 const BOTTOM = 650; // низ титра и окна SQL
+const DB = { x: 100, w: 130 }; // табличка Postgres справа от слона
 
 const MONO = { "font-family": FONT.mono, "font-size": SIZE.body };
 const SANS = { "font-family": FONT.sans, "font-size": SIZE.body };
@@ -153,39 +155,56 @@ function drawTable(pen: Pen, w: World): void {
   for (const r of w.rows) drawRow(pen, w, r, stuck);
 }
 
-/** Значки состояния пода под именем: 0 строк, мьютекс, ждёт, талон, завис. */
+/** Эмоция пода — из состояния кадра. */
+function podMood(w: World, a: Actor): Mood {
+  if (a.frozen) return "frozen";
+  if (w.events.some((e) => e.kind === "zero" && e.by === a.id)) return "lost";
+  if (a.say) return "talk";
+  if (waitingFor(a) !== null || a.pending) return "wait";
+  if (a.affected === 1 && w.events.some((e) => e.kind === "one")) return "won";
+  if (a.carrying !== null) return "work";
+  return "idle";
+}
+
+/** Куда смотрит под: на Почту, когда отправляет; на строку, которую видит, держит или ждёт. */
+function podLook(w: World, a: Actor): Look {
+  if (w.events.some((e) => (e.kind === "send" || e.kind === "replay") && e.by === a.id)) return { x: 1, y: 0 };
+  const row = waitingFor(a) ?? a.carrying ?? a.seen;
+  if (row === null) return { x: 0, y: 0 };
+  return { x: -1, y: Math.max(-1, Math.min(1, (rowMid(row) - podMid(a.id)) / 160)) };
+}
+
+/** Строка состояния под именем: 0 строк, ждёт N с. Талон — рядом с именем, мьютекс — в куполе. */
 function drawPodStatus(pen: Pen, w: World, a: Actor): void {
   const color = ACTOR[a.id].color;
   const items: [IconName, string, string][] = [];
   if (w.events.some((e) => e.kind === "zero" && e.by === a.id)) items.push(["cross", "0 строк", COLOR.error]);
-  if (a.mutex) items.push(["lock", "mu", color]);
-  if (a.scan?.waitingFor != null) items.push(["hourglass", `${w.clock - a.scan.since} с`, color]);
-  else if (a.pending) items.push(["hourglass", "", color]);
-  if (a.token) items.push(["ticket", a.token, color]);
-  let x = 14;
+  if (a.scan?.waitingFor != null) items.push(["hourglass", `ждёт ${w.clock - a.scan.since} с`, color]);
+  else if (a.pending) items.push(["hourglass", "ждёт", color]);
+  let x = BOB.w + 14;
   items.forEach(([name, text, c], i) => {
-    x = iconText(pen, `pod:${a.id}:st${i}`, name, x, 52, text, c, text === a.token ? MONO : SANS) + 10;
+    x = iconText(pen, `pod:${a.id}:st${i}`, name, x, 52, text, c) + 10;
   });
 }
 
 function drawPod(pen: Pen, w: World, a: Actor): void {
-  const color = ACTOR[a.id].color;
+  const { color, tint } = ACTOR[a.id];
+  const mood = podMood(w, a);
   pen.group(`pod:${a.id}`, POD.x, POD_Y[a.id], () => {
-    if (!a.present) {
-      pen.rect(`pod:${a.id}:body`, { width: POD.w, height: POD.h, rx: 18, fill: "none", stroke: COLOR.faint, "stroke-width": 2, "stroke-dasharray": "7 6" });
-      pen.text(`pod:${a.id}:name`, { x: 16, y: 39, ...SANS, fill: COLOR.muted }, `${a.label} · упал`);
-      return;
+    if (a.mutex) {
+      // Купол процесса: мьютекс живёт внутри пода, соседям его не видно.
+      dome(pen, `pod:${a.id}:dome`, { x: -10, y: -26, w: POD.w + 6, h: POD.h + 34, color });
+      iconText(pen, `pod:${a.id}:mu`, "lock", POD.w - 62, -6, "mu", color, MONO);
     }
-    // Ожидание — пунктир цвета пода и песочные часы в строке состояния.
-    const waiting = waitingFor(a) !== null;
-    panel(pen, `pod:${a.id}:body`, {
-      x: 0, y: 0, w: POD.w, h: POD.h, rx: 18,
-      fill: a.frozen ? "#262b40" : COLOR.surface, stroke: a.frozen ? COLOR.faint : color,
-      attrs: { "stroke-width": 3, ...(waiting ? { "stroke-dasharray": "8 6" } : {}) },
-    });
-    pen.text(`pod:${a.id}:name`, { x: 14, y: 26, ...SANS, "font-size": SIZE.say, "font-weight": 700, fill: a.frozen ? COLOR.muted : color }, a.label);
+    bob(pen, `pod:${a.id}:bob`, { x: 0, y: 0, color, tint, letter: a.id, mood, look: podLook(w, a), ghost: !a.present, dashed: mood === "wait" });
+    const nameColor = !a.present || a.frozen ? COLOR.muted : color;
+    pen.text(`pod:${a.id}:name`, { x: BOB.w + 14, y: 24, ...SANS, "font-size": SIZE.say, "font-weight": 700, fill: nameColor },
+      a.present ? a.label : `${a.label} · упал`);
+    if (!a.present) return;
+    if (a.token) iconText(pen, `pod:${a.id}:tok`, "ticket", BOB.w + 92, 24, a.token, color, MONO);
     drawPodStatus(pen, w, a);
-    if (a.frozen) icon(pen, `pod:${a.id}:zz`, "sleep", POD.w - 30, -22, 34, COLOR.muted); // завис — видно издалека
+    if (a.frozen) icon(pen, `pod:${a.id}:zz`, "sleep", 44, -34, 30, COLOR.muted); // завис — видно издалека
+    if (w.events.some((e) => e.kind === "unfreeze" && e.by === a.id)) icon(pen, `pod:${a.id}:wake`, "bang", 46, -36, 28, COLOR.warn);
   }, fade(w, a.id));
 }
 
@@ -254,7 +273,8 @@ function drawMailArrows(pen: Pen, w: World): void {
     const dupNow = w.events.some((x) => x.kind === "duplicate" && x.row === e.row && x.by === e.by);
     const color = e.kind === "replay" ? COLOR.ok : dupNow ? COLOR.error : ACTOR[e.by].color;
     pen.line(`arr:mail:${i}`, {
-      x1: POD.x + POD.w + 4, y1: podMid(e.by), x2: MAIL.x - 6, y2: mailLineY(line) - 6,
+      // От правого края слота, ниже талона: иначе стрелка вверх к журналу перечеркнёт «🎫 7f3a».
+      x1: POD.x + POD.w, y1: POD_Y[e.by] + 42, x2: MAIL.x - 6, y2: mailLineY(line) - 6,
       stroke: color, "stroke-width": 3, "stroke-linecap": "round", marker: "arrow",
       ...(e.kind === "replay" ? { "stroke-dasharray": "5 6" } : {}),
       ...fade(w, "mail", e.by),
@@ -266,6 +286,8 @@ function drawMailBody(pen: Pen, w: World): void {
   const dup = duplicates(w);
   panel(pen, "mail:box", { x: MAIL.x, y: MAIL.y, w: MAIL.w, h: MAIL.h, fill: dup.length ? "#3a1c2a" : COLOR.surface, stroke: dup.length ? COLOR.error : COLOR.mail });
   iconText(pen, "mail:title", "mail", MAIL.x + 16, MAIL.y + 38, "Почта", COLOR.mail, { ...SANS, "font-size": SIZE.say, "font-weight": 700 });
+  const mood: MailMood = dup.length ? "alarm" : w.letters.some((l) => l.replayed) ? "relieved" : w.letters.length ? "calm" : "asleep";
+  mailFace(pen, "mail:face", { x: MAIL.x + MAIL.w - 52, y: MAIL.y + 26, mood });
   pen.rect("mail:rule", { x: MAIL.x + 16, y: MAIL.y + 52, width: MAIL.w - 32, height: 1.5, fill: COLOR.line });
   const sent = new Set<number>();
   w.letters.forEach((l, i) => {
@@ -336,19 +358,20 @@ function drawCard(pen: Pen, text: string): void {
 function drawStamp(pen: Pen, text: string): void {
   const label = text.replace(/^⟲\s*/, "");
   const font = { ...SANS, "font-weight": 700 };
-  const wdt = pen.measure(label, font).width + 70;
-  const x = (TABLE.x + 182 + POD.x - 12 - wdt) / 2;
+  const wdt = pen.measure(label, font).width + 62;
+  const x = (DB.x + DB.w + 12 + POD.x - 12 - wdt) / 2;
   pen.group("stamp", x, 22, () => {
     pen.rect("stamp:bg", { width: wdt, height: 40, rx: 20, fill: COLOR.warn });
-    icon(pen, "stamp:i", "replay", 16, 9, 22, COLOR.bg);
-    pen.text("stamp:t", { x: 48, y: 27, ...font, fill: COLOR.bg }, label);
+    icon(pen, "stamp:i", "replay", 14, 9, 22, COLOR.bg);
+    pen.text("stamp:t", { x: 44, y: 27, ...font, fill: COLOR.bg }, label);
   });
 }
 
 function drawHeader(pen: Pen, w: World): void {
-  // Postgres — плашка-«кладовщик» (персонаж — на этапе 4).
-  panel(pen, "db", { x: TABLE.x, y: 20, w: 170, h: 46, rx: 14, fill: COLOR.surface2, stroke: COLOR.postgres });
-  pen.text("db:name", { x: TABLE.x + 18, y: 50, ...SANS, "font-size": SIZE.say, "font-weight": 700, fill: COLOR.ink }, "Postgres");
+  // Postgres — слон-«кладовщик» и табличка с именем.
+  elephant(pen, "db:face", { x: TABLE.x + 6, y: 12, talking: !!w.db });
+  panel(pen, "db", { x: DB.x, y: 20, w: DB.w, h: 46, rx: 14, fill: COLOR.surface2, stroke: COLOR.postgres });
+  pen.text("db:name", { x: DB.x + 16, y: 50, ...SANS, "font-size": SIZE.say, "font-weight": 700, fill: COLOR.ink }, "Postgres");
   let x = POD.x;
   if (w.chapter) x += pill(pen, "chapter", `КЕЙС ${w.chapter}`, { x, y: 22, fill: "none", color: COLOR.ink, stroke: COLOR.ink }) + 12;
   pill(pen, "rc", "READ COMMITTED", { x, y: 22, fill: COLOR.surface2, color: COLOR.muted, mono: true, bold: false });
@@ -372,8 +395,8 @@ export function render(pen: Pen, w: World): void {
   pen.layer("top", () => {
     for (const id of ACTORS) {
       const a = w.actors[id];
-      // Реплика пода — в просвете над ним, хвостом вниз.
-      if (a.present && a.say) bubble(pen, `say:${id}`, a.say, { x: POD.x + 36, y: POD_Y[id] - 2, tail: "down" });
+      // Реплика пода — слева от него, поверх стрелок: над подом нет места из-за антенны соседа.
+      if (a.present && a.say) bubble(pen, `say:${id}`, a.say, { x: POD.x - 6, y: POD_Y[id] + 24, tail: "right" });
     }
     if (w.card) drawCard(pen, w.card);
     if (w.plate) {
@@ -382,6 +405,6 @@ export function render(pen: Pen, w: World): void {
     }
     if (w.stamp) drawStamp(pen, w.stamp);
     // Поверх плашки: кладовщик комментирует и её.
-    if (w.db) bubble(pen, "db:say", w.db, { x: TABLE.x + 182, y: 43, tail: "left" });
+    if (w.db) bubble(pen, "db:say", w.db, { x: DB.x + DB.w + 10, y: 43, tail: "left" });
   });
 }

@@ -167,7 +167,7 @@ function mutex(w: World, who: ActorId): void {
 
 function freeze(w: World, who: ActorId, frozen: boolean): void {
   w.actors[who].frozen = frozen;
-  w.events.push({ kind: frozen ? "freeze" : "unfreeze" });
+  w.events.push({ kind: frozen ? "freeze" : "unfreeze", by: who });
 }
 
 function setClock(w: World, t: number): void {
@@ -489,7 +489,7 @@ export function buildSteps(): Step<World>[] {
   d.w.clock = 610; // часы БД идут дальше, назад не прыгают
   d.attempt("«в работе» и сразу COMMIT");
   d.shot("", (w) => {
-    w.stamp = "⟲ Попробуем иначе: не держать транзакцию";
+    w.stamp = "⟲ Иначе: не держим транзакцию";
     take(w, "B", 1);
   }, {
     focus: ["B", "row:1"],
@@ -567,7 +567,7 @@ export function buildSteps(): Step<World>[] {
   d.scene(ACT.zombie, structuredClone(beforeZombie)); // то же самое, но письма с ключом
   d.attempt("lease + Idempotency-Key");
   d.shot("", (w) => {
-    w.stamp = "⟲ Вернёмся к моменту до пробуждения B";
+    w.stamp = "⟲ Вернёмся: B ещё не проснулся";
     bothFinish(w, true);
     w.mail = "Заказ 1? Уже отправлено.";
   }, {
