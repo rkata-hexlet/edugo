@@ -80,6 +80,11 @@ describe("отрисовка эпизода 01 (все кадры)", () => {
     expect(emoji).toEqual([]);
   });
 
+  it("штамп перемотки и реплика Postgres не встречаются в одном кадре: оба живут в шапке", () => {
+    const both = buildSteps().flatMap((s, i) => (s.state.stamp && s.state.db ? [i + 1] : []));
+    expect(both).toEqual([]);
+  });
+
   it("текст не выходит за правый край кадра", () => {
     const wide = frames.flatMap(({ n, pen }) =>
       pen.texts.filter((t) => t.x > 1280).map((t) => `кадр ${n}: ${t.key} x=${t.x}`));

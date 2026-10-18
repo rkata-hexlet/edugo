@@ -1,4 +1,5 @@
 import type { Attrs, Pen, Span, TextContent } from "../engine/contract";
+import { icon, type IconName } from "./icons";
 import { COLOR, FONT, SIZE } from "./theme";
 
 // Виджеты серии: панель, пузырь реплики с хвостом, пилюля, лампа, окно SQL, полноэкранная плашка.
@@ -87,9 +88,12 @@ export function lamp(pen: Pen, key: string, x: number, y: number, state: LampSta
     pen.rect(key, { x: x - r, y: y - r, width: 2 * r, height: 2 * r, rx: r, fill: "none", stroke: COLOR.faint, "stroke-width": 1.5, "stroke-dasharray": "3 3" });
     return;
   }
+  // Не только цвет: ✓ / ✕ / ! внутри — красный и зелёный сливаются у дальтоников.
+  const glyph: Record<Exclude<LampState, null>, IconName> = { green: "check", red: "cross", yellow: "bang" };
   pen.group(key, 0, 0, () => {
     pen.rect(`${key}:glow`, { x: x - r - 4, y: y - r - 4, width: 2 * r + 8, height: 2 * r + 8, rx: r + 4, fill: LAMP[state], opacity: 0.22 });
     pen.rect(`${key}:dot`, { x: x - r, y: y - r, width: 2 * r, height: 2 * r, rx: r, fill: LAMP[state] });
+    icon(pen, `${key}:g`, glyph[state], x - r * 0.75, y - r * 0.75, r * 1.5, COLOR.bg);
   });
 }
 

@@ -51,7 +51,7 @@ export const SQL_COLOR = {
 } as const;
 
 /** Насколько гасить то, о чём диктор сейчас не говорит. */
-export const DIM = 0.32;
+export const DIM = 0.45;
 
 /** Низ кадра, куда плеер кладёт подпись и субтитры: контенту сцены туда нельзя. */
 export const SAFE_BOTTOM = 655;

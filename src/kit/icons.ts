@@ -20,6 +20,7 @@ const ICONS = {
   replay: [stroke("M4.5 12a7.5 7.5 0 1 0 2.2-5.3M4.5 4v4.5H9")],
   clock: [stroke("M12 3.5a8.5 8.5 0 1 1 0 17a8.5 8.5 0 0 1 0-17zM12 7.5V12l3 2")],
   sleep: [stroke("M4 9h5l-5 6h5M12 4h4l-4 5h4M17 13h3.5l-3.5 4.5h3.5")],
+  bang: [stroke("M12 5v9"), solid("M12 17.5a1.5 1.5 0 1 0 0.01 0z")],
   question: [stroke("M8.5 9a3.5 3.5 0 1 1 5 3.2c-1 .5-1.5 1.2-1.5 2.3V15.5"), solid("M12 18.2a1.3 1.3 0 1 0 0.01 0z")],
 } satisfies Record<string, Part[]>;
 

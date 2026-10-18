@@ -14,7 +14,7 @@ import {
 
 const POD_Y: Record<ActorId, number> = { A: 128, B: 244, C: 360 };
 const POD = { x: 720, w: 188, h: 64 };
-const TABLE = { x: 40, y: 130, rowH: 40, gap: 6 };
+const TABLE = { x: 40, y: 124, rowH: 38, gap: 5 };
 const COLS = [
   { title: "id", x: 0, w: 50 },
   { title: "status", x: 50, w: 210 },
@@ -55,7 +55,7 @@ function drawRow(pen: Pen, w: World, r: Row, stuck: Set<number>): void {
   const statusFill = r.draft ? "#3b3720" : r.status === "done" ? "#163a33" : ownerTint ?? (r.status === "in_progress" ? COLOR.surface2 : COLOR.surface);
   const expired = r.leaseUntil !== null && r.leaseUntil < w.clock && r.status === "in_progress";
   const width = tableEnd(w) - TABLE.x;
-  const base = 26; // базовая линия текста в строке
+  const base = 25; // базовая линия текста в строке
   pen.group(`row:${r.id}`, TABLE.x, rowY(r.id), () => {
     cols(w).forEach((col, i) => {
       const fill = i === 1 ? statusFill : i === 3 && expired ? "#4a1f2a" : COLOR.surface;
@@ -88,7 +88,8 @@ function drawRow(pen: Pen, w: World, r: Row, stuck: Set<number>): void {
     if (lost?.by && r.token) {
       const loser = lost.by;
       const mine = w.actors[loser].token!;
-      pen.group(`row:${r.id}:vs`, COLS[2].x - 20, TABLE.rowH + 3, () => {
+      // Под таблицей, под колонкой токенов: на соседней строке плашка закрыла бы её текст.
+      pen.group(`row:${r.id}:vs`, COLS[2].x - 20, rowY(w.rows.length) - rowY(r.id) + TABLE.rowH + 12, () => {
         panel(pen, `row:${r.id}:vs`, { x: 0, y: 0, w: 230, h: 36, rx: 10, fill: COLOR.surface2, stroke: COLOR.error });
         iconText(pen, `row:${r.id}:vs:a`, "ticket", 12, 25, mine, ACTOR[loser].color, MONO);
         pen.text(`row:${r.id}:vs:ne`, { x: 104, y: 26, ...SANS, "font-size": 22, "font-weight": 700, fill: COLOR.error }, "≠");
@@ -145,8 +146,8 @@ function drawTable(pen: Pen, w: World): void {
   const left = w.rows.filter((r) => r.status !== "done").length;
   const label = `осталось ${left} из ${w.rows.length}`;
   pen.group("left", 0, 0, () => {
-    if (left) pen.text("left:t", { x: TABLE.x, y: 94, ...SANS, "font-weight": 600, fill: COLOR.ink }, label);
-    else iconText(pen, "left", "check", TABLE.x, 94, label, COLOR.ok, { ...SANS, "font-weight": 600 });
+    if (left) pen.text("left:t", { x: TABLE.x, y: 86, ...SANS, "font-weight": 600, fill: COLOR.ink }, label);
+    else iconText(pen, "left", "check", TABLE.x, 86, label, COLOR.ok, { ...SANS, "font-weight": 600 });
   }, fade(w, "table"));
   const stuck = new Set(stuckRows(w));
   for (const r of w.rows) drawRow(pen, w, r, stuck);
@@ -251,7 +252,7 @@ function drawMailArrows(pen: Pen, w: World): void {
       if (l.row === e.row && l.by === e.by) line = j;
     });
     const dupNow = w.events.some((x) => x.kind === "duplicate" && x.row === e.row && x.by === e.by);
-    const color = e.kind === "replay" ? COLOR.muted : dupNow ? COLOR.error : ACTOR[e.by].color;
+    const color = e.kind === "replay" ? COLOR.ok : dupNow ? COLOR.error : ACTOR[e.by].color;
     pen.line(`arr:mail:${i}`, {
       x1: POD.x + POD.w + 4, y1: podMid(e.by), x2: MAIL.x - 6, y2: mailLineY(line) - 6,
       stroke: color, "stroke-width": 3, "stroke-linecap": "round", marker: "arrow",
@@ -271,11 +272,12 @@ function drawMailBody(pen: Pen, w: World): void {
     const again = sent.has(l.row);
     if (!l.replayed) sent.add(l.row);
     const y = mailLineY(i);
-    const fill = l.replayed ? COLOR.muted : again ? COLOR.error : COLOR.ink;
+    // Повтор, погашенный по ключу, — итог эпизода: зелёным, как «всё хорошо».
+    const fill = l.replayed ? COLOR.ok : again ? COLOR.error : COLOR.ink;
     const key = `mail:l${i}`;
     let x = iconText(pen, key, l.replayed ? "replay" : "mail", MAIL.x + 16, y, `заказ ${l.row}`, fill, MONO) + 8;
     if (l.keyed) {
-      icon(pen, `${key}:key`, "key", x, y - 16, 20, COLOR.warn);
+      icon(pen, `${key}:key`, "key", x, y - 16, 20, COLOR.ink); // не жёлтый: жёлтый — цвет пода B
       x += 28;
     }
     if (l.replayed) pen.text(`${key}:note`, { x, y, ...SANS, fill }, "повтор");
@@ -299,7 +301,7 @@ function drawBoardBody(pen: Pen, w: World): void {
     const y = BOARD.y + 46 + i * BOARD.rowH;
     const current = i === b.attempts.length - 1;
     pen.text(`board:n${i}`, { x: BOARD.x + 18, y: y + 18, ...SANS, fill: current ? COLOR.ink : COLOR.muted, "font-weight": current ? 700 : 400 }, t.name);
-    lampX.forEach((x, j) => lamp(pen, `board:l${i}:${j}`, x, y + 12, t.lamps?.[j] ?? null, 9));
+    lampX.forEach((x, j) => lamp(pen, `board:l${i}:${j}`, x, y + 12, t.lamps?.[j] ?? null, 10));
   });
 }
 
@@ -329,16 +331,17 @@ function drawCard(pen: Pen, text: string): void {
   });
 }
 
-/** Штамп перехода: мир перемотан («⟲ вернёмся…»). Пилюля в просвете между подами и табло. */
+/** Штамп перехода: мир перемотан («⟲ вернёмся…»). Всегда на одном месте — в шапке, между
+ *  Postgres и пилюлями кейса (реплики Postgres в этих кадрах нет — держит тест). */
 function drawStamp(pen: Pen, text: string): void {
   const label = text.replace(/^⟲\s*/, "");
-  const font = { ...SANS, "font-size": SIZE.say, "font-weight": 700 };
-  const wdt = pen.measure(label, font).width + 84;
-  const x = MAIL.x + MAIL.w - wdt;
-  pen.group("stamp", x, POD_Y.C + POD.h - 2, () => {
-    pen.rect("stamp:bg", { width: wdt, height: 44, rx: 22, fill: COLOR.ink });
-    icon(pen, "stamp:i", "replay", 20, 9, 26, COLOR.bg);
-    pen.text("stamp:t", { x: 56, y: 29, ...font, fill: COLOR.bg }, label);
+  const font = { ...SANS, "font-weight": 700 };
+  const wdt = pen.measure(label, font).width + 70;
+  const x = (TABLE.x + 182 + POD.x - 12 - wdt) / 2;
+  pen.group("stamp", x, 22, () => {
+    pen.rect("stamp:bg", { width: wdt, height: 40, rx: 20, fill: COLOR.warn });
+    icon(pen, "stamp:i", "replay", 16, 9, 22, COLOR.bg);
+    pen.text("stamp:t", { x: 48, y: 27, ...font, fill: COLOR.bg }, label);
   });
 }
 
@@ -359,7 +362,8 @@ export function render(pen: Pen, w: World): void {
   pen.layer("back", () => pen.rect("bg", { x: 0, y: 0, width: STAGE.w, height: STAGE.h, fill: COLOR.bg }));
   drawHeader(pen, w);
   drawTable(pen, w);
-  if (w.term) pill(pen, "term", w.term, { x: POD.x, y: 76, fill: COLOR.ink, color: COLOR.bg, mono: true });
+  // Ярлык-термин — контурный: залитые светлые пилюли — это реплики.
+  if (w.term) pill(pen, "term", w.term, { x: POD.x, y: 76, fill: COLOR.surface2, color: COLOR.ink, stroke: COLOR.ink, mono: true });
   drawBoard(pen, w);
   drawSql(pen, w);
   drawPodArrows(pen, w); // под фигурами: линия уходит за бокс, а не перечёркивает его
