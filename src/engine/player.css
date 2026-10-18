@@ -49,6 +49,14 @@ body {
   font-size: 18px;
   margin: 12px 4px;
 }
+/* Текст диктора — субтитром под подписью: для проверки текста и для просмотра без звука. */
+.narration {
+  min-height: 2.6em;
+  font-size: 15px;
+  color: #666;
+  font-style: italic;
+  margin: -4px 4px 12px;
+}
 .player nav {
   display: flex;
   align-items: center;
@@ -62,4 +70,8 @@ body {
 .counter {
   color: var(--muted);
   margin-left: auto;
+}
+.player button.subs.on {
+  background: #222;
+  color: #fff;
 }

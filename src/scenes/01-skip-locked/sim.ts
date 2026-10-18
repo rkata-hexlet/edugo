@@ -9,7 +9,7 @@ export const ACTORS: ActorId[] = ["A", "B", "C"];
 /** Колонки строки tasks (кроме id). */
 export interface RowData {
   status: Status;
-  token: string | null; // claim_token — номер талона
+  token: string | null; // claim_token — токен захвата
   leaseUntil: number | null; // lease_until
 }
 
@@ -19,13 +19,6 @@ export interface Row extends RowData {
   idle: boolean; // заперта при перепроверке, но не вернулась запросу — держатель её не брал
   draft: RowData | null; // незакоммиченная правка владельца блокировки
 }
-
-export type Place =
-  | { kind: "home" }
-  | { kind: "shelf"; row: number }
-  | { kind: "queue"; row: number }
-  | { kind: "road" }
-  | { kind: "door"; row: number }; // у каждого заказа своя дверь
 
 export type LockMode = "none" | "for_update" | "skip_locked";
 
@@ -50,59 +43,74 @@ export interface PendingUpdate {
 export interface Actor {
   id: ActorId;
   label: string;
-  present: boolean;
-  at: Place;
-  carrying: number | null;
+  present: boolean; // false — под упал
+  carrying: number | null; // задача в работе у пода
   seen: number | null; // результат последнего SELECT (id или пусто)
   scan: Scan | null;
   pending: PendingUpdate | null;
   affected: number | null; // сколько строк задел последний UPDATE
-  token: string | null; // талон, который воркер считает своим
+  token: string | null; // токен, который воркер считает своим
   mutex: boolean; // держит свой sync.Mutex
   frozen: boolean; // завис (внешний API без таймаута, GC-пауза)
   say: string | null; // реплика в пузыре
 }
 
-export interface Delivery {
+/** Письмо в Почту — внешний эффект задачи; таблица tasks его не видит. */
+export interface Letter {
   row: number;
   by: ActorId;
-  rejected: boolean; // клиент отклонил повтор по ключу идемпотентности
+  replayed: boolean; // повтор с тем же ключом идемпотентности: Почта вернула прошлый ответ
+}
+
+export type Focus = ActorId | `row:${number}` | "table" | "mail" | "board" | "clock" | "sql";
+
+/** Табло главы: попытки и их оценка по двум критериям. Оценку проверяют тесты по модели. */
+export type Lamp = "red" | "yellow" | "green";
+export interface Board {
+  criteria: [string, string];
+  attempts: { name: string; lamps: [Lamp, Lamp] | null }[]; // null — ещё не проверили
 }
 
 /** Событие кадра — для звука. Пишут операции модели и глаголы сценария, не отрисовка. */
 export type EventKind =
   | "lock" | "relock" | "skip" | "wait" | "wake" | "commit" | "one" | "zero"
-  | "deliver" | "duplicate" | "rejected" | "ticket"
-  | "race" | "mutex" | "freeze" | "unfreeze" | "appear" | "crash" | "expire" | "clock" | "card" | "party" | "page";
+  | "send" | "duplicate" | "replay" | "ticket"
+  | "race" | "mutex" | "freeze" | "unfreeze" | "crash" | "expire" | "clock" | "card" | "page";
 
 export interface SimEvent {
   kind: EventKind;
   n?: number; // для clock — на сколько секунд прыгнули часы
-  row?: number; // для доставки — какая посылка
-  by?: ActorId; // для доставки — кто привёз
+  row?: number; // письмо — по какой задаче; skip — какую строку пропустили
+  by?: ActorId; // кто отправил / пропустил / проиграл
 }
 
 export interface World {
   clock: number;
   rows: Row[];
   actors: Record<ActorId, Actor>;
-  deliveries: Delivery[];
+  letters: Letter[]; // журнал Почты
   sql: string[]; // полный текст запросов кадра
   db: string | null; // реплика кладовщика-Postgres
-  client: { row: number; text: string } | null; // реплика клиента заказа row
+  mail: string | null; // реплика Почты
   race: boolean; // подсветить окно гонки
   card: string | null; // титр поверх сцены
+  plate: string | null; // полноэкранная плашка главы
+  chapter: number | null; // номер кейса — в углу всю главу
+  board: Board | null; // табло попыток главы
+  leaseCols: boolean; // показать колонки claim_token и lease_until
+  /** О чём сейчас говорит диктор: A/B/C, row:N, table, mail, board, clock, sql. Остальное приглушено. */
+  focus: Focus[] | null;
   term: string | null; // ярлык акта: формальное имя проблемы/паттерна
-  issued: number; // сколько талонов выдано
+  issued: number; // сколько токенов выдано
   queued: number; // счётчик очереди за блокировками
   events: SimEvent[]; // что случилось в этом кадре
 }
 
 const TOKENS = ["7f3a", "c21e", "9b04", "e6d1", "40ac", "d58f"];
 
-export function world(rowCount = 4): World {
+export function world(rowCount = 6): World {
   const actor = (id: ActorId, label: string): Actor => ({
-    id, label, present: true, at: { kind: "home" }, carrying: null, seen: null, scan: null,
+    id, label, present: true, carrying: null, seen: null, scan: null,
     pending: null, affected: null, token: null, mutex: false, frozen: false, say: null,
   });
   return {
@@ -115,12 +123,17 @@ export function world(rowCount = 4): World {
       B: actor("B", "Pod B"),
       C: actor("C", "Pod C"),
     },
-    deliveries: [],
+    letters: [],
     sql: [],
     db: null,
-    client: null,
+    mail: null,
     race: false,
     card: null,
+    plate: null,
+    chapter: null,
+    board: null,
+    leaseCols: false,
+    focus: null,
     term: null,
     issued: 0,
     queued: 0,
@@ -175,7 +188,7 @@ function advance(w: World, a: Actor, woke = false): void {
     if (r.lockedBy !== null && r.lockedBy !== a.id) {
       if (s.lock === "skip_locked") {
         s.candidates.shift();
-        w.events.push({ kind: "skip" });
+        w.events.push({ kind: "skip", row: r.id, by: a.id });
         continue;
       }
       if (s.waitingFor !== r.id) {
@@ -219,7 +232,7 @@ function apply(w: World, a: Actor, r: Row, set: Partial<RowData>, where: Partial
   const cur = visible(r, a.id);
   if (where && !Object.entries(where).every(([k, v]) => cur[k as keyof RowData] === v)) {
     a.affected = 0;
-    w.events.push({ kind: "zero" });
+    w.events.push({ kind: "zero", by: a.id });
     return;
   }
   r.lockedBy = a.id;
@@ -280,7 +293,7 @@ export function crash(w: World, who: ActorId): void {
   w.events.push({ kind: "crash" });
 }
 
-/** Захват с талоном одним оператором в autocommit:
+/** Захват с токеном и сроком одним оператором в autocommit:
  *  UPDATE … SET claim_token, lease_until=now()+ttl WHERE id=(SELECT … FOR UPDATE SKIP LOCKED). */
 export function claimLease(w: World, who: ActorId, ttl = 30): number | null {
   selectTask(w, who, "skip_locked", true);
@@ -302,18 +315,28 @@ export function complete(w: World, who: ActorId, id: number, byToken: boolean): 
   commit(w, who);
 }
 
-/** Отдать посылку клиенту. idempotent — клиент отклоняет повтор по ключу заказа. */
-export function deliver(w: World, who: ActorId, id: number, idempotent = false): void {
-  const already = w.deliveries.some((d) => d.row === id && !d.rejected);
-  const rejected = idempotent && already;
-  w.deliveries.push({ row: id, by: who, rejected });
-  w.events.push({ kind: rejected ? "rejected" : "deliver", row: id, by: who });
-  if (!rejected && already) w.events.push({ kind: "duplicate", row: id, by: who });
+/** Отправить письмо по задаче. keyed — с Idempotency-Key: повтор Почта не шлёт, а возвращает прошлый ответ. */
+export function send(w: World, who: ActorId, id: number, keyed = false): void {
+  const already = w.letters.some((l) => l.row === id && !l.replayed);
+  const replayed = keyed && already;
+  w.letters.push({ row: id, by: who, replayed });
+  w.events.push({ kind: replayed ? "replay" : "send", row: id, by: who });
+  if (!replayed && already) w.events.push({ kind: "duplicate", row: id, by: who });
 }
 
-/** id посылок, которые клиент реально получил больше одного раза. */
+/** Задачи, по которым ушло больше одного письма. */
 export function duplicates(w: World): number[] {
   const count = new Map<number, number>();
-  for (const d of w.deliveries) if (!d.rejected) count.set(d.row, (count.get(d.row) ?? 0) + 1);
+  for (const l of w.letters) if (!l.replayed) count.set(l.row, (count.get(l.row) ?? 0) + 1);
   return [...count].filter(([, n]) => n > 1).map(([id]) => id);
+}
+
+/** Задача застряла без срока: замок держит зависший/упавший под или «в работе» без lease у пода,
+ *  который её не делает. Талон со сроком — ожидание ограничено, это не «застряла». */
+export function stuck(w: World): boolean {
+  const dead = (id: ActorId | null) => id !== null && (w.actors[id].frozen || !w.actors[id].present);
+  const holder = (r: Row) => ACTORS.find((id) => w.actors[id].carrying === r.id) ?? null;
+  return w.rows.some((r) =>
+    dead(r.lockedBy) ||
+    (r.status === "in_progress" && r.leaseUntil === null && (holder(r) === null || dead(holder(r)))));
 }

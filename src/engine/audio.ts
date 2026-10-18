@@ -9,6 +9,8 @@ export class WebAudioSound implements Sound {
   private master: GainNode | null = null;
   private noiseBuf: AudioBuffer | null = null;
   muted = false;
+  /** Множитель громкости бормотания: под голосом диктора персонажи звучат тише. */
+  babbleGain = 1;
 
   /** Вызывать из обработчика клика/клавиши. */
   unlock(): void {
@@ -62,7 +64,7 @@ export class WebAudioSound implements Sound {
 
   babble(voice: Voice, text: string, at = 0): void {
     for (const s of syllables(voice, text)) {
-      this.tone({ freq: s.freq, to: s.freq * 0.9, dur: s.dur, wave: voice.wave, gain: voice.gain, at: at + s.at });
+      this.tone({ freq: s.freq, to: s.freq * 0.9, dur: s.dur, wave: voice.wave, gain: voice.gain * this.babbleGain, at: at + s.at });
     }
   }
 

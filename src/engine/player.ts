@@ -1,5 +1,6 @@
 import { STAGE, type Scene, type Step } from "./contract";
 import { WebAudioSound } from "./audio";
+import { Narrator } from "./narrator";
 import { SvgPen } from "./pen";
 import "./player.css";
 
@@ -8,8 +9,9 @@ const frameMs = (step: Step<unknown>, speed: number) =>
   (step.hold !== undefined ? step.hold * 1000 : 1500 + step.caption.length * 35) / speed;
 
 /**
- * Плеер: кадры сцены, подпись, звук, управление (кнопки, ←/→, пробел, M), номер кадра в #hash —
- * чтобы при обсуждении можно было сослаться на «кадр 14». Звучит только шаг вперёд.
+ * Плеер: кадры сцены, подпись, звук, диктор, управление (кнопки, ←/→, пробел, M), номер кадра в
+ * #hash — чтобы при обсуждении можно было сослаться на «кадр 14». Звучит только шаг вперёд;
+ * автопроигрывание листает, когда прошло время кадра и диктор договорил.
  */
 export function mountPlayer<S>(host: HTMLElement, scene: Scene<S>): void {
   const steps = scene.steps();
@@ -22,6 +24,7 @@ export function mountPlayer<S>(host: HTMLElement, scene: Scene<S>): void {
       <header><h1></h1><select class="acts"></select></header>
       <svg class="stage" viewBox="0 0 ${STAGE.w} ${STAGE.h}"></svg>
       <p class="caption"></p>
+      <p class="narration" hidden></p>
       <nav>
         <button class="prev" title="← назад">◀</button>
         <button class="play" title="пробел">▶</button>
@@ -30,6 +33,7 @@ export function mountPlayer<S>(host: HTMLElement, scene: Scene<S>): void {
           <option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option>
         </select>
         <button class="mute" title="M — звук"></button>
+        <button class="subs" title="C — субтитры диктора">CC</button>
         <span class="counter"></span>
       </nav>
     </div>`;
@@ -38,28 +42,46 @@ export function mountPlayer<S>(host: HTMLElement, scene: Scene<S>): void {
   const actSelect = $<HTMLSelectElement>(".acts");
   actSelect.innerHTML = acts.map((a) => `<option value="${a.first}">${a.act}</option>`).join("");
   const caption = $<HTMLElement>(".caption");
+  const narrationLine = $<HTMLElement>(".narration");
   const counter = $<HTMLElement>(".counter");
   const playBtn = $<HTMLButtonElement>(".play");
   const speedSelect = $<HTMLSelectElement>(".speed");
   const muteBtn = $<HTMLButtonElement>(".mute");
   const pen = new SvgPen($<SVGSVGElement>(".stage"));
   const sound = new WebAudioSound();
-  sound.muted = loadMuted();
+  const narrator = new Narrator();
+  narrator.pronounce = scene.pronounce ?? {};
+  sound.muted = narrator.muted = loadMuted();
   const paintMute = () => (muteBtn.textContent = sound.muted ? "🔇" : "🔊");
   paintMute();
 
   const fromHash = Number(new URLSearchParams(location.hash.slice(1)).get("step"));
   let index = Number.isInteger(fromHash) && fromHash >= 1 && fromHash <= steps.length ? fromHash - 1 : 0;
   let timer: number | undefined;
+  let turn = 0; // поколение автопроигрывания: старые таймеры и концы фраз игнорируются
+  let voiceDelay: number | undefined;
+  const speed = () => Number(speedSelect.value);
+  // Голос — после короткой тишины: взгляд успевает увидеть новое состояние кадра.
+  const narrate = (onEnd: () => void = () => {}) => {
+    const text = steps[index].narration;
+    if (!text) return onEnd();
+    const mine = turn;
+    clearTimeout(voiceDelay);
+    voiceDelay = setTimeout(() => mine === turn && narrator.speak(text, speed(), onEnd), VOICE_DELAY_MS / speed());
+  };
 
   const show = (i: number) => {
     const prev = index;
     index = Math.max(0, Math.min(steps.length - 1, i));
     const step = steps[index];
     sound.cut();
+    narrator.cut();
+    clearTimeout(voiceDelay);
+    sound.babbleGain = step.narration ? 0.35 : 1;
     if (index === prev + 1) scene.sound?.(sound, step.state);
     pen.frame(() => scene.render(pen, step.state));
     caption.textContent = step.caption;
+    narrationLine.textContent = step.narration ?? "";
     counter.textContent = `кадр ${index + 1} / ${steps.length}`;
     actSelect.value = String(acts.filter((a) => a.first <= index).at(-1)!.first);
     history.replaceState(null, "", `#step=${index + 1}`);
@@ -67,12 +89,27 @@ export function mountPlayer<S>(host: HTMLElement, scene: Scene<S>): void {
   const stop = () => {
     clearTimeout(timer);
     timer = undefined;
+    turn++;
+    narrator.cut();
     playBtn.textContent = "▶";
+  };
+  /** Дальше — когда истекло время кадра и диктор договорил, что бы ни случилось раньше. */
+  const holdThenNext = () => {
+    const mine = ++turn;
+    let timeUp = false;
+    let spoken = false;
+    const next = () => {
+      if (mine !== turn || !timeUp || !spoken) return;
+      if (steps[index].pause) return stop(); // кадр для чтения на паузе
+      tick();
+    };
+    timer = setTimeout(() => ((timeUp = true), next()), frameMs(steps[index], speed()));
+    narrate(() => ((spoken = true), next()));
   };
   const tick = () => {
     if (index >= steps.length - 1) return stop();
     show(index + 1);
-    timer = setTimeout(tick, frameMs(steps[index], Number(speedSelect.value)));
+    holdThenNext();
   };
   const toggle = () => {
     if (timer !== undefined) return stop();
@@ -80,33 +117,49 @@ export function mountPlayer<S>(host: HTMLElement, scene: Scene<S>): void {
     sound.cut();
     scene.sound?.(sound, steps[index].state);
     playBtn.textContent = "❚❚";
-    timer = setTimeout(tick, frameMs(steps[index], Number(speedSelect.value)));
+    holdThenNext();
+  };
+  const step = (i: number) => {
+    stop();
+    const forward = i === index + 1;
+    show(i);
+    if (forward) narrate();
+  };
+  const subsBtn = $<HTMLButtonElement>(".subs");
+  const toggleSubs = () => {
+    narrationLine.hidden = !narrationLine.hidden;
+    subsBtn.classList.toggle("on", !narrationLine.hidden);
   };
 
   const toggleMute = () => {
-    sound.muted = !sound.muted;
-    if (sound.muted) sound.cut();
+    sound.muted = narrator.muted = !sound.muted;
+    if (sound.muted) (sound.cut(), narrator.cut());
     saveMuted(sound.muted);
     paintMute();
   };
 
   host.addEventListener("pointerdown", () => sound.unlock());
-  $(".prev").addEventListener("click", () => (stop(), show(index - 1)));
-  $(".next").addEventListener("click", () => (stop(), show(index + 1)));
+  $(".prev").addEventListener("click", () => step(index - 1));
+  $(".next").addEventListener("click", () => step(index + 1));
   playBtn.addEventListener("click", toggle);
   muteBtn.addEventListener("click", toggleMute);
+  subsBtn.addEventListener("click", toggleSubs);
   actSelect.addEventListener("change", () => (stop(), show(Number(actSelect.value))));
   document.addEventListener("keydown", (e) => {
     if (e.target instanceof HTMLSelectElement) return;
     sound.unlock();
-    if (e.key === "ArrowLeft") (stop(), show(index - 1));
-    else if (e.key === "ArrowRight") (stop(), show(index + 1));
+    if (e.key === "ArrowLeft") step(index - 1);
+    else if (e.key === "ArrowRight") step(index + 1);
     else if (e.key === " ") (e.preventDefault(), toggle());
     else if (e.key === "m" || e.key === "ь") toggleMute();
+    else if (e.key === "c" || e.key === "с") toggleSubs();
   });
 
   show(index);
 }
+
+/** Пауза перед голосом диктора, мс (при скорости 1×). */
+const VOICE_DELAY_MS = 500;
 
 const MUTE_KEY = "edugo:muted";
 

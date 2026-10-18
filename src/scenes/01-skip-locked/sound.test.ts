@@ -22,47 +22,45 @@ const frames = (act: string) => steps.filter((s) => s.act === act).map((s) => s.
 const withEvent = (act: string, kind: EventKind) => frames(act).filter((w) => kinds(w).includes(kind));
 
 describe("журнал событий", () => {
-  it("хук: два звонка и дубль", () => {
+  it("хук: три письма и два дубля", () => {
     const k = kinds(steps[0].state);
-    expect(k.filter((x) => x === "deliver")).toHaveLength(2);
-    expect(k).toContain("duplicate");
+    expect(k.filter((x) => x === "send")).toHaveLength(3);
+    expect(k.filter((x) => x === "duplicate")).toHaveLength(2);
   });
 
-  it("гонка звучит тритоном, стоп-кадр — только титром", () => {
-    const race = frames(ACT.race);
-    const i = race.findIndex((w) => kinds(w).includes("race"));
-    expect(i).toBeGreaterThan(0);
-    expect(kinds(race[i + 1])).toEqual(["card"]); // стоп-кадр
-    expect(race[i + 1].race).toBe(true);
+  it("гонка звучит тритоном в стоп-кадре", () => {
+    const [stop] = withEvent(ACT.race, "race");
+    expect(stop.race).toBe(true);
+    expect(kinds(stop)).toContain("card");
   });
 
-  it("толпа: один «плинк» и двое ждут, после COMMIT — два «0 строк»", () => {
-    const [claim] = withEvent(ACT.crowd, "one");
+  it("условный UPDATE: один «плинк», потом двое ждут, после COMMIT — два «0 строк»", () => {
+    const [claim] = withEvent(ACT.cas, "one");
     expect(kinds(claim).filter((x) => x === "one")).toHaveLength(1);
-    expect(kinds(claim).filter((x) => x === "wait")).toHaveLength(2);
-    const [after] = withEvent(ACT.crowd, "zero");
+    const [waiting] = withEvent(ACT.cas, "wait");
+    expect(kinds(waiting).filter((x) => x === "wait")).toHaveLength(2);
+    const [after] = withEvent(ACT.cas, "zero");
     expect(kinds(after).filter((x) => x === "zero")).toHaveLength(2);
     expect(kinds(after)).toContain("commit");
   });
 
   it("конвой: COMMIT будит B и передаёт ему замок", () => {
-    const [k] = withEvent(ACT.convoy, "wake").map(kinds);
+    const [k] = withEvent(ACT.forUpdate, "wake").map(kinds);
     expect(k).toEqual(expect.arrayContaining(["commit", "relock", "wake"]));
   });
 
-  it("обход: шорох SKIP LOCKED у B и C", () => {
-    const [f] = withEvent(ACT.skip, "skip");
-    expect(kinds(f).filter((x) => x === "skip")).toHaveLength(3); // B мимо #1, C мимо #1 и #2
+  it("SKIP LOCKED: шорох обхода — у B один, у C два (микрошаги)", () => {
+    const counts = withEvent(ACT.skip, "skip").map((w) => kinds(w).filter((x) => x === "skip").length);
+    expect(counts).toEqual([1, 2]); // B мимо #1; C мимо #1 и #2
   });
 
-  it("новая сцена внутри акта начинается с перелистывания", () => {
-    const [mutexFrame] = withEvent(ACT.naive, "mutex");
-    expect(kinds(mutexFrame)[0]).toBe("page");
+  it("новая сцена (свежие 6 задач) начинается с перелистывания", () => {
+    expect(kinds(frames(ACT.mutex)[0])[0]).toBe("page");
   });
 
-  it("финал у двери: повтор отклонён, дубля нет", () => {
-    const [k] = withEvent(ACT.zombie, "rejected").map(kinds);
-    expect(k).toContain("rejected");
+  it("финал с ключом: повтор ↺, дубля нет", () => {
+    const [k] = withEvent(ACT.zombie, "replay").map(kinds);
+    expect(k).toContain("replay");
     expect(k).not.toContain("duplicate");
   });
 });
@@ -89,7 +87,7 @@ describe("озвучка кадров", () => {
 
   it("реплики не перекрывают друг друга", () => {
     const { s, calls } = recorder();
-    sound(s, frames(ACT.zombie)[0]); // B отвис / кладовщик
+    sound(s, frames(ACT.mutex)[0]); // B «взял мьютекс» / кладовщик
     const at = calls.filter((c) => c.kind === "babble").map((c) => c.at);
     expect(at).toHaveLength(2);
     expect([...at].sort((a, b) => a - b)).toEqual(at);

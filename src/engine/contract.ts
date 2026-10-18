@@ -15,8 +15,10 @@ export interface Pen {
   text(key: string, attrs: Attrs, content: string): void;
   /** Линия x1,y1 → x2,y2; `marker: "arrow"` — наконечник на конце. */
   line(key: string, attrs: Attrs): void;
-  /** Группа со смещением; при смене x/y между кадрами — плавный переезд. */
-  group(key: string, x: number, y: number, children: () => void): void;
+  /** Кривая по `d` (SVG path); `marker: "arrow"` — наконечник на конце. */
+  path(key: string, attrs: Attrs): void;
+  /** Группа со смещением; при смене x/y между кадрами — плавный переезд. attrs — например, opacity. */
+  group(key: string, x: number, y: number, children: () => void, attrs?: Attrs): void;
 }
 
 export type Wave = "sine" | "square" | "sawtooth" | "triangle";
@@ -47,6 +49,10 @@ export interface Step<S> {
   state: S;
   /** Сколько секунд держать кадр при автопроигрывании; нет — по длине подписи. */
   hold?: number;
+  /** Текст диктора за кадром. Плеер проговаривает его и не листает дальше, пока фраза не кончится. */
+  narration?: string;
+  /** Автопроигрывание останавливается на этом кадре (например, шпаргалка — читать на паузе). */
+  pause?: boolean;
 }
 
 /** Сцена = заранее просчитанная последовательность кадров + отрисовка любого из них. */
@@ -57,4 +63,6 @@ export interface Scene<S> {
   render(pen: Pen, state: S): void;
   /** Озвучить кадр. Плеер зовёт при шаге вперёд и при старте воспроизведения. */
   sound?(sound: Sound, state: S): void;
+  /** Как произносить написанное латиницей в тексте диктора: «COMMIT» → «коммит». Экран не меняется. */
+  pronounce?: Record<string, string>;
 }

@@ -5,12 +5,12 @@ import { ACTORS, type ActorId, type EventKind, type World } from "./sim";
 // Озвучка эпизода по карте sound-designer: одно событие модели — один узнаваемый звук.
 // Звуки событий — в окне ~0–0.9 с, реплики — после них, по очереди.
 
-const VOICES: Record<ActorId | "db" | "client", Voice> = {
+const VOICES: Record<ActorId | "db" | "mail", Voice> = {
   A: { wave: "triangle", pitch: 392, rate: 11, spread: 3, gain: 0.14 },
   B: { wave: "square", pitch: 233, rate: 9, spread: 5, gain: 0.1 },
   C: { wave: "sine", pitch: 523, rate: 13, spread: 2, gain: 0.14 },
   db: { wave: "sawtooth", pitch: 98, rate: 6, spread: 1.5, gain: 0.16 },
-  client: { wave: "triangle", pitch: 440, rate: 10, spread: 7, gain: 0.14 },
+  mail: { wave: "triangle", pitch: 440, rate: 10, spread: 7, gain: 0.14 },
 };
 
 type Recipe = (s: Sound, at: number, quiet?: boolean) => number; // возвращает длительность
@@ -58,13 +58,13 @@ const RECIPES: Partial<Record<EventKind, Recipe>> = {
     s.tone({ freq: 2000, dur: 0.03, wave: "square", gain: 0.06, at: at + 0.05 });
     return 0.08;
   },
-  deliver: (s, at) => {
+  send: (s, at) => {
     s.tone({ freq: 1319, dur: 0.25, gain: 0.2, at });
     s.tone({ freq: 1047, dur: 0.4, gain: 0.2, at: at + 0.18 });
     return 0.58;
   },
-  rejected: (s, at) => {
-    RECIPES.deliver!(s, at);
+  replay: (s, at) => {
+    RECIPES.send!(s, at);
     s.tone({ freq: 660, dur: 0.1, wave: "triangle", gain: 0.14, at: at + 0.6 });
     s.tone({ freq: 880, dur: 0.25, wave: "triangle", gain: 0.14, at: at + 0.72 });
     return 0.97;
@@ -92,7 +92,6 @@ const RECIPES: Partial<Record<EventKind, Recipe>> = {
     s.tone({ freq: 300, to: 60, dur: 0.35, wave: "sawtooth", gain: 0.1, at: at + 0.05 });
     return 0.4;
   },
-  appear: (s, at) => (s.tone({ freq: 300, to: 600, dur: 0.08, gain: 0.14, at }), 0.08),
   expire: (s, at) => {
     // Пауза перед «фшш» — тишина работает на момент.
     s.noise({ dur: 0.4, freq: 800, q: 0.7, gain: 0.14, at: at + 0.5 });
@@ -104,11 +103,6 @@ const RECIPES: Partial<Record<EventKind, Recipe>> = {
     s.tone({ freq: 523, dur: 0.3, gain: 0.05, at: at + 0.1 });
     return 0.4;
   },
-  party: (s, at) => {
-    [523, 659, 784].forEach((f, i) => s.tone({ freq: f, dur: 0.1, wave: "triangle", gain: 0.12, at: at + i * 0.1 }));
-    s.tone({ freq: 1047, dur: 0.4, wave: "triangle", gain: 0.12, at: at + 0.3 });
-    return 0.7;
-  },
   page: (s, at) => (s.noise({ dur: 0.2, freq: 2000, q: 0.5, gain: 0.05, at }), 0.2),
 };
 
@@ -116,13 +110,13 @@ const RECIPES: Partial<Record<EventKind, Recipe>> = {
 const REPEAT: Partial<Record<EventKind, { max: number; step: number }>> = {
   lock: { max: 3, step: 0.12 }, relock: { max: 2, step: 0.12 }, skip: { max: 3, step: 0.15 },
   commit: { max: 3, step: 0.18 }, zero: { max: 2, step: 0.25 }, one: { max: 2, step: 0.15 },
-  deliver: { max: 3, step: 0.4 }, rejected: { max: 2, step: 0.4 }, ticket: { max: 2, step: 0.3 },
+  send: { max: 3, step: 0.4 }, replay: { max: 2, step: 0.4 }, ticket: { max: 2, step: 0.3 },
 };
 
 /** Порядок звучания в кадре: сначала смена сцены и действия, последствия — после. */
 const ORDER: EventKind[] = [
-  "page", "clock", "unfreeze", "appear", "mutex", "lock", "skip", "wait", "relock", "wake", "ticket",
-  "commit", "one", "zero", "race", "freeze", "crash", "expire", "deliver", "rejected", "duplicate", "party", "card",
+  "page", "clock", "unfreeze", "mutex", "lock", "skip", "wait", "relock", "wake", "ticket",
+  "commit", "one", "zero", "race", "freeze", "crash", "expire", "send", "replay", "duplicate", "card",
 ];
 
 function clockTicks(s: Sound, at: number, dt: number): number {
@@ -141,10 +135,10 @@ const speakable = (text: string | null): text is string => !!text && /[\p{L}\p{N
 export function sound(s: Sound, w: World): void {
   const count = new Map<EventKind, number>();
   for (const e of w.events) count.set(e.kind, (count.get(e.kind) ?? 0) + 1);
-  // Звонок у двери заменяет штамп done; при провале часы не тикают — не перебиваем главное.
-  const doorbells = (count.get("deliver") ?? 0) + (count.get("rejected") ?? 0);
-  if (doorbells) count.set("commit", Math.max(0, (count.get("commit") ?? 0) - doorbells));
-  if (count.get("duplicate") || count.get("zero") || count.get("rejected")) count.delete("clock");
+  // Звук письма заменяет штамп done; при провале часы не тикают — не перебиваем главное.
+  const letters = (count.get("send") ?? 0) + (count.get("replay") ?? 0);
+  if (letters) count.set("commit", Math.max(0, (count.get("commit") ?? 0) - letters));
+  if (count.get("duplicate") || count.get("zero") || count.get("replay")) count.delete("clock");
 
   let t = 0;
   let end = 0;
@@ -163,18 +157,18 @@ export function sound(s: Sound, w: World): void {
       last = t + i * rep.step;
       end = Math.max(end, last + RECIPES[kind]!(s, last));
     }
-    // Последствие ждёт свою причину: дубль — после звонков, остальное — с небольшим нахлёстом.
-    t = kind === "deliver" || kind === "rejected" ? last + 0.45 : t + 0.05;
+    // Последствие ждёт свою причину: дубль — после писем, остальное — с небольшим нахлёстом.
+    t = kind === "send" || kind === "replay" ? last + 0.45 : t + 0.05;
   }
 
-  // Реплики: воркеры, кладовщик, клиент — по очереди, после звуков событий.
+  // Реплики: воркеры, кладовщик, Почта — по очереди, после звуков событий.
   const lines: [Voice, string][] = [];
   for (const id of ACTORS) {
     const a = w.actors[id];
     if (a.present && speakable(a.say)) lines.push([VOICES[id], a.say]);
   }
   if (speakable(w.db)) lines.push([VOICES.db, w.db]);
-  if (w.client && speakable(w.client.text)) lines.push([VOICES.client, w.client.text]);
+  if (speakable(w.mail)) lines.push([VOICES.mail, w.mail]);
   let at = Math.max(0.35, Math.min(end, 1.2));
   for (const [voice, text] of lines) {
     s.babble(voice, text, at);
