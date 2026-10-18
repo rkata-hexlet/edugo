@@ -38,7 +38,7 @@ export function mountPlayer<S>(host: HTMLElement, scene: Scene<S>): void {
       </nav>
     </div>`;
   const $ = <T extends Element>(sel: string) => host.querySelector(sel) as T;
-  $<HTMLElement>("h1").textContent = scene.title;
+  $<HTMLElement>("h1").textContent = `${String(scene.meta.episode).padStart(2, "0")} · ${scene.meta.title}`;
   const actSelect = $<HTMLSelectElement>(".acts");
   actSelect.innerHTML = acts.map((a) => `<option value="${a.first}">${a.act}</option>`).join("");
   const caption = $<HTMLElement>(".caption");
@@ -79,7 +79,8 @@ export function mountPlayer<S>(host: HTMLElement, scene: Scene<S>): void {
     clearTimeout(voiceDelay);
     sound.babbleGain = step.narration ? 0.35 : 1;
     if (index === prev + 1) scene.sound?.(sound, step.state);
-    pen.frame(() => scene.render(pen, step.state));
+    // Уход элементов гаснет только при шаге вперёд; перемотка и прыжок показывают кадр сразу.
+    pen.frame(() => scene.render(pen, step.state), { instant: index !== prev + 1 });
     caption.textContent = step.caption;
     narrationLine.textContent = step.narration ?? "";
     counter.textContent = `кадр ${index + 1} / ${steps.length}`;

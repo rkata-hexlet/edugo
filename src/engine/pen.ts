@@ -1,49 +1,90 @@
-import type { Attrs, Pen } from "./contract";
+import { LAYERS, LINE_HEIGHT, type Attrs, type Layer, type Pen, type Span, type TextContent, type Transform } from "./contract";
 
 const NS = "http://www.w3.org/2000/svg";
 
-/** Pen поверх SVG: переиспользует узлы по ключу, удаляет не нарисованные в кадре. */
+/** Сколько гаснет элемент, которого нет в новом кадре; в CSS приходит переменной `--leave-ms`. */
+export const LEAVE_MS = 300;
+
+/** Средняя ширина символа в долях кегля — когда браузер не умеет мерить текст (тесты). */
+const CHAR_EM = 0.6;
+
+/**
+ * Pen поверх SVG: переиспользует узлы по ключу, порядок наложения = слой + порядок рисования,
+ * не нарисованные в кадре узлы гаснут и удаляются.
+ */
 export class SvgPen implements Pen {
   private nodes = new Map<string, SVGElement>();
   private attrNames = new Map<string, string[]>();
   private texts = new Map<string, string>();
   private used = new Set<string>();
+  /** Узлы, уже нарисованные в этом кадре. */
+  private drawn = new Set<Element>();
+  /** Последний узел, поставленный в этом кадре в каждого родителя: следующий встаёт сразу за ним. */
+  private placed = new Map<Element, Element>();
+  private layers: Record<Layer, SVGGElement>;
+  private leaving = new Set<SVGElement>();
   private parent: SVGElement;
+  private ruler?: SVGTextElement;
+  private measured = new Map<string, { width: number; height: number }>();
 
   constructor(private root: SVGSVGElement) {
-    this.parent = root;
+    this.layers = Object.fromEntries(
+      LAYERS.map((name) => {
+        const g = document.createElementNS(NS, "g") as SVGGElement;
+        g.dataset.layer = name;
+        root.appendChild(g);
+        return [name, g];
+      }),
+    ) as Record<Layer, SVGGElement>;
+    this.parent = this.layers.main;
   }
 
-  frame(draw: () => void): void {
+  /** Нарисовать кадр. `instant` — без анимации ухода (перемотка, прыжок по актам). */
+  frame(draw: () => void, { instant = false } = {}): void {
     this.used.clear();
-    this.parent = this.root;
+    this.drawn.clear();
+    this.placed.clear();
+    this.parent = this.layers.main;
+    if (instant) {
+      for (const node of this.leaving) node.remove();
+      this.leaving.clear();
+    }
     draw();
-    for (const [key, node] of this.nodes) {
-      if (this.used.has(key)) continue;
-      node.remove();
+    const gone = [...this.nodes].filter(([key]) => !this.used.has(key));
+    const goneNodes = new Set(gone.map(([, node]) => node));
+    for (const [key, node] of gone) {
       this.nodes.delete(key);
       this.attrNames.delete(key);
       this.texts.delete(key);
+      // Ребёнок ушедшей группы уходит вместе с ней.
+      if (goneNodes.has(node.parentNode as SVGElement)) continue;
+      if (instant) node.remove();
+      else this.leave(node);
     }
+  }
+
+  /** Ключ свободен сразу: если его нарисуют снова, это будет новый узел, а старый догаснет. */
+  private leave(node: SVGElement): void {
+    this.leaving.add(node);
+    node.style.setProperty("--leave-ms", `${LEAVE_MS}ms`);
+    node.classList.add("leaving");
+    setTimeout(() => {
+      if (!this.leaving.delete(node)) return; // уже убран перемоткой
+      node.remove();
+    }, LEAVE_MS);
   }
 
   rect(key: string, attrs: Attrs): void {
     this.apply(key, this.node(key, "rect"), attrs);
   }
 
-  text(key: string, attrs: Attrs, content: string): void {
+  text(key: string, attrs: Attrs, content: TextContent): void {
     const node = this.node(key, "text");
     this.apply(key, node, attrs);
-    if (this.texts.get(key) === content) return;
-    this.texts.set(key, content);
-    node.textContent = "";
-    content.split("\n").forEach((line, i) => {
-      const span = document.createElementNS(NS, "tspan");
-      span.setAttribute("x", String(attrs.x ?? 0));
-      if (i > 0) span.setAttribute("dy", "1.3em");
-      span.textContent = line || " ";
-      node.appendChild(span);
-    });
+    const sig = JSON.stringify([content, attrs.x ?? 0]);
+    if (this.texts.get(key) === sig) return;
+    this.texts.set(key, sig);
+    fillText(node, attrs, content);
   }
 
   line(key: string, attrs: Attrs): void {
@@ -76,17 +117,58 @@ export class SvgPen implements Pen {
     return id;
   }
 
-  group(key: string, x: number, y: number, children: () => void, attrs: Attrs = {}): void {
+  group(key: string, x: number, y: number, children: () => void, attrs: Attrs = {}, transform: Transform = {}): void {
     const node = this.node(key, "g");
     this.apply(key, node, attrs);
     node.classList.add("mv");
-    node.style.transform = `translate(${x}px, ${y}px)`;
+    node.style.transform = cssTransform(x, y, transform);
+    this.inside(node, children);
+  }
+
+  layer(layer: Layer, children: () => void): void {
+    this.inside(this.layers[layer], children);
+  }
+
+  measure(content: TextContent, attrs: Attrs): { width: number; height: number } {
+    const sig = JSON.stringify([content, attrs]);
+    const cached = this.measured.get(sig);
+    if (cached) return cached;
+    const size = Number(attrs["font-size"] ?? 16);
+    const lines = toLines(content);
+    // Строка высотой в самый крупный кусок; межстрочный интервал — от кегля текста, как у `text`.
+    const tallest = (line: Span[]) => Math.max(size, ...line.map((s) => Number(s.attrs?.["font-size"] ?? size)));
+    const height = tallest(lines[0]) + lines.slice(1).reduce((h, line) => h + Math.max(size * LINE_HEIGHT, tallest(line)), 0);
+    if (!this.ruler) {
+      this.ruler = document.createElementNS(NS, "text") as SVGTextElement;
+      this.root.appendChild(this.ruler);
+    }
+    const ruler = this.ruler;
+    for (const [name, value] of Object.entries(attrs)) ruler.setAttribute(name, String(value));
+    ruler.setAttribute("visibility", "hidden");
+    let width = 0;
+    for (const line of lines) {
+      ruler.textContent = "";
+      for (const span of line) ruler.appendChild(spanNode(span));
+      const measured = typeof ruler.getComputedTextLength === "function" ? ruler.getComputedTextLength() : 0;
+      const estimate = line.reduce((n, s) => n + s.text.length * Number(s.attrs?.["font-size"] ?? size), 0) * CHAR_EM;
+      width = Math.max(width, measured || estimate);
+    }
+    ruler.textContent = "";
+    for (const name of Object.keys(attrs)) ruler.removeAttribute(name);
+    ruler.setAttribute("visibility", "hidden");
+    const result = { width, height };
+    this.measured.set(sig, result);
+    return result;
+  }
+
+  private inside(parent: SVGElement, children: () => void): void {
     const outer = this.parent;
-    this.parent = node;
+    this.parent = parent;
     children();
     this.parent = outer;
   }
 
+  /** Узел по ключу, поставленный за предыдущим нарисованным в том же родителе. */
   private node(key: string, tag: string): SVGElement {
     if (this.used.has(key)) throw new Error(`pen: ключ «${key}» нарисован дважды за кадр`);
     this.used.add(key);
@@ -97,10 +179,16 @@ export class SvgPen implements Pen {
       this.nodes.set(key, node);
       this.attrNames.delete(key);
       this.texts.delete(key);
-      this.parent.appendChild(node);
-    } else if (node.parentNode !== this.parent) {
-      this.parent.appendChild(node);
     }
+    const parent = this.parent;
+    const before = this.placed.get(parent);
+    // Ещё не нарисованных в кадре соседей пропускаем: нарисованные позже встанут на место сами,
+    // а уходящие и гаснущие останутся где были, а не всплывут над всеми.
+    this.drawn.add(node);
+    let ref = before ? before.nextSibling : parent.firstChild;
+    while (ref && ref !== node && !this.drawn.has(ref as Element)) ref = ref.nextSibling;
+    if (node !== ref) place(parent, node, ref);
+    this.placed.set(parent, node);
     return node;
   }
 
@@ -111,4 +199,55 @@ export class SvgPen implements Pen {
     for (const [name, value] of Object.entries(attrs)) node.setAttribute(name, String(value));
     this.attrNames.set(key, Object.keys(attrs));
   }
+}
+
+/** Переставить узел, не сбивая его CSS-переходы: `moveBefore` (Chrome 133+), иначе обычная вставка. */
+function place(parent: Element, node: Element, ref: Node | null): void {
+  const move = (parent as Element & { moveBefore?: (n: Node, r: Node | null) => void }).moveBefore;
+  if (move && node.isConnected && node.ownerDocument === parent.ownerDocument) {
+    try {
+      return move.call(parent, node, ref);
+    } catch {
+      // старый родитель вне документа и т.п. — вставляем обычным способом
+    }
+  }
+  parent.insertBefore(node, ref);
+}
+
+/** Всегда один и тот же список функций: тогда CSS-переход интерполирует каждую, а не матрицу целиком. */
+function cssTransform(x: number, y: number, { rotate = 0, scale = 1, origin: [ox, oy] = [0, 0] }: Transform): string {
+  return `translate(${x}px, ${y}px) translate(${ox}px, ${oy}px) rotate(${rotate}deg) scale(${scale}) translate(${-ox}px, ${-oy}px)`;
+}
+
+/** Текст → строки из кусков; `\n` внутри куска рвёт строку, атрибуты куска переходят на обе части. */
+function toLines(content: TextContent): Span[][] {
+  const spans = typeof content === "string" ? [{ text: content }] : content;
+  const lines: Span[][] = [[]];
+  for (const span of spans) {
+    span.text.split("\n").forEach((part, i) => {
+      if (i > 0) lines.push([]);
+      if (part) lines.at(-1)!.push({ ...span, text: part });
+    });
+  }
+  return lines;
+}
+
+function spanNode(span: Span): SVGTSpanElement {
+  const node = document.createElementNS(NS, "tspan") as SVGTSpanElement;
+  for (const [name, value] of Object.entries(span.attrs ?? {})) node.setAttribute(name, String(value));
+  node.textContent = span.text;
+  return node;
+}
+
+function fillText(node: SVGElement, attrs: Attrs, content: TextContent): void {
+  node.textContent = "";
+  toLines(content).forEach((line, i) => {
+    const row = document.createElementNS(NS, "tspan");
+    row.setAttribute("x", String(attrs.x ?? 0));
+    if (i > 0) row.setAttribute("dy", `${LINE_HEIGHT}em`);
+    if (line.length === 0) row.textContent = " ";
+    else if (line.length === 1 && !line[0].attrs) row.textContent = line[0].text;
+    else for (const span of line) row.appendChild(spanNode(span));
+    node.appendChild(row);
+  });
 }

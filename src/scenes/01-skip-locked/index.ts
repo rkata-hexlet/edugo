@@ -6,7 +6,13 @@ import { render } from "./view";
 
 export const skipLocked: Scene<World> = {
   id: "01",
-  title: "01 · Три пода и одна задача",
+  // Тексты обложки — черновик из сценария; через scriptwriter → tech-writer → tech-expert на этапе 2.
+  meta: {
+    episode: 1,
+    title: "Три пода и одна задача",
+    tagline: "Несколько подов разбирают одну очередь задач в Postgres",
+    outro: "База бережёт свою запись, а двойной эффект гасит приёмник",
+  },
   steps: buildSteps,
   render,
   sound,

@@ -38,6 +38,13 @@ body {
 .stage .mv {
   transition: transform 0.6s ease-in-out;
 }
+/* Элемент, которого нет в новом кадре, гаснет; длительность — LEAVE_MS из pen.ts. Переезд группы
+   не обрываем: transition здесь заменяет правило .mv целиком. */
+.stage .leaving {
+  opacity: 0 !important;
+  transition: opacity var(--leave-ms) ease-out, transform 0.6s ease-in-out !important;
+  pointer-events: none;
+}
 .stage text {
   white-space: pre;
 }
