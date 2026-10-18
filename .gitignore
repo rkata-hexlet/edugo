@@ -1,0 +1,8 @@
+node_modules/
+dist/
+coverage/
+*.log
+.env*
+.vite/
+# записи роликов и черновые рендеры
+out/
