@@ -117,7 +117,8 @@ export class Shell {
     const click = (sel: string, fn: () => void) =>
       this.$(sel).addEventListener("click", (e) => ((e.currentTarget as HTMLElement).blur?.(), fn()));
     click(".play", on.toggle);
-    click(".big", on.toggle);
+    // Вся заставка — кнопка «смотреть» (в записи сама кнопка скрыта, клик — по карточке).
+    click(".cover", on.toggle);
     click(".stage", () => (this.swallowTap ? (this.swallowTap = false) : on.toggle()));
     click(".again", on.restart);
     click(".speed", on.speed);

@@ -75,15 +75,21 @@ export class SvgPen implements Pen {
     }
   }
 
-  /** Ключ свободен сразу: если его нарисуют снова, это будет новый узел, а старый догаснет. */
+  /**
+   * Ключ свободен сразу: если его нарисуют снова, это будет новый узел, а старый догаснет. Удаляем по
+   * концу перехода (в офлайн-рендере время перехода ведёт перемотка, а не часы); запасной таймер —
+   * если перехода нет (prefers-reduced-motion, тесты без CSS).
+   */
   private leave(node: SVGElement): void {
     this.leaving.add(node);
     node.style.setProperty("--leave-ms", `${LEAVE_MS}ms`);
     node.classList.add("leaving");
-    setTimeout(() => {
+    const remove = () => {
       if (!this.leaving.delete(node)) return; // уже убран перемоткой
       node.remove();
-    }, LEAVE_MS);
+    };
+    node.addEventListener("transitionend", (e) => e.target === node && remove());
+    setTimeout(remove, LEAVE_MS * 4);
   }
 
   rect(key: string, attrs: Attrs): void {

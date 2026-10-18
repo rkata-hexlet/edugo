@@ -54,7 +54,8 @@ try {
   for (let off = 0; off < size; off += 4 << 20) {
     chunks.push(Buffer.from(await page.evaluate((o) => window.__edugo.audioChunk(o, 4 << 20), off), "base64"));
   }
-  const wav = out.replace(/\.mp4$/, ".wav");
+  const wav = `${out.replace(/\.[^./]+$/, "")}.wav`; // звук рядом с роликом
+  if (wav === out) throw new Error("--out должен быть видео (mp4/mkv/mov), а не .wav");
   writeFileSync(wav, Buffer.concat(chunks));
 
   const ffmpeg = spawn("ffmpeg", [
@@ -63,10 +64,15 @@ try {
     "-ss", String(from), "-t", String(to - from), "-i", wav,
     "-c:v", "libx264", "-preset", "medium", "-crf", "20", "-pix_fmt", "yuv420p",
     // Звуки событий тихие по замыслу (под диктором); без диктора — подтянуть громкость к норме роликов.
-    "-af", "loudnorm=I=-18:TP=-2:LRA=11",
+    "-af", "loudnorm=I=-18:TP=-2:LRA=11", "-ar", "48000", // loudnorm отдаёт 192 кГц — вернуть стандарт видео
     "-c:a", "aac", "-b:a", "160k", "-shortest", "-movflags", "+faststart", out,
   ], { stdio: ["pipe", "inherit", "inherit"] });
-  const done = new Promise((resolve, reject) => ffmpeg.on("close", (code) => (code === 0 ? resolve() : reject(new Error(`ffmpeg: ${code}`)))));
+  // Падение ffmpeg (нет в PATH, диск полон) — ошибка рендера, а не зависание на 'drain' или EPIPE.
+  const done = new Promise((resolve, reject) => {
+    ffmpeg.on("error", reject);
+    ffmpeg.on("close", (code) => (code === 0 ? resolve() : reject(new Error(`ffmpeg: код ${code}`))));
+  });
+  ffmpeg.stdin.on("error", () => {}); // EPIPE после падения — причина придёт через done
 
   const cdp = await page.createCDPSession();
   const frames = Math.round((to - from) * fps);
@@ -74,7 +80,7 @@ try {
   for (let n = 0; n < frames; n++) {
     await page.evaluate((t) => window.__edugo.seek(t), from + n / fps);
     const { data } = await cdp.send("Page.captureScreenshot", { format: "jpeg", quality: 92, optimizeForSpeed: true });
-    if (!ffmpeg.stdin.write(Buffer.from(data, "base64"))) await new Promise((r) => ffmpeg.stdin.once("drain", r));
+    if (!ffmpeg.stdin.write(Buffer.from(data, "base64"))) await Promise.race([new Promise((r) => ffmpeg.stdin.once("drain", r)), done]);
     if (n % (fps * 10) === 0) {
       const rate = (n + 1) / ((Date.now() - started) / 1000);
       console.log(`${(from + n / fps).toFixed(0)} с / ${to.toFixed(0)} с  (${rate.toFixed(1)} кадр/с)`);

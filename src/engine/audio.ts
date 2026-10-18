@@ -27,6 +27,17 @@ export class WebAudioSound implements Sound {
     return s;
   }
 
+  /** Офлайн-рендер: звуки следующих вызовов — в кадре [start, end), после end — тишина (как cut() в плеере). */
+  segment(start: number, end: number): void {
+    const ctx = this.ctx!;
+    this.base = start;
+    this.master = ctx.createGain();
+    this.master.gain.setValueAtTime(0.5, 0);
+    this.master.gain.setValueAtTime(0.5, end);
+    this.master.gain.linearRampToValueAtTime(0, end + 0.01);
+    this.master.connect(ctx.destination);
+  }
+
   /** Вызывать из обработчика клика/клавиши. */
   unlock(): void {
     if (this.offline) return;

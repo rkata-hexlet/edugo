@@ -19,6 +19,10 @@ export const COLOR = {
   postgres: "#7f93bd",
   mail: "#5cc8d6",
   shadow: "#080b18",
+  /** Заливки состояний: черновик (незакоммичено), выполнено, тревога (дубль). */
+  draftBg: "#3b3720",
+  doneBg: "#163a33",
+  alarmBg: "#3a1c2a",
 } as const;
 
 /** Персонажи-поды: у каждого свой цвет на всю серию. tint — заливка «его» вещей (строка, талон). */
@@ -37,6 +41,8 @@ export const FONT = {
 export const SIZE = {
   plate: 56,
   title: 26,
+  clock: 24,
+  accent: 22,
   say: 20,
   body: 18,
   min: 18,

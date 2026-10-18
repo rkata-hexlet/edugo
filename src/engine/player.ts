@@ -12,12 +12,16 @@ import "@fontsource/jetbrains-mono/700.css";
 import "./player.css";
 
 const SPEEDS = [1, 1.5, 2, 0.5];
+/** Бормотание персонажей под голосом диктора — тише. Одно значение для плеера и рендера. */
+const NARRATION_DUCK = 0.35;
 
 /** Шрифты грузятся по первому использованию; ждём их до первого кадра (`measure`), но не дольше. */
 const FONTS_MS = 1500;
 const fontsLoaded = () =>
   Promise.race([
-    Promise.all(["16px Inter", "600 16px Inter", "16px 'JetBrains Mono'"].map((f) => document.fonts.load(f, "Аa1"))),
+    // Все начертания, которые меряет `measure`: размер кэшируется навсегда, запасной шрифт его испортит.
+    Promise.all(["16px Inter", "600 16px Inter", "700 16px Inter", "16px 'JetBrains Mono'", "700 16px 'JetBrains Mono'"]
+      .map((f) => document.fonts.load(f, "Аa1"))),
     new Promise((resolve) => setTimeout(resolve, FONTS_MS)),
   ]).catch(() => {});
 
@@ -47,6 +51,7 @@ export function mountPlayer<S>(host: HTMLElement, scene: Scene<S>): void {
     restart: () => (stop(), show(0), toggle()),
   });
   const pen = new SvgPen(shell.stage);
+  const baseTitle = document.title;
   const sound = new WebAudioSound();
   const narrator = new Narrator();
   narrator.pronounce = scene.pronounce ?? {};
@@ -82,7 +87,8 @@ export function mountPlayer<S>(host: HTMLElement, scene: Scene<S>): void {
     narrator.cut();
     clearTimeout(voiceDelay);
     shell.outro(false);
-    sound.babbleGain = step.narration ? 0.35 : 1;
+    sound.babbleGain = step.narration ? NARRATION_DUCK : 1;
+    document.title = baseTitle;
     if (index === prev + 1) scene.sound?.(sound, step.state);
     // Уход элементов гаснет только при шаге вперёд; перемотка и прыжок показывают кадр сразу.
     pen.frame(() => scene.render(pen, step.state), { instant: index !== prev + 1 });
@@ -110,7 +116,7 @@ export function mountPlayer<S>(host: HTMLElement, scene: Scene<S>): void {
   };
   const tick = () => {
     // Конец — финальная карточка; заголовок вкладки — сигнал скрипту записи, что можно останавливать.
-    if (index >= last) return (stop(), shell.outro(true), (document.title = `${document.title} · конец`));
+    if (index >= last) return (stop(), shell.outro(true), (document.title = `${baseTitle} · конец`));
     show(index + 1);
     holdThenNext();
   };
@@ -203,8 +209,9 @@ function exposeRender<S>(scene: Scene<S>, steps: ReturnType<Scene<S>["steps"]>, 
       const ctx = new OfflineAudioContext(1, Math.ceil(tl.total * rate), rate);
       const sound = WebAudioSound.offline(ctx);
       steps.forEach((step, i) => {
-        sound.base = tl.starts[i];
-        sound.babbleGain = step.narration ? 0.35 : 1;
+        // Как в плеере: звук кадра обрывается сменой кадра (там — sound.cut() в show()).
+        sound.segment(tl.starts[i], tl.starts[i + 1] ?? tl.end);
+        sound.babbleGain = step.narration ? NARRATION_DUCK : 1;
         scene.sound?.(sound, step.state);
       });
       wav = encodeWav(await ctx.startRendering());

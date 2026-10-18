@@ -61,7 +61,7 @@ function drawRow(pen: Pen, w: World, r: Row, stuck: Set<number>): void {
   // цвет того, чей токен в строке: после перехвата строка становится цвета нового владельца.
   const holder = r.token ? ACTORS.find((id) => w.actors[id].token === r.token) : owners.length === 1 ? owners[0] : undefined;
   const ownerTint = r.status === "in_progress" && holder ? ACTOR[holder].tint : null;
-  const statusFill = r.draft ? "#3b3720" : r.status === "done" ? "#163a33" : ownerTint ?? (r.status === "in_progress" ? COLOR.surface2 : COLOR.surface);
+  const statusFill = r.draft ? COLOR.draftBg : r.status === "done" ? COLOR.doneBg : ownerTint ?? (r.status === "in_progress" ? COLOR.surface2 : COLOR.surface);
   const width = tableEnd(w) - TABLE.x;
   const base = 25; // базовая линия текста в строке
   pen.group(`row:${r.id}`, TABLE.x, rowY(r.id), () => {
@@ -103,7 +103,7 @@ function drawRow(pen: Pen, w: World, r: Row, stuck: Set<number>): void {
       pen.group(`row:${r.id}:vs`, COLS[2].x - 20, rowY(w.rows.length) - rowY(r.id) + TABLE.rowH + 12, () => {
         panel(pen, `row:${r.id}:vs`, { x: 0, y: 0, w: 230, h: 36, rx: 10, fill: COLOR.surface2, stroke: COLOR.error });
         iconText(pen, `row:${r.id}:vs:a`, "ticket", 12, 25, mine, ACTOR[loser].color, MONO);
-        pen.text(`row:${r.id}:vs:ne`, { x: 104, y: 26, ...SANS, "font-size": 22, "font-weight": 700, fill: COLOR.error }, "≠");
+        pen.text(`row:${r.id}:vs:ne`, { x: 104, y: 26, ...SANS, "font-size": SIZE.accent, "font-weight": 700, fill: COLOR.error }, "≠");
         iconText(pen, `row:${r.id}:vs:b`, "ticket", 128, 25, r.token!, tokenOwnerColor(w, r.token!), MONO);
       }, { class: "fx-pop" });
     }
@@ -176,17 +176,17 @@ function drawTable(pen: Pen, w: World): void {
 /** Эмоция пода — из состояния кадра. */
 function podMood(w: World, a: Actor): Mood {
   if (a.frozen) return "frozen";
-  if (w.events.some((e) => e.kind === "zero" && e.by === a.id)) return "lost";
+  if (happened(w, "zero", a.id)) return "lost";
   if (a.say) return "talk";
   if (waitingFor(a) !== null || a.pending) return "wait";
-  if (a.affected === 1 && w.events.some((e) => e.kind === "one")) return "won";
+  if (a.affected === 1 && happened(w, "one")) return "won";
   if (a.carrying !== null) return "work";
   return "idle";
 }
 
 /** Куда смотрит под: на Почту, когда отправляет; на строку, которую видит, держит или ждёт. */
 function podLook(w: World, a: Actor): Look {
-  if (w.events.some((e) => (e.kind === "send" || e.kind === "replay") && e.by === a.id)) return { x: 1, y: 0 };
+  if (happened(w, "send", a.id) || happened(w, "replay", a.id)) return { x: 1, y: 0 };
   const row = waitingFor(a) ?? a.carrying ?? a.seen;
   if (row === null) return { x: 0, y: 0 };
   return { x: -1, y: Math.max(-1, Math.min(1, (rowMid(row) - podMid(a.id)) / 160)) };
@@ -196,7 +196,7 @@ function podLook(w: World, a: Actor): Look {
 function drawPodStatus(pen: Pen, w: World, a: Actor): void {
   const color = ACTOR[a.id].color;
   const items: [IconName, string, string][] = [];
-  if (w.events.some((e) => e.kind === "zero" && e.by === a.id)) items.push(["cross", "0 строк", COLOR.error]);
+  if (happened(w, "zero", a.id)) items.push(["cross", "0 строк", COLOR.error]);
   // Секунды — только когда часы идут (кейс 2); «ждёт 0 с» читалось бы как «ожидания нет» (tech-expert).
   if (a.scan?.waitingFor != null) items.push(["hourglass", w.clock > a.scan.since ? `ждёт ${w.clock - a.scan.since} с` : "ждёт", color]);
   else if (a.pending) items.push(["hourglass", "ждёт", color]);
@@ -241,7 +241,7 @@ function drawPod(pen: Pen, w: World, a: Actor): void {
     drawPodStatus(pen, w, a);
 
     if (a.frozen) icon(pen, `pod:${a.id}:zz`, "sleep", 44, -34, 30, COLOR.muted); // завис — видно издалека
-    if (w.events.some((e) => e.kind === "unfreeze" && e.by === a.id)) icon(pen, `pod:${a.id}:wake`, "bang", 46, -36, 28, COLOR.warn);
+    if (happened(w, "unfreeze", a.id)) icon(pen, `pod:${a.id}:wake`, "bang", 46, -36, 28, COLOR.warn);
   }, fade(w, a.id));
 }
 
@@ -326,7 +326,7 @@ function drawMailArrows(pen: Pen, w: World): void {
 
 function drawMailBody(pen: Pen, w: World): void {
   const dup = duplicates(w);
-  panel(pen, "mail:box", { x: MAIL.x, y: MAIL.y, w: MAIL.w, h: MAIL.h, fill: dup.length ? "#3a1c2a" : COLOR.surface, stroke: dup.length ? COLOR.error : COLOR.mail });
+  panel(pen, "mail:box", { x: MAIL.x, y: MAIL.y, w: MAIL.w, h: MAIL.h, fill: dup.length ? COLOR.alarmBg : COLOR.surface, stroke: dup.length ? COLOR.error : COLOR.mail });
   iconText(pen, "mail:title", "mail", MAIL.x + 16, MAIL.y + 38, "Почта", COLOR.mail, { ...SANS, "font-size": SIZE.say, "font-weight": 700 });
   const mood: MailMood = dup.length ? "alarm" : w.letters.some((l) => l.replayed) ? "relieved" : w.letters.length ? "calm" : "asleep";
   mailFace(pen, "mail:face", { x: MAIL.x + MAIL.w - 60, y: MAIL.y + 24, mood });
@@ -390,7 +390,7 @@ function drawSql(pen: Pen, w: World): void {
 
 /** Титр — слева над окном SQL, табло не закрывает. */
 function drawCard(pen: Pen, text: string): void {
-  const font = { ...SANS, "font-size": 22, "font-weight": 600 };
+  const font = { ...SANS, "font-size": SIZE.accent, "font-weight": 600 };
   const m = pen.measure(text, font);
   const h = Math.max(80, m.height + 48);
   const wdt = Math.max(420, m.width + 64);
@@ -427,7 +427,7 @@ function drawHeader(pen: Pen, w: World): void {
   const [clockKey, clockFx] = once("clock", w, happened(w, "clock") ? "fx-pulse" : null);
   pen.group(clockKey, 0, 0, () => {
     icon(pen, "clock:i", "clock", 1080, 26, 26, COLOR.muted);
-    pen.text("clock:t", { x: 1114, y: 48, "font-family": FONT.mono, "font-size": 24, "font-weight": 700, fill: COLOR.ink }, clock(w.clock));
+    pen.text("clock:t", { x: 1114, y: 48, "font-family": FONT.mono, "font-size": SIZE.clock, "font-weight": 700, fill: COLOR.ink }, clock(w.clock));
     pen.text("clock:label", { x: 1240, y: 88, ...SANS, fill: COLOR.muted, "text-anchor": "end" }, "часы БД");
   }, { ...fade(w, "clock"), ...clockFx });
 }

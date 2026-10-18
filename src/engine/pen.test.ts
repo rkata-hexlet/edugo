@@ -55,7 +55,15 @@ describe("SvgPen: уход", () => {
     pen.frame(() => {});
     const a = svg.querySelector("#a")!;
     expect(a.classList.contains("leaving")).toBe(true);
-    vi.advanceTimersByTime(LEAVE_MS);
+    vi.advanceTimersByTime(LEAVE_MS * 4); // запасной таймер: в happy-dom нет CSS-переходов
+    expect(a.isConnected).toBe(false);
+  });
+
+  it("по концу перехода узел удаляется сразу, не дожидаясь таймера", () => {
+    pen.frame(() => pen.rect("a", { id: "a" }));
+    pen.frame(() => {});
+    const a = svg.querySelector("#a")!;
+    a.dispatchEvent(new Event("transitionend"));
     expect(a.isConnected).toBe(false);
   });
 
