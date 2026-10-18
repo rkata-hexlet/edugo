@@ -37,7 +37,7 @@ const SQL = {
   claim:
     "UPDATE tasks SET status='in_progress',\n" +
     "       claim_token=gen_random_uuid(), lease_until=now()+'30s'\n" +
-    " WHERE id = (SELECT id FROM tasks\n" +
+    " WHERE id IN (SELECT id FROM tasks\n" +
     "   WHERE status='new'\n" +
     "      OR (status='in_progress' AND lease_until < now())\n" +
     "   ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED)\n" +
@@ -255,7 +255,8 @@ function markTaken(w: World, who: ActorId): void {
  *  чтобы показать, как параллельные операторы обходят ещё не закоммиченный захват соседа. */
 function claim(w: World, who: ActorId): boolean {
   selectTask(w, who, "skip_locked");
-  sql(w, who, SQL.claimSkip);
+  // Явная транзакция: замок живёт до COMMIT — SKIP LOCKED виден, пока захваты идут одновременно.
+  sql(w, who, `BEGIN;\n${SQL.claimSkip}`);
   if (w.actors[who].seen === null) return false; // свободных нет — 0 строк
   markTaken(w, who);
   return true;
@@ -576,7 +577,7 @@ export function buildSteps(): Step<World>[] {
     freeze(w, "B", true);
   }, { focus: ["B", "row:1"], voice: "B проверяет срок, видит запас и именно в этот момент зависает." });
   d.shot("", (w) => {
-    setClock(w, L + 31);
+    setClock(w, L + 37); // с запасом за дедлайном: красное на полосе видно (tech-expert)
     w.events.push({ kind: "expire" });
   }, { focus: ["row:1", "clock"], voice: "Срок вышел, но в строке ничего не меняется: срок здесь просто значение в колонке." });
   d.shot("", (w) => {
@@ -592,7 +593,7 @@ export function buildSteps(): Step<World>[] {
   // 2.2 Зомби.
   d.scene(ACT.zombie, structuredClone(beforeZombie));
   d.shot("", (w) => {
-    setClock(w, L + 40);
+    setClock(w, L + 46);
     freeze(w, "B", false);
     send(w, "B", 1);
   }, {
@@ -629,7 +630,7 @@ export function buildSteps(): Step<World>[] {
     voice: "Письмо базе не подвластно, поэтому защитим его отдельно. Вернёмся к моменту, когда B ещё не проснулся, и добавим ключ идемпотентности: например, номер заказа.",
   });
   d.shot("", (w) => {
-    bothFinish(w, true, L + 40);
+    bothFinish(w, true, L + 46);
     w.actors.B.thought = null;
     w.mail = "Заказ 1? Уже отправлено.";
   }, {
@@ -652,7 +653,7 @@ export function buildSteps(): Step<World>[] {
     w.ghost = { row: 1, token: w.actors.B.token! };
     w.events.push({ kind: "ghost" }, { kind: "ticket" });
   }, {
-    focus: ["row:1", "clock", "C"],
+    focus: ["row:1", "clock", "C", "board"], attempt: 2,
     voice: "Подведём итог. Срок аренды, то есть lease, не даёт задаче застрять навсегда: просроченную задачу заберёт первый же под, который придёт за работой.",
   });
   d.scene(ACT.summary, structuredClone(afterClash), { replay: true });
@@ -660,12 +661,12 @@ export function buildSteps(): Step<World>[] {
     w.actors.B.thought = null;
     w.events.push({ kind: "clash" });
   }, {
-    focus: ["row:1", "B"],
+    focus: ["row:1", "B", "board"], attempt: 2,
     voice: "Токен не даёт проснувшемуся поду распоряжаться чужой задачей: отметка проходит только по своему токену.",
   });
   d.scene(ACT.summary, structuredClone(afterKeyed), { replay: true });
   d.shot("", (w) => w.events.push({ kind: "replay", row: 1, by: "C" }), {
-    focus: ["mail"],
+    focus: ["mail", "board"], attempt: 3,
     voice: "А ключ идемпотентности делает повторное письмо безвредным: получатель узнаёт повтор по ключу и просто возвращает прежний ответ. Только вместе эти три защиты справляются с зависшим подом.",
   });
 

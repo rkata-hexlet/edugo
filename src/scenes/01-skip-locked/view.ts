@@ -84,7 +84,7 @@ function drawRow(pen: Pen, w: World, r: Row, stuck: Set<number>): void {
       else pen.text(`row:${r.id}:tok`, { x: COLS[2].x + 12, y: base, fill: COLOR.faint, ...MONO }, "—");
       pen.text(`row:${r.id}:lease`, { x: COLS[3].x + 12, y: base, fill: COLOR.ink, ...MONO },
         r.leaseUntil !== null ? clock(r.leaseUntil) : "—");
-      if (r.leaseUntil !== null) drawLeaseBar(pen, w, r);
+      if (r.leaseUntil !== null && r.status !== "done") drawLeaseBar(pen, w, r); // у выполненной срок уже не идёт
     }
     if (w.ghost?.row === r.id) {
       // Прежний токен — зачёркнутым рядом с новым: владелец сменился.
@@ -92,7 +92,8 @@ function drawRow(pen: Pen, w: World, r: Row, stuck: Set<number>): void {
         x: COLS[2].x + 92, y: base, ...MONO, fill: tokenOwnerColor(w, w.ghost.token), "text-decoration": "line-through", opacity: 0.75,
       }, w.ghost.token);
     }
-    if (stuck.has(r.id)) icon(pen, `row:${r.id}:stuck`, "question", -34, 8, 26, COLOR.error); // слева, не на тексте
+    // Застряла — «!», а не «?»: «?» у пода значит «жив ли он» (нить главы 2).
+    if (stuck.has(r.id)) icon(pen, `row:${r.id}:stuck`, "bang", -34, 6, 28, COLOR.error); // слева, не на тексте
     // Отметка по чужому токену не прошла: талон пода рядом с талоном строки — плашкой под таблицей.
     // Держится до конца сцены (World.clash), а не один кадр.
     if (w.clash?.row === r.id && r.token && w.actors[w.clash.by].token) {
@@ -196,7 +197,8 @@ function drawPodStatus(pen: Pen, w: World, a: Actor): void {
   const color = ACTOR[a.id].color;
   const items: [IconName, string, string][] = [];
   if (w.events.some((e) => e.kind === "zero" && e.by === a.id)) items.push(["cross", "0 строк", COLOR.error]);
-  if (a.scan?.waitingFor != null) items.push(["hourglass", `ждёт ${w.clock - a.scan.since} с`, color]);
+  // Секунды — только когда часы идут (кейс 2); «ждёт 0 с» читалось бы как «ожидания нет» (tech-expert).
+  if (a.scan?.waitingFor != null) items.push(["hourglass", w.clock > a.scan.since ? `ждёт ${w.clock - a.scan.since} с` : "ждёт", color]);
   else if (a.pending) items.push(["hourglass", "ждёт", color]);
   // Ключ идемпотентности — номер заказа, а не токен: у B и C он один и тот же (tech-expert).
   if (w.keyed && a.carrying !== null) items.push(["key", `заказ ${a.carrying}`, COLOR.ink]);
@@ -295,7 +297,7 @@ function drawMail(pen: Pen, w: World): void {
   pen.group(mailKey, 0, 0, () => drawMailBody(pen, w), { ...fade(w, "mail"), ...mailFx });
   // Реплика Почты — в журнале, хвостом к последнему письму: ответ про него.
   if (w.mail) {
-    const y = mailLineY(Math.max(0, w.letters.length - 1)) + 10;
+    const y = mailLineY(Math.max(0, w.letters.length - 1)) + 40; // ниже писем: не закрывать «повтор»
     pen.layer("top", () => bubble(pen, "mail:say", w.mail!, { x: MAIL.x + MAIL.w - 60, y, tail: "up", align: "end", attrs: { class: "fx-pop" } }));
   }
 }
@@ -364,8 +366,11 @@ function drawBoardBody(pen: Pen, w: World): void {
   b.attempts.forEach((t, i) => {
     const y = BOARD.y + 46 + i * BOARD.rowH;
     const current = i === (b.focus ?? b.attempts.length - 1);
-    pen.text(`board:n${i}`, { x: BOARD.x + 18, y: y + 18, ...SANS, fill: current ? COLOR.ink : COLOR.muted, "font-weight": current ? 700 : 400 }, t.name);
-    lampX.forEach((x, j) => lamp(pen, `board:l${i}:${j}`, x, y + 12, t.lamps?.[j] ?? null, 10));
+    // Ярко — только попытка, о которой речь; прошлые — фоном (learning-designer: 4×2 ламп не читают).
+    pen.group(`board:a${i}`, 0, 0, () => {
+      pen.text(`board:n${i}`, { x: BOARD.x + 18, y: y + 18, ...SANS, fill: current ? COLOR.ink : COLOR.muted, "font-weight": current ? 700 : 400 }, t.name);
+      lampX.forEach((x, j) => lamp(pen, `board:l${i}:${j}`, x, y + 12, t.lamps?.[j] ?? null, 10));
+    }, { opacity: current ? 1 : 0.45 });
   });
 }
 
@@ -444,7 +449,8 @@ export function render(pen: Pen, w: World): void {
       // Реплика пода — слева от него, поверх стрелок: над подом нет места из-за антенны соседа.
       if (a.present && a.say) bubble(pen, `say:${id}`, a.say, { x: POD.x - 6, y: POD_Y[id] + 24, tail: "right", attrs: { class: "fx-pop" } });
       // Мысль — там же, пунктиром: то, во что под верит (устаревшая проверка срока).
-      else if (a.present && a.thought) bubble(pen, `think:${id}`, a.thought, { x: POD.x - 6, y: POD_Y[id] + 24, tail: "right", thought: true, attrs: { ...fade(w, id), class: "fx-pop" } });
+      // Ниже стрелок пода к таблице (они уходят вверх-влево), чтобы не перечёркивать их.
+      else if (a.present && a.thought) bubble(pen, `think:${id}`, a.thought, { x: POD.x - 6, y: POD_Y[id] + 60, tail: "right", thought: true, attrs: { ...fade(w, id), class: "fx-pop" } });
     }
     if (w.card) drawCard(pen, w.card);
     if (w.plate) {

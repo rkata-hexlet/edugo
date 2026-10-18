@@ -2,10 +2,11 @@
 // звук — WAV из OfflineAudioContext той же страницы, склейка — ffmpeg. Экран и звуковая карта не нужны.
 // Голоса диктора в записи нет (Web Speech не пишется в файл) — субтитры диктора вшиты в кадр.
 //
-//   npm run dev        # в соседнем терминале
-//   npm run render -- [--url http://localhost:5173/] [--scene 01] [--fps 30] [--size 1920x1080]
-//                     [--out dist/episode-01.mp4] [--from 0] [--to <с>]
-import { spawn } from "node:child_process";
+//   npm run render -- [--scene 01] [--fps 30] [--size 1920x1080] [--out dist/episode-01.mp4]
+//                     [--from 0] [--to <с>] [--url http://localhost:5173/]
+// Без --url скрипт сам собирает приложение (vite build в кэш) и поднимает vite preview: правки
+// исходников во время рендера (перезагрузка dev-сервера) его не обрывают.
+import { execFileSync, spawn } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import puppeteer from "puppeteer-core";
@@ -14,7 +15,16 @@ const arg = (name, def) => {
   const i = process.argv.indexOf(`--${name}`);
   return i > 0 ? process.argv[i + 1] : def;
 };
-const url = arg("url", "http://localhost:5173/");
+const external = arg("url", null);
+const PORT = 4317;
+const appDir = "node_modules/.cache/edugo-render";
+let preview = null;
+if (!external) {
+  execFileSync("npx", ["vite", "build", "--outDir", appDir, "--emptyOutDir", "--logLevel", "warn"], { stdio: "inherit" });
+  preview = spawn("npx", ["vite", "preview", "--outDir", appDir, "--port", String(PORT), "--strictPort"], { stdio: "ignore" });
+  await new Promise((r) => setTimeout(r, 2000));
+}
+const url = external ?? `http://localhost:${PORT}/`;
 const sceneId = arg("scene", "01");
 const fps = Number(arg("fps", "30"));
 const [width, height] = arg("size", "1920x1080").split("x").map(Number);
@@ -75,4 +85,5 @@ try {
   console.log(`готово: ${out}`);
 } finally {
   await browser.close();
+  preview?.kill();
 }
