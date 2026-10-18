@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { estimateMs, speakable } from "../../engine/narrator";
+import { estimateMs, speakable, VOICE_DELAY_MS } from "../../engine/narrator";
 import { ACT, PRONOUNCE, buildSteps } from "./script";
 import {
   claimLease, commit, complete, crash, duplicates, rollback, rowById, selectTask, send, stuck, updateTask, waitingFor, world,
@@ -292,8 +292,8 @@ describe("сценарий не врёт", () => {
   // Временно 4:50 (сейчас ≈4:49: знакомство с миром + микрошаги + пауза перед голосом) — до решения
   // пользователя после прослушивания; цель была 3:30. Не поднимать молча: каждое повышение — в «Обсуждения».
   it("хронометраж ≤ 4:50: кадр длится, пока не истечёт hold и не договорит диктор", () => {
-    // голос начинается через 0.5 с после показа кадра (плеер), между фразами ~0.4 с
-    const voice = (s: (typeof steps)[number]) => (s.narration ? 0.5 + estimateMs(s.narration) / 1000 + 0.4 : 0);
+    // как в плеере: кадр держится, пока не истёк hold и не договорил диктор (он начинает через VOICE_DELAY_MS)
+    const voice = (s: (typeof steps)[number]) => (s.narration ? (VOICE_DELAY_MS + estimateMs(s.narration)) / 1000 : 0);
     const seconds = steps.reduce((sum, s) => sum + Math.max(s.hold ?? 0, voice(s)), 0);
     expect(seconds).toBeLessThanOrEqual(290);
   });

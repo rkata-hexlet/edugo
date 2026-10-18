@@ -355,11 +355,10 @@ export function buildSteps(): Step<World>[] {
   d.shot("", (w) => {
     for (const who of ALL) look(w, who);
   }, { focus: ["table"], voice: "Значит, проверять должна база: обновим задачу, только если статус всё ещё «новый»." });
-  d.shot("", (w) => cas(w, "A", 1), { sql: true, focus: ["A", "row:1", "sql"], voice: "Все трое шлют UPDATE, но база пускает только A." });
   d.shot("", (w) => {
-    cas(w, "B", 1);
-    cas(w, "C", 1);
-  }, { focus: ["B", "C", "row:1"], voice: "Поэтому B и C ждут, пока A сделает COMMIT." });
+    for (const who of ALL) cas(w, who, 1); // A задел строку, B и C упёрлись в его блокировку
+  }, { sql: true, focus: ["A", "row:1", "sql"], voice: "Все трое шлют UPDATE, но база пускает только A." });
+  d.shot("", undefined, { focus: ["B", "C", "row:1"], voice: "Поэтому B и C ждут, пока A сделает COMMIT." });
   d.term("Compare-and-set · optimistic locking");
   d.shot("", (w) => commitTx(w, "A"), {
     sql: true, focus: ["B", "C", "sql"],

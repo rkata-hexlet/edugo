@@ -1,6 +1,6 @@
 import { STAGE, type Scene, type Step } from "./contract";
 import { WebAudioSound } from "./audio";
-import { Narrator } from "./narrator";
+import { Narrator, VOICE_DELAY_MS } from "./narrator";
 import { SvgPen } from "./pen";
 import "./player.css";
 
@@ -99,9 +99,7 @@ export function mountPlayer<S>(host: HTMLElement, scene: Scene<S>): void {
     let timeUp = false;
     let spoken = false;
     const next = () => {
-      if (mine !== turn || !timeUp || !spoken) return;
-      if (steps[index].pause) return stop(); // кадр для чтения на паузе
-      tick();
+      if (mine === turn && timeUp && spoken) tick();
     };
     timer = setTimeout(() => ((timeUp = true), next()), frameMs(steps[index], speed()));
     narrate(() => ((spoken = true), next()));
@@ -109,6 +107,8 @@ export function mountPlayer<S>(host: HTMLElement, scene: Scene<S>): void {
   const tick = () => {
     if (index >= steps.length - 1) return stop();
     show(index + 1);
+    // Кадр для чтения на паузе: дошли — остановились, голос договаривает; ▶ поведёт дальше.
+    if (steps[index].pause) return (stop(), narrate());
     holdThenNext();
   };
   const toggle = () => {
@@ -133,7 +133,9 @@ export function mountPlayer<S>(host: HTMLElement, scene: Scene<S>): void {
 
   const toggleMute = () => {
     sound.muted = narrator.muted = !sound.muted;
-    if (sound.muted) (sound.cut(), narrator.cut());
+    if (sound.muted) sound.cut();
+    // Оборванная фраза не сообщит о конце — перезапускаем ожидание кадра, иначе автопроигрывание встанет.
+    if (timer !== undefined) (narrator.cut(), holdThenNext());
     saveMuted(sound.muted);
     paintMute();
   };
@@ -146,7 +148,7 @@ export function mountPlayer<S>(host: HTMLElement, scene: Scene<S>): void {
   subsBtn.addEventListener("click", toggleSubs);
   actSelect.addEventListener("change", () => (stop(), show(Number(actSelect.value))));
   document.addEventListener("keydown", (e) => {
-    if (e.target instanceof HTMLSelectElement) return;
+    if (e.target instanceof HTMLSelectElement || e.ctrlKey || e.metaKey || e.altKey) return;
     sound.unlock();
     if (e.key === "ArrowLeft") step(index - 1);
     else if (e.key === "ArrowRight") step(index + 1);
@@ -157,9 +159,6 @@ export function mountPlayer<S>(host: HTMLElement, scene: Scene<S>): void {
 
   show(index);
 }
-
-/** Пауза перед голосом диктора, мс (при скорости 1×). */
-const VOICE_DELAY_MS = 500;
 
 const MUTE_KEY = "edugo:muted";
 

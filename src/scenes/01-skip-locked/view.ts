@@ -185,6 +185,26 @@ function drawPodArrows(pen: Pen, w: World): void {
 /** Почта: журнал писем; дубль — красным, повтор с ключом — ↺ серым. */
 function drawMail(pen: Pen, w: World): void {
   pen.group("mail", 0, 0, () => drawMailBody(pen, w), fade(w, "mail"));
+  drawMailArrows(pen, w); // вне группы: прозрачности вложенных групп перемножаются
+}
+
+/** Письма этого кадра: стрелка под → строка журнала; яркая, если в фокусе Почта или отправитель. */
+function drawMailArrows(pen: Pen, w: World): void {
+  w.events.forEach((e, i) => {
+    if ((e.kind !== "send" && e.kind !== "replay") || e.row === undefined || !e.by) return;
+    let line = -1;
+    w.letters.forEach((l, j) => {
+      if (l.row === e.row && l.by === e.by) line = j;
+    });
+    const dupNow = w.events.some((x) => x.kind === "duplicate" && x.row === e.row && x.by === e.by);
+    const color = e.kind === "replay" ? C.muted : dupNow ? C.red : POD[e.by].color;
+    pen.line(`arr:mail:${i}`, {
+      x1: POD_BOX.x + POD_BOX.w, y1: podMid(e.by), x2: MAIL.x - 4, y2: MAIL.line0 - 5 + line * MAIL.lineH,
+      stroke: color, "stroke-width": 2.5, marker: "arrow",
+      ...(e.kind === "replay" ? { "stroke-dasharray": "4 4" } : {}),
+      ...fade(w, "mail", e.by),
+    });
+  });
 }
 
 function drawMailBody(pen: Pen, w: World): void {
@@ -201,22 +221,6 @@ function drawMailBody(pen: Pen, w: World): void {
   });
   if (w.mail) bubble(pen, "mail:say", MAIL.x + MAIL.w, MAIL.y - 4, w.mail, 26, true);
 
-  // Письма этого кадра: стрелка под → строка журнала.
-  w.events.forEach((e, i) => {
-    if ((e.kind !== "send" && e.kind !== "replay") || e.row === undefined || !e.by) return;
-    let line = -1;
-    w.letters.forEach((l, j) => {
-      if (l.row === e.row && l.by === e.by) line = j;
-    });
-    const dupNow = w.events.some((x) => x.kind === "duplicate" && x.row === e.row && x.by === e.by);
-    const color = e.kind === "replay" ? C.muted : dupNow ? C.red : POD[e.by].color;
-    pen.line(`arr:mail:${i}`, {
-      x1: POD_BOX.x + POD_BOX.w, y1: podMid(e.by), x2: MAIL.x - 4, y2: MAIL.line0 - 5 + line * MAIL.lineH,
-      stroke: color, "stroke-width": 2.5, marker: "arrow",
-      ...(e.kind === "replay" ? { "stroke-dasharray": "4 4" } : {}),
-      ...fade(w, "mail", e.by),
-    });
-  });
 }
 
 const LAMP: Record<Lamp, string> = { red: C.red, yellow: C.yellow, green: C.green };
