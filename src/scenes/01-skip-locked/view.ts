@@ -52,8 +52,10 @@ function drawRow(pen: Pen, w: World, r: Row, stuck: Set<number>): void {
   const seenByRace = w.race && ACTORS.some((id) => w.actors[id].seen === r.id);
   const owners = carriers(w, r.id);
   const status = r.draft && r.draft.status !== r.status ? `${r.status} → ${r.draft.status}` : r.status;
-  // Цвет пода — только у закоммиченной «в работе»: незакоммиченный захват видит лишь сам под.
-  const ownerTint = r.status === "in_progress" && owners.length === 1 ? ACTOR[owners[0]].tint : null;
+  // Цвет пода — только у закоммиченной «в работе»: незакоммиченный захват видит лишь сам под. С токенами —
+  // цвет того, чей токен в строке: после перехвата строка становится цвета нового владельца.
+  const holder = r.token ? ACTORS.find((id) => w.actors[id].token === r.token) : owners.length === 1 ? owners[0] : undefined;
+  const ownerTint = r.status === "in_progress" && holder ? ACTOR[holder].tint : null;
   const statusFill = r.draft ? "#3b3720" : r.status === "done" ? "#163a33" : ownerTint ?? (r.status === "in_progress" ? COLOR.surface2 : COLOR.surface);
   const expired = r.leaseUntil !== null && r.leaseUntil < w.clock && r.status === "in_progress";
   const width = tableEnd(w) - TABLE.x;
@@ -84,11 +86,10 @@ function drawRow(pen: Pen, w: World, r: Row, stuck: Set<number>): void {
       }, w.ghost.token);
     }
     if (stuck.has(r.id)) icon(pen, `row:${r.id}:stuck`, "question", -34, 8, 26, COLOR.error); // слева, не на тексте
-    // 0 строк по чужому токену: талон пода рядом с талоном строки — плашкой под строкой (поверх соседней,
-    // она в этот момент приглушена), а не справа, где поды и стрелки.
-    const lost = w.events.find((e) => e.kind === "zero" && e.row === r.id && e.by && w.actors[e.by].token && w.actors[e.by].token !== r.token);
-    if (lost?.by && r.token) {
-      const loser = lost.by;
+    // Отметка по чужому токену не прошла: талон пода рядом с талоном строки — плашкой под таблицей.
+    // Держится до конца сцены (World.clash), а не один кадр.
+    if (w.clash?.row === r.id && r.token && w.actors[w.clash.by].token) {
+      const loser = w.clash.by;
       const mine = w.actors[loser].token!;
       // Под таблицей, под колонкой токенов: на соседней строке плашка закрыла бы её текст.
       pen.group(`row:${r.id}:vs`, COLS[2].x - 20, rowY(w.rows.length) - rowY(r.id) + TABLE.rowH + 12, () => {
@@ -116,8 +117,9 @@ function tokenOwnerColor(w: World, token: string): string {
   return owner ? ACTOR[owner].color : COLOR.ink;
 }
 
-/** Полоса срока по низу ячеек токена и срока: от захвата до дедлайна (зелёная) и после (красная),
- *  курсор «сейчас» по часам БД, значок ✓ цвета пода, когда держатель проверял срок. */
+/** Полоса срока по низу ячеек токена и срока: прошедшее время — зелёное до дедлайна и красное после,
+ *  будущее — серое, засечка на дедлайне; курсор «сейчас» по часам БД; значок ✓ цвета пода — когда
+ *  держатель проверял срок. Красное появляется только когда курсор пересёк дедлайн. */
 function drawLeaseBar(pen: Pen, w: World, r: Row): void {
   const x0 = COLS[2].x + 8;
   const len = COLS[3].x + COLS[3].w - 8 - x0;
@@ -125,10 +127,15 @@ function drawLeaseBar(pen: Pen, w: World, r: Row): void {
   const span = LEASE_TTL * 1.5;
   const at = (t: number) => x0 + Math.max(0, Math.min(1, (t - t0) / span)) * len;
   const deadline = at(r.leaseUntil!);
+  const now = at(w.clock);
   const y = TABLE.rowH - 6;
-  pen.rect(`row:${r.id}:bar:ok`, { x: x0, y, width: deadline - x0, height: 4, rx: 2, fill: COLOR.ok, opacity: 0.8 });
-  pen.rect(`row:${r.id}:bar:late`, { x: deadline, y, width: x0 + len - deadline, height: 4, rx: 2, fill: COLOR.error, opacity: 0.8 });
-  pen.group(`row:${r.id}:now`, at(w.clock), y - 6, () => {
+  const bar = (k: string, from: number, to: number, fill: string, opacity = 0.85) =>
+    to > from && pen.rect(`row:${r.id}:bar:${k}`, { x: from, y, width: to - from, height: 4, rx: 2, fill, opacity });
+  bar("future", now, x0 + len, COLOR.faint, 0.6);
+  bar("ok", x0, Math.min(now, deadline), COLOR.ok);
+  bar("late", deadline, now, COLOR.error);
+  pen.rect(`row:${r.id}:bar:tick`, { x: deadline - 1, y: y - 3, width: 2, height: 10, fill: COLOR.muted });
+  pen.group(`row:${r.id}:now`, now, y - 6, () => {
     pen.rect(`row:${r.id}:now:mark`, { x: -1.5, width: 3, height: 16, rx: 1.5, fill: COLOR.ink });
   });
   for (const id of ACTORS) {
@@ -200,9 +207,13 @@ function drawPod(pen: Pen, w: World, a: Actor): void {
     const nameColor = !a.present || a.frozen ? COLOR.muted : color;
     pen.text(`pod:${a.id}:name`, { x: BOB.w + 14, y: 24, ...SANS, "font-size": SIZE.say, "font-weight": 700, fill: nameColor },
       a.present ? a.label : `${a.label} · упал`);
+    // «?» сбоку, а не над головой: вопрос задают остальные («жив ли он?»), а не сам под. Виден и у
+    // упавшего — снаружи не отличить (нить главы 2).
+    if (w.doubt === a.id) icon(pen, `pod:${a.id}:doubt`, "question", -40, -34, 34, COLOR.warn);
     if (!a.present) return;
     if (a.token) iconText(pen, `pod:${a.id}:tok`, "ticket", BOB.w + 92, 24, a.token, color, MONO);
     drawPodStatus(pen, w, a);
+    if (w.keyed) icon(pen, `pod:${a.id}:key`, "key", BOB.w + (a.token ? 166 : 92), 8, 20, COLOR.ink); // письма пойдут с ключом
     if (a.frozen) icon(pen, `pod:${a.id}:zz`, "sleep", 44, -34, 30, COLOR.muted); // завис — видно издалека
     if (w.events.some((e) => e.kind === "unfreeze" && e.by === a.id)) icon(pen, `pod:${a.id}:wake`, "bang", 46, -36, 28, COLOR.warn);
   }, fade(w, a.id));
@@ -224,9 +235,13 @@ function drawPodArrows(pen: Pen, w: World): void {
         stroke: color, "stroke-width": 3, "stroke-dasharray": "9 7", "stroke-linecap": "round", marker: "arrow", opacity: op,
       });
     } else if (a.carrying !== null) {
+      // Держит по устаревшей проверке: в строке уже чужой токен — бледный пунктир.
+      const row = w.rows.find((r) => r.id === a.carrying)!;
+      const stale = a.token !== null && row.token !== null && row.token !== a.token;
       pen.line(`arr:${id}:hold`, {
         x1: from.x, y1: from.y, x2: end, y2: rowMid(a.carrying),
-        stroke: color, "stroke-width": 3.5, "stroke-linecap": "round", marker: "arrow", opacity: op,
+        stroke: color, "stroke-width": stale ? 2.5 : 3.5, "stroke-linecap": "round", marker: "arrow",
+        opacity: stale ? op * 0.5 : op, ...(stale ? { "stroke-dasharray": "4 7" } : {}),
       });
     } else if (a.seen !== null) {
       pen.line(`arr:${id}:look`, {
@@ -321,7 +336,7 @@ function drawBoardBody(pen: Pen, w: World): void {
     pen.text(`board:h${i}`, { x: lampX[i], y: BOARD.y + 30, ...SANS, fill: COLOR.muted, "text-anchor": "middle" }, c));
   b.attempts.forEach((t, i) => {
     const y = BOARD.y + 46 + i * BOARD.rowH;
-    const current = i === b.attempts.length - 1;
+    const current = i === (b.focus ?? b.attempts.length - 1);
     pen.text(`board:n${i}`, { x: BOARD.x + 18, y: y + 18, ...SANS, fill: current ? COLOR.ink : COLOR.muted, "font-weight": current ? 700 : 400 }, t.name);
     lampX.forEach((x, j) => lamp(pen, `board:l${i}:${j}`, x, y + 12, t.lamps?.[j] ?? null, 10));
   });
@@ -397,6 +412,8 @@ export function render(pen: Pen, w: World): void {
       const a = w.actors[id];
       // Реплика пода — слева от него, поверх стрелок: над подом нет места из-за антенны соседа.
       if (a.present && a.say) bubble(pen, `say:${id}`, a.say, { x: POD.x - 6, y: POD_Y[id] + 24, tail: "right" });
+      // Мысль — там же, пунктиром: то, во что под верит (устаревшая проверка срока).
+      else if (a.present && a.thought) bubble(pen, `think:${id}`, a.thought, { x: POD.x - 6, y: POD_Y[id] + 24, tail: "right", thought: true, attrs: fade(w, id) });
     }
     if (w.card) drawCard(pen, w.card);
     if (w.plate) {

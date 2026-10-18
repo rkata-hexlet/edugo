@@ -54,6 +54,7 @@ export interface Actor {
   frozen: boolean; // завис (внешний API без таймаута, GC-пауза)
   checkedAt: number | null; // когда под последний раз проверил срок своей аренды (по часам БД)
   say: string | null; // реплика в пузыре
+  thought: string | null; // мысль: живёт, пока сценарий её не снимет (устаревшая проверка срока)
 }
 
 /** Письмо в Почту — внешний эффект задачи; таблица tasks его не видит. */
@@ -71,6 +72,7 @@ export type Lamp = "red" | "yellow" | "green";
 export interface Board {
   criteria: [string, string];
   attempts: { name: string; lamps: [Lamp, Lamp] | null }[]; // null — ещё не проверили
+  focus?: number; // о какой попытке говорит диктор; нет — о последней
 }
 
 /** Событие кадра — для звука. Пишут операции модели и глаголы сценария, не отрисовка. */
@@ -101,6 +103,12 @@ export interface World {
   board: Board | null; // табло попыток главы
   leaseCols: boolean; // показать колонки claim_token и lease_until
   ghost: { row: number; token: string } | null; // прежний токен строки — зачёркнутым, кадр перехвата
+  /** Отметка пода не прошла по чужому токену: плашка «🎫свой ≠ 🎫строки» держится до конца сцены. */
+  clash: { row: number; by: ActorId } | null;
+  /** Под под вопросом: остальные не знают, жив ли он. Нить главы 2. */
+  doubt: ActorId | null;
+  /** Письма уходят с ключом идемпотентности (номер заказа). */
+  keyed: boolean;
   stamp: string | null; // штамп перехода («⟲ вернёмся…») — мир перемотан
   /** О чём сейчас говорит диктор: A/B/C, row:N, table, mail, board, clock, sql. Остальное приглушено. */
   focus: Focus[] | null;
@@ -115,7 +123,7 @@ const TOKENS = ["7f3a", "c21e", "9b04", "e6d1", "40ac", "d58f"];
 export function world(rowCount = 6): World {
   const actor = (id: ActorId, label: string): Actor => ({
     id, label, present: true, carrying: null, seen: null, scan: null,
-    pending: null, affected: null, token: null, mutex: false, frozen: false, checkedAt: null, say: null,
+    pending: null, affected: null, token: null, mutex: false, frozen: false, checkedAt: null, say: null, thought: null,
   });
   return {
     clock: 0,
@@ -138,6 +146,9 @@ export function world(rowCount = 6): World {
     board: null,
     leaseCols: false,
     ghost: null,
+    clash: null,
+    doubt: null,
+    keyed: false,
     stamp: null,
     focus: null,
     term: null,

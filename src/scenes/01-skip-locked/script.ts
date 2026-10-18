@@ -19,6 +19,7 @@ export const ACT = {
   case2: "Кейс 2",
   stuck: "2.1 Завис или упал",
   zombie: "2.2 Зомби",
+  summary: "Итог",
 } as const;
 
 const SQL = {
@@ -88,6 +89,8 @@ interface ShotOptions {
   voice?: string;
   /** О чём говорит диктор — это ярко, остальное приглушено. */
   focus?: Focus[];
+  /** Какую попытку табло подсветить (по номеру); нет — последнюю. */
+  attempt?: number;
 }
 
 class Director {
@@ -98,6 +101,7 @@ class Director {
   private label: string | null = null;
   private chapterNo: number | null = null;
   private board: Board | null = null;
+  private doubtOf: ActorId | null = null;
 
   /** Новая сцена (свежие 6 задач); ярлык переживает смену сцены внутри акта и сбрасывается на новом акте. */
   scene(act: string, w: World = world()): void {
@@ -116,6 +120,11 @@ class Director {
   chapter(no: number | null, criteria: [string, string] | null = null): void {
     this.chapterNo = no;
     this.board = criteria ? { criteria, attempts: [] } : null;
+  }
+
+  /** «?» над подом: остальные не знают, жив ли он; null — снять. Переживает смену сцены. */
+  doubt(who: ActorId | null): void {
+    this.doubtOf = who;
   }
 
   /** Новая строка табло — попытка, которую сейчас покажем. */
@@ -144,6 +153,8 @@ class Director {
     if (opts.verdict) this.board!.attempts.at(-1)!.lamps = opts.verdict;
     w.chapter = this.chapterNo;
     w.board = structuredClone(this.board);
+    if (w.board && opts.attempt !== undefined) w.board.focus = opts.attempt;
+    w.doubt = this.doubtOf;
     if (w.card || w.plate) w.events.push({ kind: "card" });
     const state = structuredClone(w);
     this.steps.push({
@@ -270,8 +281,8 @@ function workRest(w: World): void {
 }
 
 /** Зомби и перехвативший доделывают #1: письмо и done по своему токену. keyed — письма с ключом. */
-function bothFinish(w: World, keyed: boolean): void {
-  setClock(w, 710);
+function bothFinish(w: World, keyed: boolean, at: number): void {
+  setClock(w, at);
   freeze(w, "B", false);
   for (const who of ["B", "C"] as const) {
     send(w, who, 1, keyed);
@@ -280,10 +291,10 @@ function bothFinish(w: World, keyed: boolean): void {
   }
 }
 
+/** Часы БД: t секунд от 12:00:00. */
 export function clock(t: number): string {
-  const m = Math.floor(t / 60);
-  const s = t % 60;
-  return `12:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${12 + Math.floor(t / 3600)}:${pad(Math.floor(t / 60) % 60)}:${pad(t % 60)}`;
 }
 
 export function buildSteps(): Step<World>[] {
@@ -309,9 +320,18 @@ export function buildSteps(): Step<World>[] {
     focus: ["A", "B", "C"],
     voice: "В центре стоят три пода одного сервиса. Каждый берёт задачу из таблицы и выполняет.",
   });
+  // Норма до первой поломки: как выглядит «взял задачу» и «одно письмо» (learning-designer: легенда стрелок).
+  d.shot("", (w) => {
+    look(w, "A");
+    take(w, "A", 1);
+  }, { focus: ["A", "row:1"], voice: "Сначала посмотрим, как выглядит норма: A берёт первую задачу." });
+  d.shot("", (w) => finish(w, "A", 1), {
+    focus: ["A", "mail", "row:1"],
+    voice: "Он отправляет письмо и отмечает задачу выполненной: на одну задачу ушло одно письмо.",
+  });
   d.shot("", undefined, {
     focus: ["mail"],
-    voice: "Выполнить задачу значит отправить письмо, и на заказ должно уйти одно. Если уйдёт два, это брак.",
+    voice: "Каждая задача — это письмо по одному заказу, и уйти оно должно ровно один раз. Если уйдёт два, это брак.",
   });
 
   // КЕЙС 1 — раздать задачи без дублей.
@@ -372,7 +392,7 @@ export function buildSteps(): Step<World>[] {
   d.shot("", (w) => {
     for (const who of ALL) cas(w, who, 1); // A задел строку, B и C упёрлись в его блокировку
   }, { sql: true, focus: ["A", "row:1", "sql"], voice: "Все трое шлют UPDATE, но база пускает только A." });
-  d.shot("", undefined, { focus: ["B", "C", "row:1"], voice: "Поэтому B и C ждут, пока A сделает COMMIT." });
+  d.shot("", undefined, { focus: ["B", "C", "row:1"], voice: "Поэтому B и C ждут, пока A сделает COMMIT, то есть зафиксирует транзакцию." });
   d.term("Compare-and-set · optimistic locking");
   d.shot("", (w) => commitTx(w, "A"), {
     sql: true, focus: ["B", "C", "sql"],
@@ -455,19 +475,20 @@ export function buildSteps(): Step<World>[] {
     voice: "Остальные задачи разбираются так же: дубли гасит условие «статус новый» под блокировкой, а ожидание убирает SKIP LOCKED.",
   });
 
-  // КЕЙС 2 — воркер завис. Нить главы: жив ли B? Со стороны медленного не отличить от мёртвого.
+  // КЕЙС 2 — под замолчал. Нить главы: жив ли B? Со стороны медленного не отличить от мёртвого.
   d.scene(ACT.case2);
   d.chapter(2, ["не застревает", "письмо одно"]);
   d.shot("", (w) => {
-    w.plate = "КЕЙС 2 из 2\nВоркер завис. Чья теперь задача?";
+    w.plate = "КЕЙС 2 из 2\nПод замолчал. Жив ли он?";
     w.db = "Починили? Посмотрим.";
   }, {
     hold: 3.5,
-    voice: "Глава вторая: до сих пор поды были живы, а теперь один замолчит. Что будет с задачей и письмами?",
+    voice: "Глава вторая: до сих пор поды были живы, а теперь один замолчит. Жив ли он, и что будет с задачей и письмами?",
   });
 
   // 2.1 Завис или упал → lease.
   d.scene(ACT.stuck);
+  d.doubt("B");
   d.attempt("держим транзакцию");
   d.shot("", (w) => {
     look(w, "B", "skip_locked");
@@ -485,6 +506,10 @@ export function buildSteps(): Step<World>[] {
     verdict: ["red", "green"], focus: ["clock", "table", "row:1"],
     voice: "Проходит десять минут, остальные задачи давно разобраны, а первая висит: блокировка держится до конца транзакции B.",
   });
+  d.shot("", undefined, {
+    focus: ["board"],
+    voice: "А ждать конца такой транзакции можно часами, и всё это время соединение с базой занято, так что первый вариант не годится.",
+  });
   d.scene(ACT.stuck);
   d.w.clock = 610; // часы БД идут дальше, назад не прыгают
   d.attempt("«в работе» и сразу COMMIT");
@@ -493,40 +518,49 @@ export function buildSteps(): Step<World>[] {
     take(w, "B", 1);
   }, {
     focus: ["B", "row:1"],
-    voice: "Ждать конца такой транзакции можно часами, а соединение всё это время занято, так что первый вариант не годится. Попробуем иначе: B ставит статус «в работе» и сразу делает COMMIT, и блокировки больше нет.",
+    voice: "Попробуем иначе: B ставит статус «в работе» и сразу делает COMMIT, так что блокировки больше нет.",
   });
   d.shot("", (w) => crash(w, "B"), { focus: ["B"], voice: "Но посреди работы B падает." });
   d.shot("", (w) => {
+    setClock(w, 610 + 3600); // час спустя — «навсегда» видно по часам, а не только на словах
     workRest(w);
     w.db = "В работе. Жив ли он — не знаю.";
   }, {
-    verdict: ["red", "green"], focus: ["table", "row:1"],
-    voice: "Остальные видят «в работе» и не знают, жив ли B. Медленного со стороны не отличить от мёртвого, поэтому задача висит навсегда.",
+    verdict: ["red", "green"], focus: ["table", "row:1", "clock"],
+    voice: "Остальные видят «в работе» и не знают, жив ли B. Медленного со стороны не отличить от мёртвого, поэтому задача висит и через час, и через сутки.",
   });
   d.shot("", undefined, {
-    focus: ["board"],
-    voice: "Выходит, оба варианта плохи по-своему. С транзакцией дорого, и задача ждёт зависшего, хотя падение база разрулит сама. Без транзакции дёшево, но после падения задача висит навсегда. Значит, нужен способ, который справится с обоими случаями.",
+    focus: ["board"], attempt: 0,
+    voice: "Выходит, оба варианта плохи по-своему. Транзакция обходится дорого, и задача ждёт зависшего пода, хотя после падения блокировку база снимет сама.",
   });
+  d.shot("", undefined, {
+    focus: ["board"], attempt: 1,
+    voice: "Без транзакции выходит дёшево, но после падения задача висит навсегда. Значит, нужен способ, который справится с обоими случаями.",
+  });
+  const L = 4270; // часы lease-сцены: после часа ожидания в варианте 2, назад не идут
   d.scene(ACT.stuck);
-  d.w.clock = 670;
+  d.w.clock = L;
   d.w.leaseCols = true;
   d.attempt("lease: токен и срок");
-  d.term("Lease");
   d.shot("", (w) => {
     w.stamp = "⟲ Третий вариант: срок аренды";
-    grabWithLease(w, "B");
   }, {
+    focus: ["table"],
+    voice: "Раз со стороны не понять, жив B или нет, договоримся о сроке. Для этого в таблице появятся две колонки: токен захвата и срок аренды.",
+  });
+  d.term("Lease");
+  d.shot("", (w) => grabWithLease(w, "B"), {
     sql: true, focus: ["B", "row:1", "clock"],
-    voice: "Раз со стороны не понять, жив B или нет, договоримся о сроке: при захвате одним запросом база выдаёт токен и срок по своим часам. Это lease.",
+    voice: "При захвате база одним запросом выдаёт B токен, то есть уникальную метку именно этого захвата, и срок по своим часам. Такая аренда задачи и называется lease.",
   });
   d.shot("", (w) => {
-    setClock(w, 675);
+    setClock(w, L + 5);
     w.actors.B.checkedAt = w.clock;
-    say(w, "B", "Запас есть — успею.");
+    w.actors.B.thought = "Запас есть — успею"; // устаревшая проверка: держится, пока B не узнает правду
     freeze(w, "B", true);
   }, { focus: ["B", "row:1"], voice: "B проверяет срок, видит запас и именно в этот момент зависает." });
   d.shot("", (w) => {
-    setClock(w, 701);
+    setClock(w, L + 31);
     w.events.push({ kind: "expire" });
   }, { focus: ["row:1", "clock"], voice: "Срок вышел, но в строке ничего не меняется: срок здесь просто значение в колонке." });
   d.shot("", (w) => {
@@ -541,7 +575,7 @@ export function buildSteps(): Step<World>[] {
   // 2.2 Зомби.
   d.scene(ACT.zombie, structuredClone(beforeZombie));
   d.shot("", (w) => {
-    setClock(w, 710);
+    setClock(w, L + 40);
     freeze(w, "B", false);
     send(w, "B", 1);
   }, {
@@ -551,12 +585,15 @@ export function buildSteps(): Step<World>[] {
   d.shot("", (w) => {
     complete(w, "B", 1, true);
     sql(w, "B", `${SQL.doneByToken(1, "7f3a")}  ${rows(0)}`);
+    w.clash = { row: 1, by: "B" };
   }, {
     sql: true, focus: ["B", "row:1", "sql"],
     voice: "Отметку B делает после письма, как и положено, но база её не пускает: токен в строке чужой. А письмо уже ушло, и отозвать его нельзя.",
   });
-  d.shot("", (w) => {
+  const afterClash = structuredClone(d.w);
+  d.shot("В таблице одна строка. Писем — два.", (w) => {
     release(w, "B");
+    w.actors.B.thought = null;
     send(w, "C", 1);
     complete(w, "C", 1, true);
     release(w, "C");
@@ -568,29 +605,45 @@ export function buildSteps(): Step<World>[] {
   d.attempt("lease + Idempotency-Key");
   d.shot("", (w) => {
     w.stamp = "⟲ Вернёмся: B ещё не проснулся";
-    bothFinish(w, true);
+    w.keyed = true;
+  }, {
+    focus: ["B", "C", "mail"],
+    voice: "Письмо базе не подвластно, поэтому защитим его отдельно. Вернёмся к моменту, когда B ещё не проснулся, и добавим ключ идемпотентности: например, номер заказа.",
+  });
+  d.shot("", (w) => {
+    bothFinish(w, true, L + 40);
+    w.actors.B.thought = null;
     w.mail = "Заказ 1? Уже отправлено.";
   }, {
     focus: ["mail"],
-    voice: "Вернёмся к моменту до пробуждения B и добавим письму ключ идемпотентности, номер заказа: Почта увидит повтор и вернёт прежний ответ.",
+    voice: "Оба письма уходят с одним ключом. Какое бы ни пришло вторым, Почта увидит повтор и вернёт прежний ответ.",
   });
+  const afterKeyed = structuredClone(d.w);
   d.term("At-least-once · idempotency key");
   d.shot("", undefined, {
     verdict: ["green", "green"], focus: ["board"],
-    voice: "Без ключа не обойтись: медленного не отличить от мёртвого, поэтому задачу иногда забирают у живого, и она выполняется дважды. Это at-least-once, и повторы гасит получатель.",
+    voice: "Без ключа не обойтись: раз медленного не отличить от мёртвого, задачу иногда забирают у живого, и она выполняется дважды. Это at-least-once, и повторы гасит получатель.",
   });
-  // Итог: три защиты — каждая на своём месте экрана.
-  d.shot("", undefined, {
-    focus: ["row:1", "clock"],
-    voice: "Подведём итог. Срок аренды, то есть lease, не даёт задаче застрять навсегда.",
+
+  // Итог: каждый образ пересыгран — те же кадры перехвата, отказа по токену и повтора в Почте.
+  d.doubt(null);
+  d.scene(ACT.summary, structuredClone(beforeZombie));
+  d.shot("", (w) => {
+    w.actors.B.thought = null;
+    w.ghost = { row: 1, token: w.actors.B.token! };
+  }, {
+    focus: ["row:1", "clock", "C"],
+    voice: "Подведём итог. Срок аренды, то есть lease, не даёт задаче застрять навсегда: просроченную задачу заберёт первый же под, который придёт за работой.",
   });
-  d.shot("", undefined, {
-    focus: ["row:1"],
-    voice: "Токен не даёт проснувшемуся воркеру распоряжаться чужой задачей: отмечаем её только по своему токену.",
+  d.scene(ACT.summary, structuredClone(afterClash));
+  d.shot("", (w) => (w.actors.B.thought = null), {
+    focus: ["row:1", "B"],
+    voice: "Токен не даёт проснувшемуся поду распоряжаться чужой задачей: отметка проходит только по своему токену.",
   });
+  d.scene(ACT.summary, structuredClone(afterKeyed));
   d.shot("", undefined, {
     focus: ["mail"],
-    voice: "А ключ идемпотентности не даёт письму уйти дважды: его проверяет получатель. Только вместе эти три защиты справляются с зависшим воркером.",
+    voice: "А ключ идемпотентности делает повторное письмо безвредным: получатель узнаёт повтор по ключу и просто возвращает прежний ответ. Только вместе эти три защиты справляются с зависшим подом.",
   });
 
   return d.steps;

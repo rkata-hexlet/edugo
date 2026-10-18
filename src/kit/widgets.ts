@@ -29,7 +29,7 @@ export type Tail = "left" | "right" | "down" | "up";
  */
 export function bubble(
   pen: Pen, key: string, text: string,
-  o: { x: number; y: number; tail: Tail; align?: "start" | "end"; size?: number; attrs?: Attrs },
+  o: { x: number; y: number; tail: Tail; align?: "start" | "end"; size?: number; thought?: boolean; attrs?: Attrs },
 ): { w: number; h: number } {
   const size = o.size ?? SIZE.say;
   const font = { "font-size": size, "font-family": FONT.sans, "font-weight": 600 };
@@ -58,6 +58,15 @@ export function bubble(
     tri = `M ${o.x} ${o.y} L ${o.x - 9} ${edge} L ${o.x + 9} ${edge} Z`;
   }
   pen.group(key, 0, 0, () => {
+    if (o.thought) {
+      // Мысль: тёмная, пунктиром, вместо хвоста — два кружка к говорящему.
+      pen.rect(`${key}:bg`, { x: bx, y: by, width: w, height: h, rx: h / 2, fill: COLOR.surface2, stroke: COLOR.ink, "stroke-width": 2, "stroke-dasharray": "5 4" });
+      const dir = o.tail === "right" ? -1 : 1;
+      [[6, 4], [14, 6]].forEach(([d, r], i) =>
+        pen.rect(`${key}:dot${i}`, { x: o.x + dir * d - r / 2, y: o.y - r / 2, width: r, height: r, rx: r / 2, fill: COLOR.ink }));
+      pen.text(`${key}:t`, { x: bx + padX, y: by + padY + size * 0.8, fill: COLOR.ink, ...font, "font-style": "italic" }, text);
+      return;
+    }
     pen.rect(`${key}:shadow`, { x: bx, y: by + SHADOW, width: w, height: h, rx: 14, fill: COLOR.shadow });
     pen.path(`${key}:tail`, { d: tri, fill: COLOR.ink, stroke: "none" });
     pen.rect(`${key}:bg`, { x: bx, y: by, width: w, height: h, rx: 14, fill: COLOR.ink });

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { estimateMs, POST_VOICE_MS, speakable, VOICE_DELAY_MS } from "../../engine/narrator";
-import { ACT, PRONOUNCE, buildSteps } from "./script";
+import { ACT, PRONOUNCE, buildSteps, clock } from "./script";
 import {
   claimLease, commit, complete, crash, duplicates, rollback, rowById, selectTask, send, stuck, updateTask, waitingFor, world,
   type EventKind, type World,
@@ -310,5 +310,25 @@ describe("сценарий не врёт", () => {
     }
     const bare = [ACT.hook, ACT.intro, ACT.case1, ACT.case2] as string[];
     expect(steps.filter((s) => bare.includes(s.act)).every((s) => s.state.term === null)).toBe(true);
+  });
+
+  it("часы БД не идут назад внутри сцены, а после перехвата строка 1 просрочена до конца зомби-сцены", () => {
+    // Перемотка к beforeZombie и итог — повтор уже показанных моментов: там сравниваем внутри сцены.
+    for (let i = 1; i < steps.length; i++) {
+      const s = steps[i];
+      const replay = s.act === ACT.summary || s.state.stamp?.startsWith("⟲ Вернёмся");
+      if (!replay) expect(s.state.clock, `кадр ${i + 1}`).toBeGreaterThanOrEqual(steps[i - 1].state.clock);
+    }
+    const zombie = frames(ACT.zombie);
+    expect(zombie.length).toBeGreaterThan(0);
+    for (const w of zombie) {
+      const r = w.rows[0];
+      if (r.status === "in_progress") expect(r.leaseUntil! < w.clock || r.token !== w.actors.B.token).toBe(true);
+    }
+  });
+
+  it("часы показывают часы: 3600 с — 13:00:00, а не 12:60:00", () => {
+    expect(clock(0)).toBe("12:00:00");
+    expect(clock(4210)).toBe("13:10:10");
   });
 });
