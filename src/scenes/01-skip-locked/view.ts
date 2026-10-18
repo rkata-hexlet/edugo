@@ -193,8 +193,8 @@ function drawPod(pen: Pen, w: World, a: Actor): void {
   pen.group(`pod:${a.id}`, POD.x, POD_Y[a.id], () => {
     if (a.mutex) {
       // Купол процесса: мьютекс живёт внутри пода, соседям его не видно.
-      dome(pen, `pod:${a.id}:dome`, { x: -10, y: -26, w: POD.w + 6, h: POD.h + 34, color });
-      iconText(pen, `pod:${a.id}:mu`, "lock", POD.w - 62, -6, "mu", color, MONO);
+      dome(pen, `pod:${a.id}:dome`, { x: -10, y: -24, w: POD.w + 6, h: POD.h + 30, color });
+      iconText(pen, `pod:${a.id}:mu`, "lock", POD.w - 62, -4, "mu", color, MONO);
     }
     bob(pen, `pod:${a.id}:bob`, { x: 0, y: 0, color, tint, letter: a.id, mood, look: podLook(w, a), ghost: !a.present, dashed: mood === "wait" });
     const nameColor = !a.present || a.frozen ? COLOR.muted : color;
@@ -287,7 +287,7 @@ function drawMailBody(pen: Pen, w: World): void {
   panel(pen, "mail:box", { x: MAIL.x, y: MAIL.y, w: MAIL.w, h: MAIL.h, fill: dup.length ? "#3a1c2a" : COLOR.surface, stroke: dup.length ? COLOR.error : COLOR.mail });
   iconText(pen, "mail:title", "mail", MAIL.x + 16, MAIL.y + 38, "Почта", COLOR.mail, { ...SANS, "font-size": SIZE.say, "font-weight": 700 });
   const mood: MailMood = dup.length ? "alarm" : w.letters.some((l) => l.replayed) ? "relieved" : w.letters.length ? "calm" : "asleep";
-  mailFace(pen, "mail:face", { x: MAIL.x + MAIL.w - 52, y: MAIL.y + 26, mood });
+  mailFace(pen, "mail:face", { x: MAIL.x + MAIL.w - 60, y: MAIL.y + 24, mood });
   pen.rect("mail:rule", { x: MAIL.x + 16, y: MAIL.y + 52, width: MAIL.w - 32, height: 1.5, fill: COLOR.line });
   const sent = new Set<number>();
   w.letters.forEach((l, i) => {
@@ -369,7 +369,7 @@ function drawStamp(pen: Pen, text: string): void {
 
 function drawHeader(pen: Pen, w: World): void {
   // Postgres — слон-«кладовщик» и табличка с именем.
-  elephant(pen, "db:face", { x: TABLE.x + 6, y: 12, talking: !!w.db });
+  elephant(pen, "db:face", { x: TABLE.x + 4, y: 8, talking: !!w.db, scale: 1.08 });
   panel(pen, "db", { x: DB.x, y: 20, w: DB.w, h: 46, rx: 14, fill: COLOR.surface2, stroke: COLOR.postgres });
   pen.text("db:name", { x: DB.x + 16, y: 50, ...SANS, "font-size": SIZE.say, "font-weight": 700, fill: COLOR.ink }, "Postgres");
   let x = POD.x;
