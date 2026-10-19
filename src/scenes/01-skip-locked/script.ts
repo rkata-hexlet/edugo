@@ -541,7 +541,7 @@ export function buildSteps(): Step<World>[] {
     grabWithLease(w, "C");
   }, {
     sql: true, focus: ["C", "row:1", "sql"],
-    voice: "Зато просрочку замечает следующий захват: под C забирает подвисшую задачу и получает уже новый токен.",
+    voice: "А стоит поду C прийти за очередной задачей, как база сверит срок со своими часами и отдаст задачу ему, уже с новым токеном.",
   });
   const beforeZombie = structuredClone(d.w);
 
