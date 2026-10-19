@@ -310,7 +310,7 @@ body {
 .capture .stage {
   cursor: none;
 }
-/* В записи субтитры — главный носитель голоса: крупнее; кнопка «смотреть» на заставке не нужна. */
+/* В записи субтитры — главный носитель голоса: крупнее; кнопки «смотреть» и «смотреть снова» в ролике не нажать. */
 .capture .subs .narration {
   font-size: 2.1cqw;
   max-width: 76cqw;
@@ -318,7 +318,8 @@ body {
 .capture .subs .caption {
   font-size: 2.3cqw;
 }
-.capture .cover .big {
+.capture .cover .big,
+.capture .outro .again {
   visibility: hidden;
 }
 /* Рендер в mp4: кадр во весь вьюпорт, без скруглений и рамки. */

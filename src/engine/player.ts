@@ -83,6 +83,17 @@ export function mountPlayer<S>(host: HTMLElement, scene: Scene<S>): void {
     );
   };
 
+  /** Финальная карточка: главный вывод читает диктор; субтитра нет — фраза уже на карточке. */
+  const outro = (onEnd: () => void = () => {}) => {
+    shell.outro(true);
+    const mine = turn;
+    clearTimeout(voiceDelay);
+    voiceDelay = setTimeout(
+      () => mine === turn && narrator.speak(scene.meta.outro, speed(), onEnd),
+      VOICE_DELAY_MS / speed(),
+    );
+  };
+
   const show = (i: number) => {
     const prev = index;
     index = Math.max(0, Math.min(last, i));
@@ -119,8 +130,8 @@ export function mountPlayer<S>(host: HTMLElement, scene: Scene<S>): void {
     narrate(() => setTimeout(() => ((spoken = true), next()), afterVoice));
   };
   const tick = () => {
-    // Конец — финальная карточка; заголовок вкладки — сигнал скрипту записи, что можно останавливать.
-    if (index >= last) return (stop(), shell.outro(true), (document.title = `${baseTitle} · конец`));
+    // Конец — финальная карточка; заголовок вкладки (после вывода голосом) — сигнал записи, что можно останавливать.
+    if (index >= last) return (stop(), outro(() => (document.title = `${baseTitle} · конец`)));
     show(index + 1);
     holdThenNext();
   };
@@ -137,7 +148,7 @@ export function mountPlayer<S>(host: HTMLElement, scene: Scene<S>): void {
   const step = (i: number) => {
     stop();
     shell.cover(false);
-    if (i > last) return shell.outro(true);
+    if (i > last) return outro();
     const forward = i === index + 1;
     show(i);
     if (forward) narrate();
