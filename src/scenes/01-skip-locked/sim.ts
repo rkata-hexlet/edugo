@@ -103,6 +103,7 @@ export interface World {
   chapter: number | null; // номер кейса — в углу всю главу
   board: Board | null; // табло попыток главы
   leaseCols: boolean; // показать колонки claim_token и lease_until
+  tally: boolean; // счётчик «осталось N из M» под таблицей — только где голос говорит о том же
   ghost: { row: number; token: string } | null; // прежний токен строки — зачёркнутым, кадр перехвата
   /** Отметка пода не прошла по чужому токену: плашка «🎫свой ≠ 🎫строки» держится до конца сцены. */
   clash: { row: number; by: ActorId } | null;
@@ -148,6 +149,7 @@ export function world(rowCount = 6): World {
     chapter: null,
     board: null,
     leaseCols: false,
+    tally: false,
     ghost: null,
     clash: null,
     doubt: null,

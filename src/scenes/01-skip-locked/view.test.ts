@@ -100,4 +100,15 @@ describe("отрисовка эпизода 01 (все кадры)", () => {
       pen.texts.filter((t) => t.x > 1280).map((t) => `кадр ${n}: ${t.key} x=${t.x}`));
     expect(wide).toEqual([]);
   });
+  it("счётчик «осталось» — только где голос о том же: 0 в финале SKIP LOCKED, 1 при застрявшей задаче", () => {
+    const shown = frames.flatMap(({ n, pen }) => {
+      const t = pen.texts.find((x) => x.key === "left:t");
+      return t ? [`${n}: ${t.content}`] : [];
+    });
+    expect(shown).toEqual([
+      "25: осталось 0 из 6",
+      ...[28, 29].map((n) => `${n}: осталось 1 из 6`),
+      ...[32, 33, 34].map((n) => `${n}: осталось 1 из 6`),
+    ]);
+  });
 });

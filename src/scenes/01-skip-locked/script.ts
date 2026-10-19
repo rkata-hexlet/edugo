@@ -442,6 +442,7 @@ export function buildSteps(): Step<World>[] {
       commit(w, who);
     }
     for (const [who, id] of [["A", 4], ["B", 5], ["C", 6]] as const) finish(w, who, id);
+    w.tally = true; // «осталось 0»: разобрали всё
   }, {
     verdict: ["green", "green"], focus: ["table", "mail", "board"],
     voice: "Остальные задачи разбираются точно так же. Дубли отсекает условие «статус новый», которое база проверяет под блокировкой, а ожидания убирает SKIP LOCKED.",
@@ -473,6 +474,7 @@ export function buildSteps(): Step<World>[] {
   d.shot("", (w) => {
     setClock(w, 600);
     workRest(w);
+    w.tally = true; // «осталось 1»: застряла одна
     w.db = "Упал бы — замки бы снял. Он на связи.";
   }, {
     verdict: ["red", "green"], focus: ["clock", "table", "row:1"],
@@ -496,6 +498,7 @@ export function buildSteps(): Step<World>[] {
   d.shot("", (w) => {
     setClock(w, 610 + 3600); // час спустя — «навсегда» видно по часам, а не только на словах
     workRest(w);
+    w.tally = true;
     w.db = "Жив ли он — понятия не имею.";
   }, {
     verdict: ["red", "green"], focus: ["table", "row:1", "clock"],

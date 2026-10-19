@@ -160,12 +160,17 @@ function drawLeaseBar(pen: Pen, w: World, r: Row): void {
 function drawTable(pen: Pen, w: World): void {
   cols(w).forEach((col, i) =>
     pen.text(`hdr:${i}`, { x: TABLE.x + col.x + 12, y: TABLE.y - 12, ...MONO, fill: COLOR.muted, ...fade(w, "table") }, col.title));
-  const left = w.rows.filter((r) => r.status !== "done").length;
-  const label = `осталось ${left} из ${w.rows.length}`;
-  pen.group("left", 0, 0, () => {
-    if (left) pen.text("left:t", { x: TABLE.x, y: 86, ...SANS, "font-weight": 600, fill: COLOR.ink }, label);
-    else iconText(pen, "left", "check", TABLE.x, 86, label, COLOR.ok, { ...SANS, "font-weight": 600 });
-  }, fade(w, "table"));
+  // Счётчик — под таблицей и только там, где голос говорит о том же («разобрали всё», «застряла одна»).
+  if (w.tally) {
+    const left = w.rows.filter((r) => r.status !== "done").length;
+    const label = `осталось ${left} из ${w.rows.length}`;
+    const attrs = { ...SANS, "font-size": SIZE.say, "font-weight": 600 };
+    const y = rowY(w.rows.length) + TABLE.rowH + 33;
+    pen.group("left", 0, 0, () => {
+      if (left) pen.text("left:t", { x: TABLE.x, y, ...attrs, fill: COLOR.warn }, label);
+      else iconText(pen, "left", "check", TABLE.x, y, label, COLOR.ok, attrs);
+    }, fade(w, "table"));
+  }
   const stuck = new Set(stuckRows(w));
   // Свежий стол — строки въезжают каскадом: смена сцены видна как смена, а не как сбой.
   pen.group(`rows:${w.scene}`, 0, 0, () => {
@@ -416,9 +421,7 @@ function drawHeader(pen: Pen, w: World): void {
   pen.group(dbKey, 0, 0, () => elephant(pen, "db:face", { x: TABLE.x + 4, y: 8, talking: !!w.db, scale: 1.08 }), dbFx);
   panel(pen, "db", { x: DB.x, y: 20, w: DB.w, h: 46, rx: 14, fill: COLOR.surface2, stroke: COLOR.postgres });
   pen.text("db:name", { x: DB.x + 16, y: 50, ...SANS, "font-size": SIZE.say, "font-weight": 700, fill: COLOR.ink }, "Postgres");
-  let x = POD.x;
-  if (w.chapter) x += pill(pen, "chapter", `КЕЙС ${w.chapter}`, { x, y: 22, fill: "none", color: COLOR.ink, stroke: COLOR.ink }) + 12;
-  pill(pen, "rc", "READ COMMITTED", { x, y: 22, fill: COLOR.surface2, color: COLOR.muted, mono: true, bold: false });
+  if (w.chapter) pill(pen, "chapter", `КЕЙС ${w.chapter}`, { x: POD.x, y: 22, fill: "none", color: COLOR.ink, stroke: COLOR.ink });
   const [clockKey, clockFx] = once("clock", w, happened(w, "clock") ? "fx-pulse" : null);
   pen.group(clockKey, 0, 0, () => {
     icon(pen, "clock:i", "clock", 1080, 26, 26, COLOR.muted);
