@@ -92,7 +92,7 @@ export interface Step<S> {
 export interface SceneMeta {
   /** Номер эпизода в серии. */
   episode: number;
-  /** Название без номера: «Очередь задач на Postgres». */
+  /** Название без номера: «Конкурентная обработка задач». */
   title: string;
   /** О чём эпизод, одной фразой — подзаголовок обложки. */
   tagline: string;
