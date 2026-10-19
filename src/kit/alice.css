@@ -1,0 +1,34 @@
+/* Движения мира «Алисы» (эксперимент 01a). Как и словарь серии — в первые 450 мс кадра; при
+   перемотке плеер их гасит (.no-anim). Смещения — от точки старта до места розы в корзине:
+   раскладка кадра в scenes/01a-alice/view.ts (садовник Пятёрка x=280, Семёрка x=520, корзина x=950). */
+
+/* Роза Пятёрки: от её кисти дугой в корзину. */
+@keyframes fx-fly-b {
+  0% { translate: -588px 92px; }
+  50% { translate: -294px -70px; }
+  100% { translate: 0 0; }
+}
+.stage .fx-fly-b {
+  animation: fx-fly-b 0.45s cubic-bezier(0.3, 0.6, 0.4, 1) both;
+}
+
+/* Роза Семёрки: короче — она ближе к ограде. */
+@keyframes fx-fly-c {
+  0% { translate: -372px 92px; }
+  50% { translate: -186px -60px; }
+  100% { translate: 0 0; }
+}
+.stage .fx-fly-c {
+  animation: fx-fly-c 0.45s cubic-bezier(0.3, 0.6, 0.4, 1) both;
+}
+
+/* Повтор с тем же номером: долетела до корзины, Герцогиня её не взяла — роза отскочила на землю. */
+@keyframes fx-bounce-c {
+  0% { translate: -310px -90px; }
+  55% { translate: 62px -182px; }
+  75% { translate: 30px -120px; }
+  100% { translate: 0 0; }
+}
+.stage .fx-bounce-c {
+  animation: fx-bounce-c 0.45s cubic-bezier(0.3, 0.6, 0.4, 1) both;
+}
