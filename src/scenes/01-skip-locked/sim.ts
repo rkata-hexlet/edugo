@@ -50,7 +50,6 @@ export interface Actor {
   pending: PendingUpdate | null;
   affected: number | null; // сколько строк задел последний UPDATE
   token: string | null; // токен, который воркер считает своим
-  mutex: boolean; // держит свой sync.Mutex
   frozen: boolean; // завис (внешний API без таймаута, GC-пауза)
   checkedAt: number | null; // когда под последний раз проверил срок своей аренды (по часам БД)
   say: string | null; // реплика в пузыре
@@ -79,7 +78,7 @@ export interface Board {
 export type EventKind =
   | "lock" | "relock" | "skip" | "wait" | "wake" | "commit" | "one" | "zero"
   | "send" | "duplicate" | "replay" | "ticket"
-  | "race" | "mutex" | "freeze" | "unfreeze" | "crash" | "expire" | "clock" | "card" | "page"
+  | "race" | "freeze" | "unfreeze" | "crash" | "expire" | "clock" | "card" | "page"
   | "rewind" | "verdict" | "doubt" | "clash" | "ghost";
 
 export interface SimEvent {
@@ -127,7 +126,7 @@ const TOKENS = ["7f3a", "c21e", "9b04", "e6d1", "40ac", "d58f"];
 export function world(rowCount = 6): World {
   const actor = (id: ActorId, label: string): Actor => ({
     id, label, present: true, carrying: null, seen: null, scan: null,
-    pending: null, affected: null, token: null, mutex: false, frozen: false, checkedAt: null, say: null, thought: null,
+    pending: null, affected: null, token: null, frozen: false, checkedAt: null, say: null, thought: null,
   });
   return {
     clock: 0,

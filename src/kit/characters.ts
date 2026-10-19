@@ -90,14 +90,6 @@ function mouth(pen: Pen, key: string, mood: Mood): void {
   else pen.line(k, { x1: 28, y1: 32, x2: 36, y2: 32, ...style });
 }
 
-/** «Купол процесса» вокруг пода: то, что внутри (мьютекс), видно только этому поду. */
-export function dome(pen: Pen, key: string, o: { x: number; y: number; w: number; h: number; color: string }): void {
-  pen.rect(key, {
-    x: o.x, y: o.y, width: o.w, height: o.h, rx: 28,
-    fill: o.color, "fill-opacity": 0.12, stroke: o.color, "stroke-opacity": 0.8, "stroke-width": 1.5,
-  });
-}
-
 /** Слон-Postgres: голова с ухом, хоботом и очками. (x, y) — левый верхний угол квадрата 56×56; scale — крупнее. */
 export function elephant(pen: Pen, key: string, o: { x: number; y: number; talking: boolean; scale?: number }): void {
   const skin = "#8ea4d6";

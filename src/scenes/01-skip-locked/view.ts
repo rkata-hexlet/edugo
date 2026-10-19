@@ -1,5 +1,5 @@
 import { STAGE, type Attrs, type Pen, type Span } from "../../engine/contract";
-import { BOB, bob, dome, elephant, mailFace, type Look, type MailMood, type Mood } from "../../kit/characters";
+import { BOB, bob, elephant, mailFace, type Look, type MailMood, type Mood } from "../../kit/characters";
 import { icon, type IconName } from "../../kit/icons";
 import { highlightSql } from "../../kit/sql";
 import { ACTOR, COLOR, DIM, FONT, SIZE } from "../../kit/theme";
@@ -192,7 +192,7 @@ function podLook(w: World, a: Actor): Look {
   return { x: -1, y: Math.max(-1, Math.min(1, (rowMid(row) - podMid(a.id)) / 160)) };
 }
 
-/** Строка состояния под именем: 0 строк, ждёт N с. Талон — рядом с именем, мьютекс — в куполе. */
+/** Строка состояния под именем: 0 строк, ждёт N с. Талон — рядом с именем. */
 function drawPodStatus(pen: Pen, w: World, a: Actor): void {
   const color = ACTOR[a.id].color;
   const items: [IconName, string, string][] = [];
@@ -212,11 +212,6 @@ function drawPod(pen: Pen, w: World, a: Actor): void {
   const { color, tint } = ACTOR[a.id];
   const mood = podMood(w, a);
   pen.group(`pod:${a.id}`, POD.x, POD_Y[a.id], () => {
-    if (a.mutex) {
-      // Купол процесса: мьютекс живёт внутри пода, соседям его не видно.
-      dome(pen, `pod:${a.id}:dome`, { x: -10, y: -24, w: POD.w + 6, h: POD.h + 30, color });
-      iconText(pen, `pod:${a.id}:mu`, "lock", POD.w - 62, -4, "mu", color, MONO);
-    }
     // Эмоция — движением: выиграл — подпрыгнул, проиграл — тряска, проснулся — вздрогнул, упал — проявился призрак.
     // Упал: в кадре падения — призрак; дальше — серый силуэт, как у зависшего, только без «z»:
     // со стороны «упал» и «завис» не отличить (нить главы 2), зритель знает правду из кадра падения.

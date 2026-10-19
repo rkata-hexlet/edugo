@@ -137,7 +137,7 @@ export class Shell {
     this.$<HTMLElement>(".player").classList.toggle("capture", params.has("capture"));
   }
 
-  /** Показать кадр index: прогресс, акт, подпись, субтитр, dev-счётчик. */
+  /** Показать кадр index: прогресс, акт, подпись, субтитр (первый кусок закадра), dev-счётчик. */
   frame(index: number, caption: string, narration: string): void {
     this.acts.forEach((a, i) => {
       const done = Math.max(0, Math.min(a.count, index - a.first + 1));
@@ -146,7 +146,7 @@ export class Shell {
     const act = this.acts.filter((a) => a.first <= index).at(-1)!;
     this.$<HTMLElement>(".act").textContent = act.act;
     this.$<HTMLElement>(".caption").textContent = caption;
-    this.$<HTMLElement>(".narration").textContent = narration;
+    this.subtitle(narration);
     this.$<HTMLElement>(".counter").textContent = `кадр ${index + 1} / ${this.total}`;
     this.$<HTMLSelectElement>(".acts").value = String(act.first);
   }
@@ -165,6 +165,11 @@ export class Shell {
 
   setMuted(muted: boolean): void {
     this.$<HTMLElement>(".mute").innerHTML = muted ? ICON.muted : ICON.sound;
+  }
+
+  /** Текст субтитра диктора: кусок закадра, который звучит сейчас. */
+  subtitle(text: string): void {
+    this.$<HTMLElement>(".narration").textContent = text;
   }
 
   /** Субтитры диктора; возвращает новое состояние. */

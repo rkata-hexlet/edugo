@@ -55,7 +55,7 @@ describe("журнал событий", () => {
   });
 
   it("новая сцена (свежие 6 задач) начинается с перелистывания", () => {
-    expect(kinds(frames(ACT.mutex)[0])[0]).toBe("page");
+    expect(kinds(frames(ACT.cas)[0])[0]).toBe("page");
   });
 
   it("перемотка, оценка на табло, «?», отказ по токену, перечёркнутый токен — звучат событиями", () => {
@@ -117,7 +117,10 @@ describe("озвучка кадров", () => {
 
   it("реплики не перекрывают друг друга", () => {
     const { s, calls } = recorder();
-    sound(s, frames(ACT.mutex)[0]); // B «взял мьютекс» / кладовщик
+    // В эпизоде две реплики в одном кадре сейчас не встречаются — проверяем на собранном кадре.
+    const w = structuredClone(frames(ACT.forUpdate)[1]); // кладовщик: «Занято. Жди.»
+    w.actors.B.say = "Я первый!";
+    sound(s, w);
     const at = calls.filter((c) => c.kind === "babble").map((c) => c.at);
     expect(at).toHaveLength(2);
     expect([...at].sort((a, b) => a - b)).toEqual(at);

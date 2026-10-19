@@ -302,8 +302,9 @@ body {
 .capture .dev {
   display: none !important;
 }
+/* Субтитр — у самого края: одна строка целиком в полосе ниже SAFE_BOTTOM, не на табло и SQL. */
 .capture .subs {
-  bottom: 3cqw;
+  bottom: 0.8cqw;
 }
 .capture,
 .capture .stage {

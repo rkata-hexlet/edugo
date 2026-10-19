@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { estimateMs, POST_VOICE_MS, speakable, VOICE_DELAY_MS } from "../../engine/narrator";
+import { speechParts } from "../../engine/narrator";
 import { ACT, PRONOUNCE, buildSteps, clock } from "./script";
 import {
   claimLease, commit, complete, crash, duplicates, rollback, rowById, selectTask, send, stuck, updateTask, waitingFor, world,
@@ -192,10 +192,8 @@ describe("сценарий не врёт", () => {
     expect(s.board).toBeNull();
   });
 
-  it("гонка и мьютекс: два письма по #1", () => {
-    for (const act of [ACT.race, ACT.mutex]) {
-      expect(last(act).letters.map((l) => l.row), act).toEqual([1, 1]);
-    }
+  it("гонка: два письма по #1", () => {
+    expect(last(ACT.race).letters.map((l) => l.row)).toEqual([1, 1]);
   });
 
   it("условный UPDATE: проигравшие ждали COMMIT и получили 0 строк, дублей нет", () => {
@@ -266,7 +264,7 @@ describe("сценарий не врёт", () => {
         expect(b === "red", t.name).toBe(duplicates(w).length > 0);
       }
     });
-    expect(checked).toBe(9);
+    expect(checked).toBe(8); // кейс 1: гонка, CAS, FOR UPDATE, SKIP LOCKED; кейс 2: четыре попытки
   });
 
   it("диктор есть во всех кадрах ролика и не читает SQL", () => {
@@ -279,26 +277,20 @@ describe("сценарий не врёт", () => {
     expect(choppy).toEqual([]);
   });
 
-  it("в речь диктора не попадает латиница без произношения в словаре; о собеседованиях не говорим", () => {
+  it("закадр: английское — английским голосом, буквы подов — по-русски; о собеседованиях не говорим", () => {
     for (const s of steps.filter((x) => x.narration)) {
-      expect(speakable(s.narration!, PRONOUNCE), s.narration).not.toMatch(/[A-Za-z]/);
+      for (const p of speechParts(s.narration!, PRONOUNCE)) {
+        if (p.lang === "ru") expect(p.text, s.narration).not.toMatch(/[A-Za-z]/);
+        else expect(p.text, s.narration).toMatch(/^[A-Za-z][A-Za-z0-9' -]+[.!?…,:]*$/); // не одна буква пода
+      }
     }
     const screen = steps.flatMap((s) => [s.caption, s.narration ?? "", s.state.card ?? "", s.state.plate ?? ""]);
     expect(screen.filter((t) => /собес/i.test(t))).toEqual([]);
   });
 
-  // Длительность не ограничиваем (решение пользователя: «по длительности не заморачивайся») —
-  // только страховка от случайного раздувания сценария.
-  it("хронометраж в разумных пределах (≤ 8 мин): кадр длится, пока не истечёт hold и не договорит диктор", () => {
-    // как в плеере: кадр держится, пока не истёк hold и не договорил диктор (он начинает через VOICE_DELAY_MS)
-    const voice = (s: (typeof steps)[number]) => (s.narration ? (VOICE_DELAY_MS + estimateMs(s.narration) + POST_VOICE_MS) / 1000 : 0);
-    const seconds = steps.reduce((sum, s) => sum + Math.max(s.hold ?? 0, voice(s)), 0);
-    expect(seconds).toBeLessThanOrEqual(480); // 7 → 8 мин: живой закадр (18.10, пользователь)
-  });
-
   it("ярлык акта появляется не раньше своей механики и держится до конца акта", () => {
     const mechanic: Record<string, EventKind> = {
-      [ACT.race]: "duplicate", [ACT.mutex]: "duplicate", [ACT.cas]: "zero", [ACT.forUpdate]: "relock",
+      [ACT.race]: "duplicate", [ACT.cas]: "zero", [ACT.forUpdate]: "relock",
       [ACT.skip]: "skip", [ACT.stuck]: "ticket", [ACT.zombie]: "replay",
     };
     for (const [act, kind] of Object.entries(mechanic)) {

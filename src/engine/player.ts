@@ -1,6 +1,6 @@
 import type { Scene } from "./contract";
 import { WebAudioSound } from "./audio";
-import { Narrator, POST_VOICE_MS, VOICE_DELAY_MS } from "./narrator";
+import { Narrator, POST_VOICE_MS, VOICE_DELAY_MS, phraseStarts, phrases } from "./narrator";
 import { SvgPen } from "./pen";
 import { Shell } from "./shell";
 import { COVER_S, frameAt, frameMs, timeline } from "./timeline";
@@ -76,7 +76,11 @@ export function mountPlayer<S>(host: HTMLElement, scene: Scene<S>): void {
     if (!text) return onEnd();
     const mine = turn;
     clearTimeout(voiceDelay);
-    voiceDelay = setTimeout(() => mine === turn && narrator.speak(text, speed(), onEnd), VOICE_DELAY_MS / speed());
+    const cues = phrases(text);
+    voiceDelay = setTimeout(
+      () => mine === turn && narrator.speak(text, speed(), onEnd, (i) => shell.subtitle(cues[i])),
+      VOICE_DELAY_MS / speed(),
+    );
   };
 
   const show = (i: number) => {
@@ -92,7 +96,7 @@ export function mountPlayer<S>(host: HTMLElement, scene: Scene<S>): void {
     if (index === prev + 1) scene.sound?.(sound, step.state);
     // Уход элементов гаснет только при шаге вперёд; перемотка и прыжок показывают кадр сразу.
     pen.frame(() => scene.render(pen, step.state), { instant: index !== prev + 1 });
-    shell.frame(index, step.caption, step.narration ?? "");
+    shell.frame(index, step.caption, phrases(step.narration ?? "")[0] ?? "");
     history.replaceState(null, "", `${location.search}#step=${index + 1}`);
   };
   const stop = () => {
@@ -203,6 +207,10 @@ function exposeRender<S>(scene: Scene<S>, steps: ReturnType<Scene<S>["steps"]>, 
       }
       const ms = (t - tl.starts[i]) * 1000;
       for (const a of fresh) a.currentTime = ms;
+      // Субтитр — кусок закадра, который звучал бы сейчас (голоса в записи нет — по расчётному темпу).
+      const text = steps[i].narration ?? "";
+      const cue = phraseStarts(text).filter((at) => at <= ms - VOICE_DELAY_MS).length - 1;
+      shell.subtitle(phrases(text)[Math.max(0, cue)] ?? "");
     },
     async renderAudio() {
       const rate = 44100;

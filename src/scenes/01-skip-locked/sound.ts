@@ -75,10 +75,6 @@ const RECIPES: Partial<Record<EventKind, Recipe>> = {
     s.tone({ freq: 880, dur: 0.08, gain: 0.05, at: at + 0.1 });
     s.tone({ freq: 1245, dur: 0.08, gain: 0.05, at: at + 0.1 });
   },
-  mutex: (s, at) => {
-    s.tone({ freq: 1500, dur: 0.04, wave: "square", gain: 0.08, at: at + 0.05 });
-    s.tone({ freq: 2000, dur: 0.03, wave: "square", gain: 0.06, at: at + 0.12 });
-  },
   ghost: (s, at) => s.noise({ dur: 0.08, freq: 3500, q: 3, gain: 0.05, at: at + 0.1 }),
   ticket: (s, at) => {
     s.noise({ dur: 0.1, freq: 2500, q: 1.5, gain: 0.09, at: at + 0.04 });
@@ -133,7 +129,7 @@ const REPEAT: Partial<Record<EventKind, { max: number; step: number }>> = {
  */
 const SLOT: Partial<Record<EventKind, number>> = {
   page: 0, rewind: 0, card: 0, clock: 0, ghost: 0, doubt: 0,
-  mutex: 0, lock: 0, relock: 0, skip: 0, wait: 0, wake: 0, unfreeze: 0, ticket: 0.08, clash: 0,
+  lock: 0, relock: 0, skip: 0, wait: 0, wake: 0, unfreeze: 0, ticket: 0.08, clash: 0,
   commit: 0, one: 0, zero: 0.05, race: 0, freeze: 0, crash: 0, expire: 0,
   send: 0, replay: 0, duplicate: 0, verdict: 0.2,
 };
