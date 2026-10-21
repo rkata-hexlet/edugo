@@ -10,6 +10,13 @@ describe("шкала записи", () => {
     expect(frameSeconds(step("раз два три четыре пять шесть семь восемь девять десять", 2))).toBeCloseTo(5.2);
   });
 
+  it("с дублем диктора кадр держится по его настоящей длине; финал — не короче своей фразы", () => {
+    const voiceMs = (t: string) => (t === "дубль" ? 6000 : 1000);
+    expect(frameSeconds(step("дубль", 2), voiceMs)).toBeCloseTo(7.2);
+    expect(timeline([step("дубль")], voiceMs, "дубль").total).toBeCloseTo(COVER_S + 7.2 + 7.2);
+    expect(timeline([step("дубль")], voiceMs, "фраза").total).toBeCloseTo(COVER_S + 7.2 + OUTRO_S);
+  });
+
   it("обложка, кадры подряд, финальная карточка", () => {
     const tl = timeline([step(undefined, 2), step(undefined, 3)]);
     expect(tl.starts).toEqual([COVER_S, COVER_S + 2]);

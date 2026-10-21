@@ -146,3 +146,20 @@ export function plate(pen: Pen, key: string, head: string, question: string, sta
     }, question);
   }, { class: "fx-fade" });
 }
+
+/**
+ * Шкала нагрузки: доля 0…1+ (больше 1 — «за край», красным с выступом); зелёная до 0.6, жёлтая до 0.9.
+ * (x, y) — левый верхний угол, w×h — размер дорожки.
+ */
+export function meter(pen: Pen, key: string, o: { x: number; y: number; w: number; h?: number; load: number; attrs?: Attrs }): void {
+  const h = o.h ?? 10;
+  const level = Math.max(0, o.load);
+  const fill = level > 0.9 ? COLOR.error : level > 0.6 ? COLOR.warn : COLOR.ok;
+  const over = level > 1;
+  pen.group(key, o.x, o.y, () => {
+    pen.rect(`${key}:track`, { width: o.w, height: h, rx: h / 2, fill: COLOR.bg2, stroke: COLOR.line, "stroke-width": 1 });
+    if (level > 0) pen.rect(`${key}:bar`, { width: Math.max(h, o.w * Math.min(1, level)), height: h, rx: h / 2, fill });
+    // За край: выступ за дорожку — «не помещается».
+    if (over) pen.rect(`${key}:over`, { x: o.w - 2, y: -3, width: 14, height: h + 6, rx: 3, fill: COLOR.error });
+  }, o.attrs);
+}

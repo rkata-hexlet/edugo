@@ -1,8 +1,9 @@
 import type { Scene } from "./contract";
 import { WebAudioSound } from "./audio";
-import { Narrator, POST_VOICE_MS, VOICE_DELAY_MS, phraseStarts, phrases } from "./narrator";
+import { Narrator, POST_VOICE_MS, VOICE_DELAY_MS, estimateMs, phrases } from "./narrator";
 import { SvgPen } from "./pen";
 import { Shell } from "./shell";
+import type { Takes } from "./takes";
 import { COVER_S, frameAt, frameMs, timeline } from "./timeline";
 import "@fontsource/inter/400.css";
 import "@fontsource/inter/600.css";
@@ -30,7 +31,7 @@ const fontsLoaded = () =>
  * #hash — чтобы при обсуждении можно было сослаться на «кадр 14». Звучит только шаг вперёд;
  * автопроигрывание листает, когда прошло время кадра и диктор договорил.
  */
-export function mountPlayer<S>(host: HTMLElement, scene: Scene<S>): void {
+export function mountPlayer<S>(host: HTMLElement, scene: Scene<S>, takes: Takes): void {
   const steps = scene.steps();
   const acts = steps
     .map((s, i) => ({ act: s.act, first: i, count: 0 }))
@@ -51,10 +52,10 @@ export function mountPlayer<S>(host: HTMLElement, scene: Scene<S>): void {
     restart: () => (stop(), show(0), toggle()),
   });
   const pen = new SvgPen(shell.stage);
-  const baseTitle = document.title;
   const sound = new WebAudioSound();
   const narrator = new Narrator();
   narrator.pronounce = scene.pronounce ?? {};
+  narrator.takes = takes;
   sound.muted = narrator.muted = loadMuted();
   shell.setMuted(sound.muted);
 
@@ -84,12 +85,12 @@ export function mountPlayer<S>(host: HTMLElement, scene: Scene<S>): void {
   };
 
   /** Финальная карточка: главный вывод читает диктор; субтитра нет — фраза уже на карточке. */
-  const outro = (onEnd: () => void = () => {}) => {
+  const outro = () => {
     shell.outro(true);
     const mine = turn;
     clearTimeout(voiceDelay);
     voiceDelay = setTimeout(
-      () => mine === turn && narrator.speak(scene.meta.outro, speed(), onEnd),
+      () => mine === turn && narrator.speak(scene.meta.outro, speed(), () => {}),
       VOICE_DELAY_MS / speed(),
     );
   };
@@ -103,7 +104,6 @@ export function mountPlayer<S>(host: HTMLElement, scene: Scene<S>): void {
     clearTimeout(voiceDelay);
     shell.outro(false);
     sound.babbleGain = step.narration ? NARRATION_DUCK : 1;
-    document.title = baseTitle;
     if (index === prev + 1) scene.sound?.(sound, step.state);
     // Уход элементов гаснет только при шаге вперёд; перемотка и прыжок показывают кадр сразу.
     pen.frame(() => scene.render(pen, step.state), { instant: index !== prev + 1 });
@@ -130,8 +130,8 @@ export function mountPlayer<S>(host: HTMLElement, scene: Scene<S>): void {
     narrate(() => setTimeout(() => ((spoken = true), next()), afterVoice));
   };
   const tick = () => {
-    // Конец — финальная карточка; заголовок вкладки (после вывода голосом) — сигнал записи, что можно останавливать.
-    if (index >= last) return (stop(), outro(() => (document.title = `${baseTitle} · конец`)));
+    // Конец — финальная карточка, вывод читает диктор.
+    if (index >= last) return (stop(), outro());
     show(index + 1);
     holdThenNext();
   };
@@ -157,12 +157,19 @@ export function mountPlayer<S>(host: HTMLElement, scene: Scene<S>): void {
   const toggleMute = () => {
     sound.muted = narrator.muted = !sound.muted;
     if (sound.muted) sound.cut();
+    // Выключили звук — глушим и голос, в том числе при ручном листании (дубль доиграл бы до конца).
+    if (sound.muted || timer !== undefined) narrator.cut();
     // Оборванная фраза не сообщит о конце — перезапускаем ожидание кадра, иначе автопроигрывание встанет.
-    if (timer !== undefined) (narrator.cut(), holdThenNext());
+    if (timer !== undefined) holdThenNext();
     saveMuted(sound.muted);
     shell.setMuted(sound.muted);
   };
 
+  // Номер кадра, набранный в адресе: страница не перезагружается — переходим сами.
+  window.addEventListener("hashchange", () => {
+    const n = Number(new URLSearchParams(location.hash.slice(1)).get("step"));
+    if (Number.isInteger(n) && n >= 1 && n <= steps.length && n !== index + 1) (stop(), shell.cover(false), show(n - 1));
+  });
   host.addEventListener("pointerdown", () => sound.unlock());
   document.addEventListener("keydown", (e) => {
     if (e.target instanceof HTMLSelectElement || e.ctrlKey || e.metaKey || e.altKey) return;
@@ -178,7 +185,7 @@ export function mountPlayer<S>(host: HTMLElement, scene: Scene<S>): void {
     else if (key === "d" || key === "в") shell.dev();
   });
 
-  if (render) return void fontsLoaded().then(() => exposeRender(scene, steps, shell, show));
+  if (render) return void fontsLoaded().then(() => exposeRender(scene, steps, takes, shell, show));
   void fontsLoaded().then(() => show(index));
 }
 
@@ -194,9 +201,14 @@ export interface RenderApi {
   audioChunk(offset: number, length: number): string;
 }
 
-function exposeRender<S>(scene: Scene<S>, steps: ReturnType<Scene<S>["steps"]>, shell: Shell, show: (i: number) => void): void {
-  const tl = timeline(steps);
-  shell.toggleSubs(); // голоса в записи нет — субтитры диктора в кадре
+function exposeRender<S>(
+  scene: Scene<S>,
+  steps: ReturnType<Scene<S>["steps"]>,
+  takes: Takes,
+  shell: Shell,
+  show: (i: number) => void,
+): void {
+  const tl = timeline(steps, (text) => takes.duration(text) ?? estimateMs(text), scene.meta.outro);
   let current = -1;
   let fresh: Animation[] = [];
   let wav: Uint8Array = new Uint8Array();
@@ -216,12 +228,8 @@ function exposeRender<S>(scene: Scene<S>, steps: ReturnType<Scene<S>["steps"]>, 
         for (const a of fresh) a.pause();
         current = i;
       }
-      const ms = (t - tl.starts[i]) * 1000;
+      const ms = (t - tl.starts[i]) * 1000; // в ролике субтитров нет (решение пользователя 21.10)
       for (const a of fresh) a.currentTime = ms;
-      // Субтитр — кусок закадра, который звучал бы сейчас (голоса в записи нет — по расчётному темпу).
-      const text = steps[i].narration ?? "";
-      const cue = phraseStarts(text).filter((at) => at <= ms - VOICE_DELAY_MS).length - 1;
-      shell.subtitle(phrases(text)[Math.max(0, cue)] ?? "");
     },
     async renderAudio() {
       const rate = 44100;
@@ -233,6 +241,18 @@ function exposeRender<S>(scene: Scene<S>, steps: ReturnType<Scene<S>["steps"]>, 
         sound.babbleGain = step.narration ? NARRATION_DUCK : 1;
         scene.sound?.(sound, step.state);
       });
+      // Голос диктора — дубли поверх звуков, с той же паузой после смены кадра, что в плеере.
+      const lines = steps.map((s, i) => ({ text: s.narration, at: tl.starts[i] }));
+      lines.push({ text: scene.meta.outro, at: tl.end });
+      await Promise.all(lines.map(async ({ text, at }) => {
+        if (!text || takes.duration(text) === undefined) return;
+        const res = await fetch(takes.url(text));
+        if (!res.ok) throw new Error(`нет файла дубля: ${takes.url(text)}`);
+        const src = ctx.createBufferSource();
+        src.buffer = await ctx.decodeAudioData(await res.arrayBuffer());
+        src.connect(ctx.destination);
+        src.start(at + VOICE_DELAY_MS / 1000);
+      }));
       wav = encodeWav(await ctx.startRendering());
       return wav.length;
     },

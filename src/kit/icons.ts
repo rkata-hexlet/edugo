@@ -22,6 +22,11 @@ const ICONS = {
   sleep: [stroke("M4 9h5l-5 6h5M12 4h4l-4 5h4M17 13h3.5l-3.5 4.5h3.5")],
   bang: [stroke("M12 5v9"), solid("M12 17.5a1.5 1.5 0 1 0 0.01 0z")],
   question: [stroke("M8.5 9a3.5 3.5 0 1 1 5 3.2c-1 .5-1.5 1.2-1.5 2.3V15.5"), solid("M12 18.2a1.3 1.3 0 1 0 0.01 0z")],
+  pencil: [stroke("M4 20l1-4.5L15.5 5a2.1 2.1 0 0 1 3 3L8 18.5zM13.5 7l3 3")],
+  trash: [stroke("M4.5 6.5h15M9.5 6.5V4.5h5v2M6.5 6.5l1 13h9l1-13M10 10v6.5M14 10v6.5")],
+  browser: [stroke("M3.5 5h17v14h-17zM3.5 9h17"), solid("M6 6.2a.9.9 0 1 0 .01 0zM8.6 6.2a.9.9 0 1 0 .01 0z")],
+  broadcast: [stroke("M8.5 15.5a5 5 0 0 1 0-7M15.5 8.5a5 5 0 0 1 0 7M5.5 18.5a9.2 9.2 0 0 1 0-13M18.5 5.5a9.2 9.2 0 0 1 0 13"), solid("M12 10.2a1.8 1.8 0 1 0 .01 0z")],
+  flame: [stroke("M12 21c-3.6 0-6-2.4-6-5.6 0-3.4 3-5 3.4-8.9 2.6 1.6 3.4 3.9 3.1 5.9 1-.5 1.8-1.5 2.1-2.8 1.9 1.6 3.4 3.6 3.4 5.8 0 3.2-2.4 5.6-6 5.6z")],
 } satisfies Record<string, Part[]>;
 
 export type IconName = keyof typeof ICONS;

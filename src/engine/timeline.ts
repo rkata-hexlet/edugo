@@ -9,24 +9,36 @@ export const frameMs = (step: Step<unknown>, speed: number): number =>
 export const COVER_S = 2.5;
 export const OUTRO_S = 4;
 
+/** Длина голоса диктора, мс: дубль живого диктора или расчётный темп синтеза. */
+export type VoiceMs = (text: string) => number;
+
+/** Время голоса в кадре, мс: пауза перед ним + сама фраза + пауза после. */
+const voiced = (text: string, voiceMs: VoiceMs) => VOICE_DELAY_MS + voiceMs(text) + POST_VOICE_MS;
+
 /**
- * Длительность кадра при скорости 1×, с: дольше из времени кадра и голоса диктора (пауза перед
- * голосом + расчётная длина фразы + пауза после) — так же листает автопроигрывание без звука.
+ * Длительность кадра при скорости 1×, с: дольше из времени кадра и голоса диктора — так же листает
+ * автопроигрывание.
  */
-export function frameSeconds(step: Step<unknown>): number {
-  const voice = step.narration ? VOICE_DELAY_MS + estimateMs(step.narration) + POST_VOICE_MS : 0;
-  return Math.max(frameMs(step, 1), voice) / 1000;
+export function frameSeconds(step: Step<unknown>, voiceMs: VoiceMs = estimateMs): number {
+  return Math.max(frameMs(step, 1), step.narration ? voiced(step.narration, voiceMs) : 0) / 1000;
 }
 
-/** Шкала записи: обложка, кадры подряд, финальная карточка. starts[i] — начало кадра i, с. */
-export function timeline(steps: Step<unknown>[]): { starts: number[]; end: number; total: number } {
+/**
+ * Шкала записи: обложка, кадры подряд, финальная карточка (не короче её фразы голосом).
+ * starts[i] — начало кадра i, с; end — начало финальной карточки.
+ */
+export function timeline(
+  steps: Step<unknown>[],
+  voiceMs: VoiceMs = estimateMs,
+  outro?: string,
+): { starts: number[]; end: number; total: number } {
   const starts: number[] = [];
   let t = COVER_S;
   for (const step of steps) {
     starts.push(t);
-    t += frameSeconds(step);
+    t += frameSeconds(step, voiceMs);
   }
-  return { starts, end: t, total: t + OUTRO_S };
+  return { starts, end: t, total: t + Math.max(OUTRO_S, outro ? voiced(outro, voiceMs) / 1000 : 0) };
 }
 
 /** Индекс кадра, который идёт в момент t (внутри [starts[0], end)). */

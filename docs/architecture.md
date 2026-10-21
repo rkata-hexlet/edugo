@@ -24,7 +24,7 @@
   `icons` (замок, талон, часы, ключ… — пути 24×24 вместо эмодзи), `widgets` (панель с плоской
   тенью, пузырь с хвостом по `measure`, пилюля, лампа, окно SQL, плашка главы), `sql`
   (`highlightSql` → `Span[]`), `characters` (под-«боб» с эмоцией `Mood` и взглядом `Look`,
-  слон-Postgres, лицо Почты), `motion.css` (словарь движений `fx-*`: pop, slide, rise,
+  слон-Postgres, лицо Почты), `widgets.meter` (полоса нагрузки с потолком), `motion.css` (словарь движений `fx-*`: pop, slide, rise,
   stamp, draw, hop, shake, jolt, nod, pulse, cascade — всё в первые 450 мс кадра). Kit не знает ни
   плеера, ни моделей эпизодов: эмоцию, взгляд и эффект выбирает `view.ts` по состоянию кадра и
   `World.events`. Разовый эффект — новый ключ узла (`World.frame` в ключе), свежий стол — `World.scene`.
@@ -33,12 +33,18 @@
 - `Sound` (`engine/contract.ts`, реализация `engine/audio.ts` на Web Audio) — узкий порт звука:
   `tone`, `noise`, `babble(voice, text)`. Процедурный синтез, без файлов; AudioContext — по первому
   жесту пользователя. Mute — в localStorage (удобство зрителя).
-- `Narrator` (`engine/narrator.ts`) — закадровый голос через Web Speech API. Закадр режется на куски
+- `Takes` (`engine/takes.ts`) — дубли живого диктора (ADR-0004): ключ — хэш текста кадра (`takeKey`),
+  длительности — `public/voice/<сцена>/takes.json`, файлы — `<ключ>.ogg` рядом. `loadTakes` грузит
+  справочник до сборки плеера; `script`/`firstLine` — порядок чтения для суфлёра.
+- Суфлёр (`engine/recorder.ts`, `?record`, только dev) — кадр и текст крупно, пробел — дубль и сразу
+  следующий; запись уходит `POST /__voice/<сцена>/<ключ>` в плагин `vite.config.ts`, тот зовёт
+  `scripts/voice.mjs` (ffmpeg: щелчки, тишина, шум, громкость) и раздаёт `/voice/…` с диска.
+- `Narrator` (`engine/narrator.ts`) — закадровый голос: дубль из `Takes`, без дубля — Web Speech API. Закадр режется на куски
   `phrases` (предложения, длинные — по паузе, ≤ `MAX_PHRASE` знаков = строка субтитра); `speechParts`
   делит кусок по языкам: латиница — английским голосом, остальное — русским, словарь сцены
   (`Scene.pronounce`, исключения вроде букв подов) — до деления и только для речи. `onPhrase(i)` —
-  начало куска: плеер меняет субтитр в такт голосу; в записи без голоса субтитр идёт по
-  `phraseStarts` (расчётный темп). Страховочный таймер — если синтез не сообщит о конце; без голоса
+  начало куска: плеер меняет субтитр в такт голосу; у дубля и в записи субтитр идёт по
+  `phraseStarts` (расчётный темп, растянутый на длину дубля). Страховочный таймер — если синтез не сообщит о конце; без голоса
   или в mute — выжидает расчётное время. `VOICE_DELAY_MS` — пауза перед голосом.
 - Контракт кадра: `Step.narration` (текст диктора);
   `Pen.path`, `Pen.group(…, attrs)` — для дуг и приглушения (фокус).
@@ -49,12 +55,13 @@
   старт воспроизведения; перемотка обрывает звук. Шрифты (`@fontsource`: Inter, JetBrains Mono)
   ждёт до первого кадра, не дольше `FONTS_MS`.
 - Шкала записи (`engine/timeline.ts`): `frameMs` (время кадра), `frameSeconds` (дольше из кадра и
-  голоса), `timeline` (заставка → кадры → финал), `frameAt`. Общая для плеера и рендера.
+  голоса: длина дубля или расчётный темп), `timeline` (заставка → кадры → финал не короче своей фразы),
+  `frameAt`. Общая для плеера и рендера.
 - Рендер в mp4 (`?capture&render`, `exposeRender` в `player.ts` → `window.__edugo`; `scripts/render.mjs`):
-  перемотка на момент t с остановкой анимаций, звук через `WebAudioSound.offline(OfflineAudioContext)`,
-  WAV кусками, склейка ffmpeg. `?capture` без render — живая запись с голосом (ADR-0003, docs/recording.md).
+  перемотка на момент t с остановкой анимаций, звук через `WebAudioSound.offline(OfflineAudioContext)`
+  + дубли диктора в той же дорожке, WAV кусками, склейка ffmpeg (ADR-0003, ADR-0004, docs/recording.md).
 - Оболочка (`engine/shell.ts`, стили `engine/player.css`) — только DOM: кадр 16:9 по окну,
-  подпись и субтитры диктора оверлеем внутри кадра (попадают в запись), панель (play, прогресс
+  подпись кадра оверлеем внутри кадра (попадает в запись), субтитры диктора по CC (только в плеере), панель (play, прогресс
   сегментами по актам, скорость, CC, звук, полный экран), которая прячется при проигрывании без
   движения мыши; обложка (`Scene.meta`; только при ссылке без `#step` и без `?dev`) и финальная
   карточка (после последнего кадра); dev-полоса (`?dev` / D) — список актов и номер кадра.
@@ -81,15 +88,26 @@
 - `sim.test.ts` — модель (семантика Postgres) + «сценарий не врёт» (итог каждого акта);
   `sound.test.ts` — журнал событий ключевых кадров + озвучка всех кадров через фейк `Sound`.
 
+## Эпизод 02 (`scenes/02-cache/`, `?scene=02`)
+Та же раскладка файлов, что у 01. `sim.ts` — таблица `links` (MVCC: чужая незакоммиченная правка не видна,
+чтение не ждёт), Redis с TTL (`Entry.expiresAt`; кластер — `nodes` и узел слота горячего ключа `hotNode`),
+карман L1 пода (`Actor.l1`), журнал ответов браузерам (`clicks`, `stale` = расходится с закоммиченным), нагрузка
+формулой от потока (`dbLoad`, `nodeLoads`). `Actor.acts` — что под сделал в кадре: из них `view.ts` строит
+стрелки (к Redis, к строке базы мимо Redis, ответ браузеру, рассылка). `World.replay` — кадр итога: звук тише и
+без тревоги (`sound(s, w, replay)`).
+
 ## Порядок сборки (main.ts)
-1. Импорт сцен → реестр. 2. Выбор сцены (`?scene=01`). 3. `mountPlayer(host, scene)` — плеер сам
-создаёт SVG и `SvgPen`.
+1. Импорт сцен → реестр (`Record<string, Scene<any>>`: у каждой сцены свой тип состояния). 2. Выбор сцены (`?scene=01`). 3. `loadTakes(scene.id)` — справочник дублей.
+4. `mountPlayer(host, scene, takes)` или `mountRecorder(…)` при `?record` — сами создают SVG и `SvgPen`.
 
 ## Граф зависимостей
 ```
 scripts/render.mjs ──(puppeteer, ?capture&render)──► страница плеера
-main.ts ──► engine/player ──► engine/pen ──► engine/contract
-                    ├──────► engine/timeline ──► engine/narrator
+vite.config.ts (dev) ──► scripts/voice.mjs ──► ffmpeg
+main.ts ──► engine/takes ──► engine/contract (тип Step)
+   ├──► engine/recorder ──► engine/pen, engine/takes
+   └──► engine/player ──► engine/pen ──► engine/contract
+                    ├──────► engine/timeline ──► engine/narrator ──► engine/takes
                     └──────► engine/shell ──► engine/contract
    └──────► scenes/NN/index ──► script ──► sim
                          ├────► view ──► sim, script(clock), kit

@@ -1,15 +1,23 @@
+import { Takes } from "./takes";
+
 /**
- * Закадровый голос через Web Speech API (speechSynthesis). Без синтеза или русского голоса —
- * молча выжидает расчётное время фразы, чтобы автопроигрывание шло в том же темпе.
- * Английские слова читает английский голос (как говорят бэкендеры), остальное — русский.
+ * Закадровый голос: дубль живого диктора (`Takes`), а без дубля — Web Speech API (speechSynthesis).
+ * Без синтеза или русского голоса — молча выжидает расчётное время фразы, чтобы автопроигрывание
+ * шло в том же темпе. В синтезе английские слова читает английский голос, остальное — русский.
  */
+/** Сколько ждать начала звука дубля, прежде чем читать фразу синтезом. */
+const LOAD_TIMEOUT_MS = 4000;
+
 export class Narrator {
   muted = false;
+  /** Дубли сцены; пусто — всё синтезом. */
+  takes = new Takes("");
   /** Словарь произношения сцены; длинные ключи раньше коротких («FOR UPDATE» до «UPDATE»). */
   pronounce: Record<string, string> = {};
   private generation = 0;
   private timer: number | undefined;
   private cues: number[] = [];
+  private audio: HTMLAudioElement | null = null;
 
   constructor() {
     // Голоса подгружаются асинхронно: запрос запускает загрузку к первой фразе.
@@ -29,34 +37,64 @@ export class Narrator {
       fired = true;
       onEnd();
     };
-    const synth = "speechSynthesis" in window ? window.speechSynthesis : null;
-    const voices = synth?.getVoices() ?? [];
-    const voice = pickVoice(voices, "ru");
-    if (this.muted || !synth || !voice) {
-      const starts = phraseStarts(text);
-      this.cues = starts.map((ms, i) => setTimeout(() => gen === this.generation && onPhrase(i), ms / rate));
-      this.timer = setTimeout(done, estimateMs(text) / rate);
-      return;
-    }
-    // Нет английского голоса — английское читает русский: хуже, но фраза не теряется.
-    const byLang = { ru: voice, en: pickVoice(voices, "en") ?? voice };
-    const parts = speechParts(text, this.pronounce);
-    parts.forEach((part, i) => {
-      const v = byLang[part.lang];
-      const u = new SpeechSynthesisUtterance(part.text);
-      u.voice = v;
-      u.lang = v.lang;
-      u.rate = rate;
-      if (i === 0 || parts[i - 1].phrase !== part.phrase) u.onstart = () => gen === this.generation && onPhrase(part.phrase);
-      if (i === parts.length - 1) {
-        u.onend = done;
-        u.onerror = done;
-      }
-      synth.speak(u);
-    });
-    // Страховка: если синтез так и не сообщил о конце — не держать автопроигрывание вечно.
-    // С запасом на медленный голос (~1.2 слова/с) и паузы между предложениями.
-    this.timer = setTimeout(done, (estimateMs(text) * 2.1 + 1500 * parts.length) / rate);
+    const take = this.takes.duration(text);
+    const cue = () => {
+      this.cues = phraseStarts(text, take).map((ms, i) => setTimeout(() => gen === this.generation && onPhrase(i), ms / rate));
+    };
+    const wait = () => {
+      cue();
+      this.timer = setTimeout(done, (take ?? estimateMs(text)) / rate);
+    };
+    const synthesize = () => {
+      const synth = "speechSynthesis" in window ? window.speechSynthesis : null;
+      const voices = synth?.getVoices() ?? [];
+      const voice = pickVoice(voices, "ru");
+      if (this.muted || !synth || !voice) return wait();
+      // Нет английского голоса — английское читает русский: хуже, но фраза не теряется.
+      const byLang = { ru: voice, en: pickVoice(voices, "en") ?? voice };
+      const parts = speechParts(text, this.pronounce);
+      parts.forEach((part, i) => {
+        const v = byLang[part.lang];
+        const u = new SpeechSynthesisUtterance(part.text);
+        u.voice = v;
+        u.lang = v.lang;
+        u.rate = rate;
+        if (i === 0 || parts[i - 1].phrase !== part.phrase) u.onstart = () => gen === this.generation && onPhrase(part.phrase);
+        if (i === parts.length - 1) {
+          u.onend = done;
+          u.onerror = done;
+        }
+        synth.speak(u);
+      });
+      // Страховка: если синтез так и не сообщил о конце — не держать автопроигрывание вечно.
+      // С запасом на медленный голос (~1.2 слова/с) и паузы между предложениями.
+      this.timer = setTimeout(done, (estimateMs(text) * 2.1 + 1500 * parts.length) / rate);
+    };
+    if (take === undefined || this.muted) return take === undefined ? synthesize() : wait();
+
+    // Дубль: субтитр — по расчётным началам кусков, растянутым на длину дубля, с начала звука; конец — по файлу.
+    const audio = (this.audio = new Audio(this.takes.url(text)));
+    audio.playbackRate = rate;
+    audio.onended = done;
+    // Файла нет, не декодируется или запуск отклонён — фраза звучит синтезом, а не тишиной.
+    const fallback = () => {
+      if (gen !== this.generation || this.audio !== audio) return;
+      clearTimeout(this.timer);
+      this.audio = null;
+      audio.pause();
+      synthesize();
+    };
+    audio.onerror = fallback;
+    audio.onplaying = () => {
+      if (gen !== this.generation || this.cues.length) return;
+      cue();
+      clearTimeout(this.timer);
+      // Страховка: конец так и не пришёл — не держать автопроигрывание.
+      this.timer = setTimeout(done, take / rate + 3000);
+    };
+    audio.play().catch(fallback);
+    // Звук так и не начался (сеть повисла) — не ждать молча.
+    this.timer = setTimeout(fallback, LOAD_TIMEOUT_MS);
   }
 
   /** Оборвать текущую фразу (перемотка, пауза, mute). force=false — гасить синтез, только если он занят:
@@ -66,6 +104,8 @@ export class Narrator {
     clearTimeout(this.timer);
     for (const c of this.cues) clearTimeout(c);
     this.cues = [];
+    this.audio?.pause();
+    this.audio = null;
     if (!("speechSynthesis" in window)) return;
     const synth = window.speechSynthesis;
     if (force || synth.speaking || synth.pending) synth.cancel();
@@ -109,12 +149,16 @@ export function phrases(text: string): string[] {
   return sentences.flatMap(split);
 }
 
-/** Начало каждого куска `phrases(text)` от начала голоса, мс, по расчётному темпу (запись без голоса). */
-export function phraseStarts(text: string): number[] {
+/**
+ * Начало каждого куска `phrases(text)` от начала голоса, мс, по расчётному темпу; с длиной дубля
+ * `totalMs` — тот же расклад, растянутый на дубль.
+ */
+export function phraseStarts(text: string, totalMs?: number): number[] {
+  const scale = totalMs === undefined ? 1 : totalMs / Math.max(1, estimateMs(text));
   let at = 0;
   return phrases(text).map((p) => {
     const start = at;
-    at += estimateMs(p);
+    at += estimateMs(p) * scale;
     return start;
   });
 }

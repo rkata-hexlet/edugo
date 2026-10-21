@@ -133,7 +133,7 @@ export class Shell {
     });
     const params = new URLSearchParams(location.search);
     this.dev(params.has("dev"));
-    // Запись (`?capture`): только кадр с подписью и субтитрами — без панели, обложки и dev-полосы.
+    // Запись (`?capture`): только кадр с подписью — без панели, обложки и dev-полосы; субтитров в ролике нет.
     this.$<HTMLElement>(".player").classList.toggle("capture", params.has("capture"));
   }
 

@@ -7,7 +7,8 @@
     "build": "tsc --noEmit && vite build",
     "check": "tsc --noEmit",
     "render": "node scripts/render.mjs",
-    "narration": "node scripts/narration.mjs"
+    "narration": "node scripts/narration.mjs",
+    "voice": "node scripts/voice.mjs"
   },
   "type": "module",
   "devDependencies": {

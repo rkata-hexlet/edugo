@@ -3,7 +3,9 @@ import { SQL_COLOR } from "./theme";
 
 const KEYWORDS = new Set(
   ("select from where and or not in is null update set insert into values delete returning begin commit rollback " +
-    "order by limit for skip locked nowait as on join with").split(" "),
+    "order by limit for skip locked nowait as on join with " +
+    // Команды Redis — в той же панели, что и SQL.
+    "get del ex publish").split(" "),
 );
 
 /** Раскрасить SQL: ключевые слова, строки, числа, вызовы функций, `-- комментарий`; остальное — обычным цветом. */
