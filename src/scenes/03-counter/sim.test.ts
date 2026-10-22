@@ -49,7 +49,7 @@ describe("модель счётчика", () => {
     expect(dbLoad(w)).toBeLessThanOrEqual(1);
   });
 
-  it("пачка: клики в копилке, база спокойна, сброс одним UPDATE", () => {
+  it("батч: клики в копилке, база спокойна, сброс одним UPDATE", () => {
     const w = batching();
     w.flow = 10_000;
     expect(dbLoad(w)).toBeLessThan(0.01);
@@ -72,7 +72,7 @@ describe("модель счётчика", () => {
     expect(lost(v)).toBe(0);
   });
 
-  it("ответ потерялся после COMMIT: повтор без номера прибавляет пачку дважды", () => {
+  it("ответ потерялся после COMMIT: повтор без номера прибавляет батч дважды", () => {
     const w = batching();
     flush(w, "A", { lostReply: true });
     expect(w.actors.A.unsure).toBe(true);
@@ -83,7 +83,7 @@ describe("модель счётчика", () => {
     expect(w.adds.at(-1)!.dup).toBe(true);
   });
 
-  it("номер пачки в той же транзакции: повтор база узнаёт и не прибавляет", () => {
+  it("номер батча в той же транзакции: повтор база узнаёт и не прибавляет", () => {
     const w = batching();
     w.keyed = true;
     flush(w, "A", { lostReply: true });
@@ -94,7 +94,7 @@ describe("модель счётчика", () => {
     expect(w.actors.A.seq).toBe(18);
   });
 
-  it("kill -9 уносит копилку даже с номером пачки", () => {
+  it("kill -9 уносит копилку даже с номером батча", () => {
     const w = batching();
     w.keyed = true;
     kill(w, "A");
@@ -148,7 +148,7 @@ describe("сценарий не врёт", () => {
     expect([lost(k9) > 0, doubled(k9), lamps(k9)]).toEqual([true, 0, ["yellow", "green"]]);
   });
 
-  it("повтор пачки: в журнале два одинаковых +N от одного пода — рифма «одна строка done, два письма»", () => {
+  it("повтор батча: в журнале два одинаковых +N от одного пода — рифма «одна строка done, два письма»", () => {
     const w = verdict(ACT.retry);
     const [a, b] = w.adds.slice(-2);
     expect([a.by, a.n, a.dup, b.by, b.n, b.dup]).toEqual(["A", b.n, false, "A", a.n, true]);

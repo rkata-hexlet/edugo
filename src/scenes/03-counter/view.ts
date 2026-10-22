@@ -147,7 +147,7 @@ function drawQueue(pen: Pen, w: World): void {
   }, { ...fade(w, "queue", "row"), ...(happened(w, "flood") ? { class: "fx-slide" } : {}) });
 }
 
-/** Журнал прибавок: последние закоммиченные прибавки; повтор пачки — красным. */
+/** Журнал прибавок: последние закоммиченные прибавки; повтор батча — красным. */
 function drawAdds(pen: Pen, w: World): void {
   if (!w.adds.length || !about(w, "adds", false) && !w.adds.some((a) => a.n > 1)) return;
   pen.group("adds", 0, 0, () => {
@@ -164,7 +164,7 @@ function drawAdds(pen: Pen, w: World): void {
   }, fade(w, "adds"));
 }
 
-/** Журнал сбросов flushes: номера учтённых пачек. */
+/** Журнал сбросов flushes: номера учтённых батчей. */
 function drawFlushes(pen: Pen, w: World): void {
   if (!w.keyed) return;
   const skipped = happened(w, "skip");
@@ -242,7 +242,7 @@ function drawPool(pen: Pen, w: World, a: Actor): void {
   }
 }
 
-/** Копилка пачки (или фоновые прибавки): сколько накоплено и номер пачки. */
+/** Копилка батча (или фоновые прибавки): сколько накоплено и номер батча. */
 function drawJar(pen: Pen, w: World, a: Actor): void {
   const x = JAR_X;
   if (a.background > 0) {
@@ -259,7 +259,7 @@ function drawJar(pen: Pen, w: World, a: Actor): void {
   }, fade(w, a.id, "jar"));
 }
 
-/** Стрелки пода: к горячей строке (или шарду), сброс пачки, оборванный ответ, ответы браузерам. */
+/** Стрелки пода: к горячей строке (или шарду), сброс батча, оборванный ответ, ответы браузерам. */
 function drawPodArrows(pen: Pen, w: World): void {
   for (const id of ACTORS) {
     const a = w.actors[id];

@@ -43,7 +43,7 @@ describe("озвучка эпизода 03", () => {
     expect(recap.flatMap((x) => x.state.events.map((e) => e.kind))).not.toContain("dup");
   });
 
-  it("повтор пачки звучит провалом: в кадре дубля есть громкий «бзз»", () => {
+  it("повтор батча звучит провалом: в кадре дубля есть громкий «бзз»", () => {
     const frame = steps.find((x) => x.act === ACT.retry && x.state.events.some((e) => e.kind === "dup"))!;
     const { s, calls } = recorder();
     sound(s, frame.state);
