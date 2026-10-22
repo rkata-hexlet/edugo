@@ -102,6 +102,14 @@
 стрелки (к Redis, к строке базы мимо Redis, ответ браузеру, рассылка). `World.replay` — кадр итога: звук тише и
 без тревоги (`sound(s, w, replay)`).
 
+## Эпизод 03 (`scenes/03-counter/`, `?scene=03`)
+Та же раскладка. `sim.ts` — таблица `link_stats` (горячая строка; `Row.shards` — sharded counter), поды с пулом
+соединений (`Actor.waiting`, `POOL`), фоновыми прибавками (`background`, `go func()`), копилкой пачки (`jar`, `seq`,
+`unsure` — ответ на сброс потерян), журнал прибавок `adds` (`dup` — повтор пачки), журнал сбросов `flushes` (ключ
+пачки), внешний мир `clicked` («кликов было»). Предикаты `lost` / `doubled` / `pending`, нагрузка `dbLoad` и очередь
+`contended` — по ним тест сверяет табло. `World.flashback` — кадр отсылки к эпизоду 01: `view.ts` рисует кадр 01
+(найден по началу закадра, `flashbackState`) его же `render`.
+
 ## Порядок сборки (main.ts)
 1. Импорт сцен → реестр (`Record<string, Scene<any>>`: у каждой сцены свой тип состояния). 2. Выбор сцены (`?scene=01`). 3. `loadTakes(scene.id)` — справочник дублей.
 4. `mountPlayer(host, scene, takes)` или `mountRecorder(…)` при `?record` — сами создают SVG и `SvgPen`.
@@ -122,4 +130,5 @@ scenes/* ──► engine/contract (только типы)
 scenes/* ──► kit ──► engine/contract   (с этапа 3; kit не знает сцен и плеера)
    sim ──► kit/director (только типы Board, Verdict); script ──► kit/director (Director)
 ```
-Сцены не импортируют друг друга. Циклов нет.
+Сцены не импортируют друг друга, кроме отсылки назад: `scenes/03/view` → `scenes/01/{script,view}` (повтор кадра
+прошлого эпизода сценой — правило серии; 01 выпущен и не меняется). Циклов нет.
