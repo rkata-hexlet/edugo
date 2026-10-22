@@ -58,7 +58,7 @@ export interface Actor {
   acts: Act[];
 }
 
-export type Focus = ActorId | "table" | "row" | "queue" | "pool" | "jar" | "adds" | "flushes" | "browsers" | "board" | "clock" | "sql" | "load";
+export type Focus = ActorId | "table" | "row" | "queue" | "pool" | "jar" | "adds" | "flushes" | "browsers" | "board" | "clock" | "sql" | "load" | "lock" | "lag";
 
 export type EventKind =
   | "flood" | "click" | "add" | "commit" | "wait" | "overload" | "calm" | "async" | "restart" | "spill" | "shard"

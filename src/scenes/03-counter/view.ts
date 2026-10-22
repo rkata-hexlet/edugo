@@ -64,6 +64,7 @@ function drawTable(pen: Pen, w: World): void {
             x: col.x, width: col.w, height: TABLE.rowH, fill: COLOR.surface, stroke: hot && c === 1 && happened(w, "dup") ? COLOR.error : COLOR.line, "stroke-width": 1.5,
           }));
           pen.text(`row:${i}:code`, { x: 12, y: 25, ...MONO, fill: hot ? COLOR.ink : COLOR.muted, "font-weight": hot ? 700 : 400 }, r.code);
+        if (hot && about(w, "lock", false)) icon(pen, `row:${i}:lock`, "lock", COLS[1].x + COLS[1].w + 10, 7, 24, COLOR.warn, { class: "fx-pop" });
           const [vk, vfx] = once(`row:${i}:n`, w.frame, added ? "fx-pop" : null);
           pen.group(vk, 0, 0, () => pen.text(`${vk}:t`, { x: COLS[1].x + 12, y: 25, ...MONO, fill: hot ? COLOR.ink : COLOR.muted, "font-weight": hot ? 700 : 400 },
             thousands(r.clicks)), vfx);
@@ -74,7 +75,7 @@ function drawTable(pen: Pen, w: World): void {
   }
   drawQueue(pen, w);
   // Нагрузка базы: полоса с потолком, без чисел (tech-expert).
-  if (!about(w, "load", false) && !jammed(w)) return;
+  if (!about(w, "load", false) && !w.replay) return; // в итоге полоса показывает прогресс попыток
   const y = w.rows[0].shards ? SHARD_SUM_Y + 44 : LOAD.y; // под суммой разложенного счётчика
   pen.group("dbload", 0, 0, () => {
     pen.text("dbload:t", { x: TABLE.x, y: y + 6, ...SANS, fill: COLOR.muted }, "нагрузка базы");
@@ -114,6 +115,7 @@ function drawShardTable(pen: Pen, w: World): void {
           x: col.x, width: col.w, height: TABLE.rowH, fill: lit_ ? COLOR.doneBg : COLOR.surface, stroke: lit_ ? COLOR.ok : COLOR.line, "stroke-width": 1.5,
         }));
         pen.text(`shard:${shard}:code`, { x: 12, y: 25, ...MONO, fill: COLOR.ink, "font-weight": 700 }, HOT);
+        if (lit_ && about(w, "lock", false)) icon(pen, `shard:${shard}:lock`, "lock", SHARD_COLS[2].x + SHARD_COLS[2].w - 34, 7, 24, COLOR.warn, { class: "fx-pop" });
         pen.text(`shard:${shard}:no`, { x: SHARD_COLS[1].x + 12, y: 25, ...MONO, fill: COLOR.ink }, String(shard));
         const [vk, vfx] = once(`shard:${shard}:n`, w.frame, lit_ ? "fx-pop" : null);
         pen.group(vk, 0, 0, () => pen.text(`${vk}:t`, { x: SHARD_COLS[2].x + 12, y: 25, ...MONO, fill: COLOR.ink }, thousands(shards[shard])), vfx);
@@ -170,7 +172,7 @@ function drawFlushes(pen: Pen, w: World): void {
   const skipped = happened(w, "skip");
   pen.group("fl", 0, 0, () => {
     panel(pen, "fl:box", { x: FLUSHES.x, y: FLUSHES.y, w: FLUSHES.w, h: FLUSHES.h, stroke: skipped ? COLOR.ok : COLOR.postgres });
-    pen.text("fl:title", { x: FLUSHES.x + 16, y: FLUSHES.y + 28, ...MONO, "font-weight": 700, fill: COLOR.muted }, "flushes (pod, seq)");
+    pen.text("fl:title", { x: FLUSHES.x + 16, y: FLUSHES.y + 28, ...MONO, "font-weight": 700, fill: COLOR.muted }, "flushes");
     if (!w.flushes.length) pen.text("fl:empty", { x: FLUSHES.x + 16, y: FLUSHES.y + 64, ...SANS, fill: COLOR.faint }, "пусто");
     w.flushes.slice(-3).forEach((k, i) => {
       const [key, fx] = once(`fl:l${i}`, w.frame, skipped ? "fx-pulse" : happened(w, "commit") ? "fx-slide" : null);
@@ -213,11 +215,13 @@ function drawPod(pen: Pen, w: World, a: Actor): void {
     }
     drawPool(pen, w, a);
     drawJar(pen, w, a);
+    const burnt = w.events.find((e) => e.kind === "spill" && e.by === a.id);
+    if (burnt) pen.text(`pod:${a.id}:burnt`, { x: JAR_X, y: 52, ...MONO, fill: COLOR.error, class: "fx-shake" }, `−${thousands(burnt.n!)}`);
   }, fade(w, a.id));
 }
 
 function podLabel(w: World, a: Actor): string {
-  return !a.present ? `${a.label} · погас` : a.draining ? `${a.label} · SIGTERM` : happened(w, "spawn", a.id) ? `${a.label} · новый` : a.label;
+  return !a.present ? `${a.label} · погас` : happened(w, "restart", a.id) ? `${a.label} · рестарт` : a.draining ? `${a.label} · SIGTERM` : happened(w, "spawn", a.id) ? `${a.label} · новый` : a.label;
 }
 
 /** Правый край того, что нарисовано у пода (подпись, пул, копилка или фон): отсюда стрелка ответа браузерам. */
@@ -225,10 +229,14 @@ function podRight(pen: Pen, w: World, a: Actor): number {
   const label = pen.measure(podLabel(w, a), { ...SANS, "font-size": SIZE.say, "font-weight": 700 }).width;
   let right = NX + label;
   if (about(w, "pool", false) || jammed(w)) right = Math.max(right, NX + POOL * 24);
+  if (poolNamed(w, a)) right = Math.max(right, JAR_X + pen.measure("соединения", SANS).width);
   if (a.background > 0) right = Math.max(right, JAR_X + pen.measure(`в фоне ${thousands(a.background)}`, MONO).width);
   else if (w.mode === "batch") right = Math.max(right, JAR_X + 40 + pen.measure(a.jar ? thousands(a.jar) : "0", { ...MONO, "font-weight": 700 }).width);
   return POD.x + right;
 }
+
+/** Подпись пула — один раз, у пода A, когда голос говорит о соединениях и справа от пула пусто. */
+const poolNamed = (w: World, a: Actor) => a.id === "A" && about(w, "pool", false) && w.mode === "direct" && !a.background;
 
 /** Пул соединений: четыре слота; занятый ждущим — жёлтый. Виден, когда о нём речь или он забит. */
 function drawPool(pen: Pen, w: World, a: Actor): void {
@@ -240,6 +248,7 @@ function drawPool(pen: Pen, w: World, a: Actor): void {
       fill: busy ? COLOR.draftBg : "none", stroke: busy ? COLOR.warn : COLOR.faint, "stroke-width": 1.5,
     });
   }
+  if (poolNamed(w, a)) pen.text(`pod:${a.id}:pool:t`, { x: JAR_X, y: 52, ...SANS, fill: COLOR.warn }, "соединения");
 }
 
 /** Копилка батча (или фоновые прибавки): сколько накоплено и номер батча. */
@@ -309,7 +318,7 @@ function drawBrowsers(pen: Pen, w: World): void {
     pen.group(nk, 0, 0, () => pen.text(`${nk}:t`, { x: B.x + 16, y: B.y + 146, "font-family": FONT.mono, "font-size": SIZE.title, "font-weight": 700, fill: COLOR.ink }, thousands(w.clicked)), nfx);
     const delta = miss > 0 ? { t: `нет в счёте: ${thousands(miss)}`, c: COLOR.error }
       : extra > 0 ? { t: `лишних в счёте: ${thousands(extra)}`, c: COLOR.error }
-        : pending(w) > 0 && w.mode === "batch" ? { t: `ещё в подах: ${thousands(pending(w))}`, c: COLOR.warn } : null;
+        : pending(w) > 0 && w.mode === "batch" && (w.chapter === 2 || about(w, "lag", false)) ? { t: `ещё в подах: ${thousands(pending(w))}`, c: COLOR.warn } : null;
     if (delta) pen.text("br:delta", { x: B.x + 16, y: B.y + 180, ...SANS, "font-weight": 700, fill: delta.c, class: "fx-slide" }, delta.t);
     if (w.starved > 0) OTHERS.forEach((code, i) =>
       iconText(pen, `br:o${i}`, "hourglass", B.x + 16, B.y + 226 + i * 30, `${code} ждёт`, COLOR.warn, MONO));
@@ -353,7 +362,7 @@ export function flashbackState(voice: string): World01 {
 
 export function render(pen: Pen, w: World): void {
   if (w.flashback) {
-    render01(pen, flashbackState(w.flashback.voice));
+    render01(pen, { ...flashbackState(w.flashback.voice), board: null }); // табло 01 со своими критериями — шум
     pen.layer("top", () => stamp(pen, "⟲ Ролик про очередь задач", { left: DB.x + DB.w + 12, right: POD.x - 12 }));
     return;
   }
@@ -375,7 +384,7 @@ export function render(pen: Pen, w: World): void {
     }
     if (w.stamp) stamp(pen, w.stamp, { left: DB.x + DB.w + 12, right: POD.x - 12 });
     if (w.db) bubble(pen, "db:say", w.db, { x: DB.x + DB.w + 10, y: 43, tail: "left", attrs: { class: "fx-pop" } });
-    const unsure = ACTORS.find((id) => w.actors[id].unsure && did(w.actors[id], "lost"));
+    const unsure = ACTORS.find((id) => w.actors[id].unsure && !did(w.actors[id], "lost")); // решает на следующем кадре
     if (unsure) bubble(pen, "think", "Дошло? Повторю!", { x: POD.x + POD.w + 4, y: podMid(unsure) - 30, tail: "left", thought: true, attrs: { class: "fx-pop" } });
   });
 }
