@@ -86,7 +86,7 @@ function drawTable(pen: Pen, w: World): void {
 const SHOWN = [0, 1, 2, 15];
 const SHARD_COLS = [
   { title: "code", x: 0, w: 110 },
-  { title: "shard", x: 110, w: 80 },
+  { title: "part", x: 110, w: 80 },
   { title: "clicks", x: 190, w: 140 },
 ];
 const SHARD_ROW_Y = [rowY(0), rowY(1), rowY(2), rowY(3) + 34];

@@ -27,7 +27,9 @@ export const ACT = {
 
 const SQL = {
   add: `UPDATE link_stats SET clicks = clicks + 1\n  WHERE code = '${HOT}'`,
-  shard: (i: number) => `UPDATE link_stats SET clicks = clicks + 1\n  WHERE code = '${HOT}' AND shard = ${i}`,
+  schemaBefore: "CREATE TABLE link_stats (\n  code text PRIMARY KEY, clicks bigint)",
+  schema: "CREATE TABLE link_stats (\n  code text, part int, clicks bigint,\n  PRIMARY KEY (code, part))",
+  shard: (i: number) => `UPDATE link_stats SET clicks = clicks + 1\n  WHERE code = '${HOT}' AND part = ${i}`,
   sum: `SELECT sum(clicks) FROM link_stats\n  WHERE code = '${HOT}'`,
   batch: (n: number) => `UPDATE link_stats SET clicks = clicks + ${n}\n  WHERE code = '${HOT}'`,
   keyed: (pod: ActorId, seq: number, n: number) =>
@@ -203,13 +205,27 @@ export function buildSteps(): Step<World>[] {
   d.attempt("16 частей счётчика");
   d.shot("", (w) => {
     w.stamp = "⟲ Иначе: 16 частей счётчика";
-    shard(w);
-    click(w, "A");
-    const hit = w.actors.A.acts.find((x) => x.kind === "add");
-    sql(w, "A", SQL.shard(hit?.kind === "add" ? hit.shard ?? 0 : 0));
+    w.sql.push(SQL.schemaBefore);
   }, {
-    sql: true, focus: ["A", "row", "sql"],
-    voice: "Ладно, попробуем решить это на стороне самой базы. Раз все дерутся за одну строку, разрежем счётчик нашей ссылки на шестнадцать частей. В таблице у этой ссылки теперь шестнадцать строк, каждая хранит свою часть кликов, и новый клик прибавляется в случайную из них. А общее число кликов по ссылке — это сумма всех шестнадцати частей, как выручка магазина складывается из всех его касс.",
+    sql: true, focus: ["row", "table", "sql"],
+    voice: "Ладно, попробуем решить это на стороне самой базы. Сейчас у каждой ссылки в таблице одна строка, а значит, и один замок на все её клики.",
+  });
+  d.shot("", (w) => {
+    shard(w);
+    w.events.push({ kind: "shard" });
+    w.sql.push(SQL.schema);
+  }, {
+    sql: true, focus: ["row", "table", "sql"],
+    voice: "Добавим в таблицу колонку part, номер части, и заведём нашей ссылке шестнадцать строк вместо одной. Таблица та же, база та же, просто счётчик ссылки разрезан на шестнадцать частей.",
+  });
+  d.shot("", (w) => {
+    click(w, "A", 1, 2);
+    click(w, "B", 1, 0);
+    sql(w, "A", SQL.shard(2));
+    sql(w, "B", SQL.shard(0));
+  }, {
+    sql: true, focus: ["A", "B", "row", "sql"],
+    voice: "Теперь на каждый клик приложение выбирает случайную часть и прибавляет единицу только в неё. Замок встаёт на одну эту строку, а соседний клик, которому выпала другая часть, никого не ждёт. Был один замок на все клики, а стало шестнадцать!",
   });
   d.shot("", (w) => {
     flood(w, 10_000);
@@ -217,7 +233,7 @@ export function buildSteps(): Step<World>[] {
     sql(w, "C", SQL.sum);
   }, {
     sql: true, verdict: ["green", null], focus: ["A", "B", "C", "row", "sql", "board"],
-    voice: "Теперь на каждую строку приходится в шестнадцать раз меньше запросов, они почти не ждут друг друга, а итог мы легко получаем обычной суммой по всем шестнадцати записям. И точность при этом полностью сохраняется.",
+    voice: "На каждую строку теперь приходится в шестнадцать раз меньше запросов, они почти не ждут друг друга, а общий счёт автор получает одной суммой по всем шестнадцати частям, как выручка магазина складывается из всех его касс. И точность при этом полностью сохраняется.",
   });
   d.term("Sharded counter");
   d.shot("", (w) => {
@@ -225,7 +241,7 @@ export function buildSteps(): Step<World>[] {
     w.db = "Очередь ушла, а работа нет.";
   }, {
     verdict: [null, "yellow"], focus: ["row", "load", "board"],
-    voice: "Но одно не изменилось: каждый клик по-прежнему отдельный запрос и отдельный COMMIT в Postgres. Мы разгрузили саму строку, но не уменьшили общую нагрузку на базу. Такая схема называется шардированным счётчиком, sharded counter.",
+    voice: "Но одно не изменилось: каждый клик по-прежнему отдельный UPDATE и отдельный COMMIT, и их всё так же тысячи в секунду. Мы разнесли толпу по шестнадцати дверям, но людей меньше не стало. Такая схема называется шардированным счётчиком, sharded counter. Только не путайте его с шардированием базы: все шестнадцать частей лежат в той же таблице на том же сервере.",
   });
   const shardedShot = structuredClone(d.w);
 

@@ -211,10 +211,10 @@ function commitAdd(w: World, who: ActorId, n: number, key: string | null, dup: b
 }
 
 /**
- * n кликов пришли к поду who. Браузеры получили «принято». Дальше — по способу записи:
+ * n кликов пришли к поду who (part — в какую часть разложенного счётчика, иначе «случайная»). Браузеры получили «принято». Дальше — по способу записи:
  * direct/sharded — прибавка сразу (в кадре — одна прибавка за все n, образ), async — в фон, batch — в копилку.
  */
-export function click(w: World, who: ActorId, n = 1): void {
+export function click(w: World, who: ActorId, n = 1, part?: number): void {
   const a = w.actors[who];
   if (!a.present || a.draining) throw new Error(`клик к поду ${who}, который не принимает`);
   w.clicked += n;
@@ -231,7 +231,7 @@ export function click(w: World, who: ActorId, n = 1): void {
   }
   const row = hotRow(w);
   if (row.shards) {
-    const shard = (w.clicked + 15 + 5 * ACTORS.indexOf(who)) % SHARDS; // «случайная» строка — детерминированно
+    const shard = part ?? (w.clicked + 15 + 5 * ACTORS.indexOf(who)) % SHARDS; // «случайная» часть — детерминированно
     row.shards[shard] += n;
     row.clicks += n;
     a.acts.push({ kind: "add", n, shard });
