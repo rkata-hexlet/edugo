@@ -86,7 +86,7 @@ export function sound(out: Sound, w: World, replay = false): void {
   const s = scaled(out, replay ? 0.7 : 1);
   const byKind = new Map<EventKind, SimEvent[]>();
   for (const e of w.events) byKind.set(e.kind, [...(byKind.get(e.kind) ?? []), e]);
-  if (replay) for (const k of ["clock", "flood", "grow", "sum", "no", "page"] as const) byKind.delete(k);
+  if (replay) for (const k of ["clock", "flood", "sum", "no", "page"] as const) byKind.delete(k);
 
   for (const [kind, events] of byKind) {
     if (kind === "clock") {

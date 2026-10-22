@@ -64,6 +64,8 @@ export interface Probe {
   box: number;
   zeros: number;
   changed: boolean;
+  /** Чей хэш: под (кадр «хэш у всех подов один»); нет — номерок пришёл сам. */
+  by?: ActorId;
 }
 
 /** День календаря (кейс 2): уникальные за день числом и ящиками. */
@@ -111,6 +113,8 @@ export interface World {
   real: number | null;
   /** Номерки, прогнанные через хэш в этом кадре («лаборатория»). */
   probes: Probe[];
+  /** «Лаборатория» без ящиков: только номерок → строка битов (кадр хэша). */
+  hashOnly: boolean;
   /** Кейс 2: календарь дней; period — сколько последних дней сливает запрос (null — не сливаем). */
   days: Day[] | null;
   period: number | null;
@@ -167,7 +171,7 @@ export function probe(vid: string, regs: number[]): Probe {
   return { vid, bits: hash(vid).toString(2).padStart(32, "0"), box, zeros: rho - 1, changed: rho > regs[box] };
 }
 
-const empty = (m = BOXES) => new Array<number>(m).fill(0);
+export const empty = (m = BOXES) => new Array<number>(m).fill(0);
 
 /** Оценка HLL: α·m²/Σ2^(−M); на малых — linear counting m·ln(m/V). */
 export function estimate(regs: number[]): number {
@@ -223,6 +227,7 @@ export function world(): World {
     regs: empty(),
     real: null,
     probes: [],
+    hashOnly: false,
     days: null,
     period: null,
     periods: [],
@@ -267,7 +272,7 @@ export function inflated(w: World): boolean {
 
 /** Сколько весит подсчёт ссылки за день, байт: блокноты окна, список номерков или 16 ящиков. */
 export function weight(w: World): number {
-  if (w.mode === "list") return (w.visitors.length + w.bulk) * 16;
+  if (w.mode === "list") return (w.visitors.length + w.bulk) * 100; // строка с заголовком кортежа и индексом
   if (w.mode === "hll") return REAL_BOXES * 5 / 8; // 5 бит на ящик — около 10 КБ
   return ACTORS.reduce((s, id) => s + w.actors[id].seen.length * 16, 0);
 }

@@ -92,7 +92,7 @@ function drawList(pen: Pen, w: World): void {
       { text: "count(*) = ", attrs: { fill: COLOR.muted } }, { text: thousands(reported(w)) },
     ]);
     if (about(w, "weight", false)) {
-      pen.text("vis:w", { x: LEFT.x, y: y + 52, ...SANS, fill: COLOR.muted }, "вес за день");
+      pen.text("vis:w", { x: LEFT.x, y: y + 52, ...SANS, fill: COLOR.muted }, "вес");
       meter(pen, "vis:m", { x: LEFT.x + 120, y: y + 40, w: 220, h: 12, load: light(w) ? 0.1 : 1.2 });
       pen.text("vis:mb", { x: LEFT.x + 360, y: y + 52, ...SANS, "font-weight": 700, fill: COLOR.error }, "сотни МБ");
     }
@@ -106,6 +106,7 @@ function drawBoxes(pen: Pen, w: World, regs: number[], o: { y: number; unit: num
   const hit = last?.box;
   const grew = happened(w, "reg") || happened(w, "merge") || happened(w, "flood");
   pen.group(`boxes:${w.scene}`, 0, 0, () => {
+    if (happened(w, "flood")) pen.rect("boxes:all", { x: LEFT.x - 8, y: o.y - 8, width: BOXES * BOX.pitch + 8, height: 15 * o.unit + 16, rx: 8, fill: "none", stroke: COLOR.warn, "stroke-width": 2, "stroke-dasharray": "8 6", class: "fx-pop" });
     pen.text("boxes:title", { x: LEFT.x, y: o.y - 14, ...MONO, fill: COLOR.muted }, o.title);
     regs.forEach((r, i) => {
       const x = LEFT.x + i * BOX.pitch;
@@ -124,13 +125,22 @@ function drawBoxes(pen: Pen, w: World, regs: number[], o: { y: number; unit: num
 function drawEstimate(pen: Pen, w: World, regs: number[], y: number): void {
   if (!about(w, "estimate", false) && !w.real) return;
   pen.group("est", 0, 0, () => {
+    const t = w.days ? null : truth(w);
+    const off = (e: number) => (t ? ` (${e >= t ? "+" : "−"}${(Math.abs(e / t - 1) * 100).toFixed(e / t > 0.9 && e / t < 1.1 ? 1 : 0).replace(".", ",")} %)` : "");
+    const e16 = estimate(regs);
     pen.text("est:16", { x: LEFT.x, y, ...MONO, "font-weight": 700, fill: COLOR.ink }, [
-      { text: `${BOXES} ящиков ≈ `, attrs: { fill: COLOR.muted } }, { text: thousands(estimate(regs)) },
+      { text: `${BOXES} ящиков ≈ `, attrs: { fill: COLOR.muted } }, { text: thousands(e16) },
+      ...(w.real && t ? [{ text: off(e16), attrs: { fill: COLOR.warn } }] : []),
     ]);
     if (w.real) pen.text("est:real", { x: LEFT.x, y: y + 32, ...MONO, "font-weight": 700, fill: COLOR.ok }, [
       { text: `${thousands(REAL_BOXES)} ящика ≈ `, attrs: { fill: COLOR.muted } }, { text: thousands(w.real) },
-      { text: " · ~10 КБ", attrs: { fill: COLOR.muted } },
+      ...(t ? [{ text: off(w.real), attrs: { fill: COLOR.ok } }] : []),
     ]);
+    if (w.real && about(w, "weight", false)) {
+      pen.text("est:w", { x: LEFT.x, y: y + 72, ...SANS, fill: COLOR.muted }, "вес");
+      meter(pen, "est:m", { x: LEFT.x + 60, y: y + 60, w: 220, h: 12, load: 0.05 });
+      pen.text("est:kb", { x: LEFT.x + 300, y: y + 72, ...SANS, "font-weight": 700, fill: COLOR.ok }, "~10 КБ");
+    }
   }, fade(w, "estimate"));
 }
 
@@ -140,12 +150,22 @@ function drawProbes(pen: Pen, w: World, y: number): void {
 }
 
 function drawProbe(pen: Pen, w: World, p: Probe, i: number, y: number): void {
+  if (w.hashOnly) {
+    // Кадр хэша: только номерок → строка нулей и единиц, без ящиков и разметки.
+    const [k, fx] = once(`probe${i}`, w.frame, "fx-slide");
+    pen.group(k, 0, 0, () => pen.text(`${k}:bits`, { x: LEFT.x, y: 260, ...MONO, "font-size": SIZE.accent, fill: COLOR.ink }, [
+      { text: `${p.vid} → `, attrs: { "font-weight": 700 } },
+      { text: `${p.bits.slice(0, 16).replace(/(.{4})/g, "$1 ")}…`, attrs: { fill: COLOR.muted } }, // хвост — за краем: не влезает к подам
+    ]), fx);
+    return;
+  }
   const head = p.bits.slice(0, 4);
   const rest = p.bits.slice(4);
   const zeros = rest.slice(0, p.zeros);
   const one = rest.slice(p.zeros, p.zeros + 1);
   const tail = rest.slice(p.zeros + 1, 12);
   const spans: Span[] = [
+    ...(p.by ? [{ text: `Pod ${p.by} · `, attrs: { fill: ACTOR[p.by].color, "font-weight": 700 } }] : []),
     { text: `${p.vid} → `, attrs: { fill: COLOR.ink } },
     { text: head, attrs: { fill: COLOR.warn, "font-weight": 700 } },
     { text: " " },
@@ -167,14 +187,16 @@ function drawProbe(pen: Pen, w: World, p: Probe, i: number, y: number): void {
 /** Монетка: пять решек подряд — «бросали много раз». */
 function drawCoin(pen: Pen, w: World): void {
   pen.group("coin", 0, 0, () => {
-    for (let i = 0; i < 5; i++) {
+    // Пять решек и орёл: серия до первого орла — тот же образ, что нули до первой единицы в хэше.
+    for (let i = 0; i < 6; i++) {
+      const head = i === 5;
+      const color = head ? COLOR.ok : COLOR.warn;
       pen.group(`coin:${i}`, LEFT.x + 20 + i * 64, 200, () => {
-        pen.rect(`coin:${i}:c`, { x: 0, y: 0, width: 52, height: 52, rx: 26, fill: COLOR.draftBg, stroke: COLOR.warn, "stroke-width": 2.5 });
-        pen.text(`coin:${i}:t`, { x: 26, y: 34, "font-family": FONT.sans, "font-size": SIZE.accent, "font-weight": 700, fill: COLOR.warn, "text-anchor": "middle" }, "Р");
+        pen.rect(`coin:${i}:c`, { x: 0, y: 0, width: 52, height: 52, rx: 26, fill: head ? COLOR.doneBg : COLOR.draftBg, stroke: color, "stroke-width": 2.5 });
+        pen.text(`coin:${i}:t`, { x: 26, y: 34, "font-family": FONT.sans, "font-size": SIZE.accent, "font-weight": 700, fill: color, "text-anchor": "middle" }, head ? "О" : "Р");
       }, { class: "fx-pop" });
     }
     pen.text("coin:t", { x: LEFT.x + 20, y: 300, ...SANS, "font-size": SIZE.accent, "font-weight": 700, fill: COLOR.ink }, "5 решек подряд");
-    pen.text("coin:q", { x: LEFT.x + 20, y: 336, ...SANS, fill: COLOR.muted }, "значит, бросали много раз");
   }, fade(w, "probe"));
 }
 
@@ -199,7 +221,7 @@ function drawDays(pen: Pen, w: World): void {
     if (!boxed) {
       const sum = daySum(w);
       pen.text("days:sum", { x: LEFT.x, y: 256, ...MONO, "font-size": SIZE.accent, "font-weight": 700, fill: COLOR.error, ...(happened(w, "sum") ? { class: "fx-pop" } : {}) }, [
-        { text: "сумма за год: ", attrs: { fill: COLOR.muted } }, { text: thousands(sum) },
+        { text: `${days[0].uniques} + ${days[1].uniques} + … = `, attrs: { fill: COLOR.muted } }, { text: thousands(sum) },
       ]);
       pen.text("days:anya", { x: LEFT.x, y: 292, ...SANS, "font-weight": 700, fill: COLOR.error }, "из них Аня — 365 раз");
       return;
@@ -207,7 +229,6 @@ function drawDays(pen: Pen, w: World): void {
     if (w.periods.length) {
       w.periods.forEach((p, i) => pen.text(`per:${p.n}`, { x: LEFT.x, y: 256 + i * 34, ...MONO, "font-weight": 700, fill: COLOR.ink, class: "fx-slide" }, [
         { text: `${p.n === 7 ? "неделя" : p.n === 30 ? "30 дней" : "год"} ≈ `, attrs: { fill: COLOR.muted } }, { text: thousands(p.real) },
-        { text: ` · людей было ${thousands(p.truth)}`, attrs: { fill: COLOR.faint } },
       ]));
       return;
     }
@@ -228,6 +249,7 @@ function drawBase(pen: Pen, w: World): void {
   if (w.mode === "counter") return drawCounter(pen, w);
   if (w.mode === "list") return drawList(pen, w);
   if (w.coin) return drawCoin(pen, w);
+  if (w.hashOnly) return drawProbes(pen, w, 0);
   drawBoxes(pen, w, w.regs, { y: 136, unit: BOX.unit, title: `link_uniques · ${HOT}` });
   drawEstimate(pen, w, w.regs, 380);
   drawProbes(pen, w, 450);
@@ -264,7 +286,7 @@ function drawPod(pen: Pen, w: World, a: Actor): void {
       const fresh = did(a, "reg") || did(a, "flush");
       if (!fresh && !about(w, "jar", false)) return;
       const sent = a.acts.find((x): x is Extract<Act, { kind: "flush" }> => x.kind === "flush")?.regs;
-      (sent ?? a.regs).forEach((r, j) => pen.rect(`pod:${a.id}:r${j}`, { x: NX + j * 7, y: 58 - Math.max(2, (r - 1) * 5), width: 5, height: Math.max(2, (r - 1) * 5), fill: r ? COLOR.warn : COLOR.line }));
+      (sent ?? a.regs).forEach((r, j) => pen.rect(`pod:${a.id}:r${j}`, { x: NX + j * 9, y: 62 - Math.max(3, (r - 1) * 7), width: 7, height: Math.max(3, (r - 1) * 7), fill: r ? COLOR.warn : COLOR.line }));
       return;
     }
     // Блокнот: что в нём сейчас, а в кадре сброса — что под в нём проверял (сброс его опустошил).
@@ -300,7 +322,7 @@ function drawPodArrows(pen: Pen, w: World): void {
         x1: POD.x + 200, y1: POD_Y[id] + 30, x2: BROWSERS.x - 6, y2: BROWSERS.y + 80,
         stroke: color, "stroke-width": 2.5, "stroke-linecap": "round", marker: "arrow", ...DRAW, ...fade(w, "browsers", id),
       });
-      if (ck) pill(pen, `arr:${id}:cookie`, `Set-Cookie: vid=${ck.vid}`, { x: POD.x + 110, y: POD_Y[id] - 36, fill: COLOR.surface2, color: COLOR.warn, stroke: COLOR.warn, mono: true, attrs: { class: "fx-pop" } });
+      if (ck) pill(pen, `arr:${id}:cookie`, `Set-Cookie: vid=${ck.vid}`, { x: POD.x + 110, y: POD_Y[id] - 52, fill: COLOR.surface2, color: COLOR.warn, stroke: COLOR.warn, mono: true, attrs: { class: "fx-pop" } });
     }
   }
 }
@@ -361,7 +383,8 @@ export function flashbackState(voice: string): World03 {
 
 export function render(pen: Pen, w: World): void {
   if (w.flashback) {
-    render03(pen, { ...flashbackState(w.flashback.voice), board: null, term: null, chapter: null, db: null });
+    // Только копилки и сброс: нагрузка, журнал прибавок и SQL эпизода 03 здесь шум (learning-designer).
+    render03(pen, { ...flashbackState(w.flashback.voice), board: null, term: null, chapter: null, db: null, sql: [], adds: [], focus: ["A", "B", "C", "row", "jar"] });
     pen.layer("top", () => stamp(pen, "⟲ Ролик про счётчик кликов", { left: DB.x + DB.w + 12, right: POD.x - 12 }));
     return;
   }
@@ -369,7 +392,9 @@ export function render(pen: Pen, w: World): void {
   drawHeader(pen, w);
   drawBase(pen, w);
   if (w.term) pill(pen, "term", w.term, { x: POD.x, y: 76, fill: COLOR.surface2, color: COLOR.ink, stroke: COLOR.ink, mono: true, attrs: { class: "fx-slide" } });
-  if (w.board) board(pen, w.board, { ...BOARD, lampX: [258, 416], attrs: fade(w, "board") });
+  // В объяснении HLL табло ждёт за кадром, пока голос не вернётся к критериям (learning-designer).
+  const boardAway = w.mode === "hll" && !w.days && !about(w, "board");
+  if (w.board && !boardAway) board(pen, w.board, { ...BOARD, lampX: [258, 416], attrs: fade(w, "board") });
   if (w.sql.length) sqlWindow(pen, "sql", podSql(w.sql), { x: LEFT.x, bottom: BOTTOM, attrs: fade(w, "sql") });
   drawPodArrows(pen, w);
   drawBrowsers(pen, w);
