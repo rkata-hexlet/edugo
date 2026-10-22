@@ -5,7 +5,7 @@
 ## 1. Офлайн-рендер — `npm run render` (без экрана, детерминированно)
 ```
 npm run dev                       # в соседнем терминале (http://localhost:5173)
-npm run render                    # → dist/episode-01.mp4 (+ dist/episode-01.wav — звуки событий)
+npm run render                    # → out/episode-01.mp4 (+ out/episode-01.wav — звуки событий)
 npm run render -- --from 60 --to 90 --out /tmp/cut.mp4   # кусок для проверки
 ```
 - headless Chrome (`/usr/bin/google-chrome`, другой — `--chrome` или `CHROME=`) открывает

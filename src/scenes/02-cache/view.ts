@@ -246,17 +246,17 @@ function drawPodArrows(pen: Pen, w: World): void {
     if (kind === "miss") icon(pen, `arr:${id}:miss`, "cross", mid.x - 11, mid.y - 22, 22, COLOR.error, { opacity: op });
     if (kind === "del") icon(pen, `arr:${id}:del`, "trash", mid.x - 11, mid.y - 24, 22, COLOR.warn, { opacity: op });
   }
-  // Рассылка «сбрось»: дуги от пода A к остальным, справа от подов.
+  // Рассылка «сбрось»: под → канал Redis → остальные поды. Поды друг друга не знают, доносит Redis.
+  const hub = { x: REDIS.x + REDIS.w + 4, y: REDIS.y + 34 };
+  const pub: Attrs = { stroke: COLOR.warn, "stroke-width": 2.5, "stroke-dasharray": "6 5", "stroke-linecap": "round", marker: "arrow", ...DRAW };
   for (const id of ACTORS) {
     if (!did(w.actors[id], "publish")) continue;
-    const x = POD.x + 28;
-    icon(pen, `pub:${id}`, "broadcast", x - 46, POD_Y[id] - 10, 26, COLOR.warn);
+    icon(pen, `pub:${id}`, "broadcast", POD.x - 18, POD_Y[id] - 10, 26, COLOR.warn);
+    pen.text(`pub:${id}:chan`, { x: REDIS.x + REDIS.w - 16, y: REDIS.y + 30, ...SANS, fill: COLOR.warn, "text-anchor": "end" }, "канал");
+    pen.path(`pub:${id}:in`, { d: `M ${POD.x - 4} ${podMid(id) + 4} Q ${hub.x + 70} ${podMid(id) + 40} ${hub.x + 4} ${hub.y - 6}`, ...pub });
     for (const to of ACTORS) {
       if (to === id || !happened(w, "drop", to)) continue;
-      pen.path(`pub:${id}:${to}`, {
-        d: `M ${x - 34} ${POD_Y[id] + 20} Q ${x - 90} ${(POD_Y[id] + POD_Y[to]) / 2 + 30} ${x - 6} ${POD_Y[to] + 10}`,
-        stroke: COLOR.warn, "stroke-width": 2.5, "stroke-dasharray": "6 5", "stroke-linecap": "round", marker: "arrow", ...DRAW,
-      });
+      pen.path(`pub:${id}:${to}`, { d: `M ${hub.x} ${hub.y + 10} Q ${hub.x + 40} ${podMid(to) + 10} ${POD.x - 8} ${podMid(to) + 14}`, ...pub });
     }
   }
 }

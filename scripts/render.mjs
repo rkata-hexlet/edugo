@@ -3,7 +3,7 @@
 // Голос диктора — дубли живого диктора (public/voice, суфлёр ?record); кадр без дубля идёт молча
 // по расчётному темпу. Субтитров в ролике нет (решение пользователя 21.10).
 //
-//   npm run render -- [--scene 01] [--fps 30] [--size 1920x1080] [--out dist/episode-01.mp4]
+//   npm run render -- [--scene 01] [--fps 30] [--size 1920x1080] [--out out/episode-01.mp4]
 //                     [--from 0] [--to <с>] [--url http://localhost:5173/]
 // Без --url скрипт сам собирает приложение (vite build в кэш) и поднимает vite preview: правки
 // исходников во время рендера (перезагрузка dev-сервера) его не обрывают.
@@ -29,7 +29,7 @@ const url = external ?? `http://localhost:${PORT}/`;
 const sceneId = arg("scene", "01");
 const fps = Number(arg("fps", "30"));
 const [width, height] = arg("size", "1920x1080").split("x").map(Number);
-const out = arg("out", `dist/episode-${sceneId}.mp4`);
+const out = arg("out", `out/episode-${sceneId}.mp4`);
 const from = Number(arg("from", "0"));
 const chrome = arg("chrome", process.env.CHROME ?? "/usr/bin/google-chrome");
 
