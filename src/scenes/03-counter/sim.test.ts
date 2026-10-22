@@ -160,6 +160,14 @@ describe("сценарий не врёт", () => {
     for (const v of backs) expect(() => flashbackState(v)).not.toThrow();
   });
 
+  it("закадр: тире не больше одного на кадр, без разметки (синтез читает её вслух)", () => {
+    const bad = steps.flatMap((s, i) => {
+      const t = s.narration ?? "";
+      return (t.match(/ — /g) ?? []).length > 1 || /[`*_#]/.test(t) ? [`кадр ${i + 1}`] : [];
+    });
+    expect(bad).toEqual([]);
+  });
+
   it("итог — повтор уже виденного", () => {
     const recap = frames(ACT.summary);
     expect(recap).toHaveLength(4);
