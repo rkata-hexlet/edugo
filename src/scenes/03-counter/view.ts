@@ -33,6 +33,7 @@ const BOARD = { x: 750, y: 466, w: 490, rowH: 26 };
 const BOTTOM = 650;
 const DB = { x: 100, w: 130 };
 const NX = BOB.w + 14; // левый край подписи пода
+const JAR_X = NX + 104; // копилка или фоновые прибавки — правее пула
 
 const MONO = { "font-family": FONT.mono, "font-size": SIZE.body };
 const SANS = { "font-family": FONT.sans, "font-size": SIZE.body };
@@ -172,7 +173,7 @@ function drawPod(pen: Pen, w: World, a: Actor): void {
     const [fxKey, fxAttrs] = once(`pod:${a.id}:fx`, w.frame, goneNow ? "fx-fade" : spawned ? "fx-pop" : null);
     pen.group(fxKey, 0, 0, () =>
       bob(pen, `pod:${a.id}:bob`, { x: 0, y: 0, color, tint, letter: a.id, mood: podMood(a), look: podLook(a), ghost: gone, dashed: a.waiting > 0 }), fxAttrs);
-    const label = gone ? `${a.label} · погас` : a.draining ? `${a.label} · SIGTERM` : spawned ? `${a.label} · новый` : a.label;
+    const label = podLabel(w, a);
     pen.text(`pod:${a.id}:label`, { x: NX, y: 24, ...SANS, "font-size": SIZE.say, "font-weight": 700, fill: gone ? COLOR.muted : color }, label);
     if (a.unsure) icon(pen, `pod:${a.id}:q`, "question", 20, -44, 26, COLOR.warn, { class: "fx-pop" });
     if (gone) {
@@ -182,6 +183,20 @@ function drawPod(pen: Pen, w: World, a: Actor): void {
     drawPool(pen, w, a);
     drawJar(pen, w, a);
   }, fade(w, a.id));
+}
+
+function podLabel(w: World, a: Actor): string {
+  return !a.present ? `${a.label} · погас` : a.draining ? `${a.label} · SIGTERM` : happened(w, "spawn", a.id) ? `${a.label} · новый` : a.label;
+}
+
+/** Правый край того, что нарисовано у пода (подпись, пул, копилка или фон): отсюда стрелка ответа браузерам. */
+function podRight(pen: Pen, w: World, a: Actor): number {
+  const label = pen.measure(podLabel(w, a), { ...SANS, "font-size": SIZE.say, "font-weight": 700 }).width;
+  let right = NX + label;
+  if (about(w, "pool", false) || jammed(w)) right = Math.max(right, NX + POOL * 24);
+  if (a.background > 0) right = Math.max(right, JAR_X + pen.measure(`в фоне ${thousands(a.background)}`, MONO).width);
+  else if (w.mode === "batch") right = Math.max(right, JAR_X + 40 + pen.measure(a.jar ? thousands(a.jar) : "0", { ...MONO, "font-weight": 700 }).width);
+  return POD.x + right;
 }
 
 /** Пул соединений: четыре слота; занятый ждущим — жёлтый. Виден, когда о нём речь или он забит. */
@@ -198,7 +213,7 @@ function drawPool(pen: Pen, w: World, a: Actor): void {
 
 /** Копилка пачки (или фоновые прибавки): сколько накоплено и номер пачки. */
 function drawJar(pen: Pen, w: World, a: Actor): void {
-  const x = NX + 104;
+  const x = JAR_X;
   if (a.background > 0) {
     pen.text(`pod:${a.id}:bg`, { x, y: 52, ...MONO, fill: COLOR.warn }, `в фоне ${thousands(a.background)}`);
     return;
@@ -272,9 +287,10 @@ function drawBrowsers(pen: Pen, w: World): void {
 
 function drawBrowserArrows(pen: Pen, w: World): void {
   for (const id of ACTORS) {
-    if (!did(w.actors[id], "reply")) continue;
+    const a = w.actors[id];
+    if (!did(a, "reply")) continue;
     pen.line(`arr:br:${id}`, {
-      x1: POD.x + POD.w + 72, y1: podMid(id), x2: BROWSERS.x - 6, y2: BROWSERS.y + 140,
+      x1: podRight(pen, w, a) + 14, y1: POD_Y[id] + 30, x2: BROWSERS.x - 6, y2: BROWSERS.y + 140,
       stroke: ACTOR[id].color, "stroke-width": 2.5, "stroke-linecap": "round", marker: "arrow", ...DRAW, ...fade(w, "browsers", id),
     });
   }
