@@ -1,6 +1,8 @@
 // Мини-модель Postgres для эпизода: таблица tasks, построчные блокировки, незакоммиченные правки,
 // READ COMMITTED. Детерминирована: время — счётчик секунд world.clock (часы БД), токены — из списка.
 
+import type { Board, Verdict } from "../../kit/director";
+
 export type Status = "new" | "in_progress" | "done";
 /** Воркеры: A, B, C — поды. */
 export type ActorId = "A" | "B" | "C";
@@ -66,14 +68,6 @@ export interface Letter {
 
 export type Focus = ActorId | `row:${number}` | "table" | "mail" | "board" | "clock" | "sql";
 
-/** Табло главы: попытки и их оценка по двум критериям. Оценку проверяют тесты по модели. */
-export type Lamp = "red" | "yellow" | "green";
-export interface Board {
-  criteria: [string, string];
-  attempts: { name: string; lamps: [Lamp, Lamp] | null }[]; // null — ещё не проверили
-  focus?: number; // о какой попытке говорит диктор; нет — о последней
-}
-
 /** Событие кадра — для звука. Пишут операции модели и глаголы сценария, не отрисовка. */
 export type EventKind =
   | "lock" | "relock" | "skip" | "wait" | "wake" | "commit" | "one" | "zero"
@@ -86,7 +80,7 @@ export interface SimEvent {
   n?: number; // для clock — на сколько секунд прыгнули часы
   row?: number; // письмо — по какой задаче; skip — какую строку пропустили
   by?: ActorId; // кто отправил / пропустил / проиграл
-  lamps?: [Lamp, Lamp]; // verdict — оценка попытки на табло
+  lamps?: Verdict; // verdict — оценка попытки на табло
 }
 
 export interface World {

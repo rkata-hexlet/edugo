@@ -1,9 +1,8 @@
-import { STAGE, type Attrs, type Pen, type Span } from "../../engine/contract";
+import { STAGE, type Attrs, type Pen } from "../../engine/contract";
 import { BOB, bob, elephant, type Look, type Mood } from "../../kit/characters";
-import { icon, type IconName } from "../../kit/icons";
-import { highlightSql } from "../../kit/sql";
+import { icon } from "../../kit/icons";
 import { ACTOR, COLOR, DIM, FONT, SIZE } from "../../kit/theme";
-import { bubble, lamp, meter, panel, pill, plate, sqlWindow } from "../../kit/widgets";
+import { board, bubble, iconText, meter, once, panel, pill, plate, podSql, sqlWindow, stamp } from "../../kit/widgets";
 import { clock } from "./script";
 import {
   ACTORS, HOT, L1_TTL, dbLoad, entry, nodeLoads, overloaded, type Act, type Actor, type ActorId, type Focus, type SimEvent, type World,
@@ -40,19 +39,10 @@ const fade = (w: World, ...ids: Focus[]) => ({ opacity: lit(w, ...ids) ? 1 : DIM
 /** Элемент живёт только в кадрах, где о нём говорят: явный фокус (или кадр без фокуса — всё на виду). */
 const about = (w: World, id: Focus, all = true) => (w.focus ? w.focus.includes(id) : all);
 const happened = (w: World, kind: SimEvent["kind"], by?: ActorId) => w.events.some((e) => e.kind === kind && (by === undefined || e.by === by));
-const once = (key: string, w: World, fx: string | null): [string, Attrs] => (fx ? [`${key}:fx${w.frame}`, { class: fx }] : [key, {}]);
 const did = (a: Actor, kind: Act["kind"]) => a.acts.some((x) => x.kind === kind);
 /** Путь адреса для коротких подписей: shop.example/sale → /sale. */
 const path = (url: string) => url.slice(url.indexOf("/"));
 const thousands = (n: number) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, " ");
-
-function iconText(pen: Pen, key: string, name: IconName, x: number, y: number, text: string, color: string, attrs: Attrs = SANS): number {
-  const size = 20;
-  icon(pen, `${key}:i`, name, x, y - 16, size, color);
-  if (!text) return x + size;
-  pen.text(`${key}:t`, { x: x + size + 5, y, fill: color, ...attrs }, text);
-  return x + size + 5 + pen.measure(text, attrs).width;
-}
 
 /** Срок: «40 мин» / «8 с». */
 function left(s: number): string {
@@ -73,7 +63,7 @@ function drawTable(pen: Pen, w: World): void {
           stroke: c === 1 && l.draft !== null ? COLOR.warn : COLOR.line, "stroke-width": 1.5, ...(c === 1 && l.draft !== null ? { "stroke-dasharray": "6 4" } : {}),
         }));
         pen.text(`row:${i}:code`, { x: 12, y: 25, ...MONO, fill: hot ? COLOR.ink : COLOR.muted, "font-weight": hot ? 700 : 400 }, l.code);
-        const [vk, vfx] = once(`row:${i}:url`, w, edited ? "fx-pop" : null);
+        const [vk, vfx] = once(`row:${i}:url`, w.frame, edited ? "fx-pop" : null);
         pen.group(vk, 0, 0, () => pen.text(`${vk}:t`, { x: COLS[1].x + 12, y: 25, ...MONO, fill: hot ? COLOR.ink : COLOR.muted }, value), vfx);
         if (l.lockedBy) icon(pen, `row:${i}:lock`, "lock", 400 + 8, 8, 24, ACTOR[l.lockedBy].color);
       }, fade(w, "table", ...(hot ? ["row" as Focus] : [])));
@@ -92,7 +82,7 @@ function drawTable(pen: Pen, w: World): void {
 function drawRedis(pen: Pen, w: World): void {
   const r = w.redis;
   if (!r) return;
-  const [key, fx] = once("redis", w, happened(w, "reshard") ? "fx-pop" : null);
+  const [key, fx] = once("redis", w.frame, happened(w, "reshard") ? "fx-pop" : null);
   pen.group(key, 0, 0, () => {
     panel(pen, "redis:box", { x: REDIS.x, y: REDIS.y, w: REDIS.w, h: REDIS.h, stroke: COLOR.redis });
     pen.text("redis:title", { x: REDIS.x + 18, y: REDIS.y + 30, ...SANS, "font-size": SIZE.say, "font-weight": 700, fill: COLOR.redis },
@@ -119,7 +109,7 @@ function drawEntry(pen: Pen, w: World): void {
     return;
   }
   const isNew = ACTORS.some((id) => did(w.actors[id], "set"));
-  const [k, fx] = once("redis:e", w, isNew ? "fx-pop" : null);
+  const [k, fx] = once("redis:e", w.frame, isNew ? "fx-pop" : null);
   pen.group(k, 0, 0, () => {
     pen.text(`${k}:t`, { x, y, ...MONO, fill: COLOR.ink }, [
       { text: `${HOT} → `, attrs: { fill: COLOR.muted } },
@@ -145,7 +135,7 @@ function drawNodes(pen: Pen, w: World): void {
     const y = REDIS.y + 46;
     const hot = i + 1 === r.hotNode;
     const over = loads[i] > 1;
-    const [k, fx] = once(`node:${i}`, w, hot && over && happened(w, "overload") ? "fx-shake" : null);
+    const [k, fx] = once(`node:${i}`, w.frame, hot && over && happened(w, "overload") ? "fx-shake" : null);
     pen.group(k, 0, 0, () => {
       panel(pen, `${k}:box`, { x, y, w: tw, h: 74, rx: 10, fill: over ? COLOR.alarmBg : COLOR.surface2, stroke: over ? COLOR.error : COLOR.line, shadow: false });
       pen.text(`${k}:n`, { x: x + 8, y: y + 24, ...SANS, fill: COLOR.muted }, r.nodes > 4 ? `${i + 1}` : `узел ${i + 1}`);
@@ -184,7 +174,7 @@ function drawPod(pen: Pen, w: World, a: Actor): void {
   const mood = podMood(w, a);
   const crashedNow = !a.present && happened(w, "crash", a.id);
   pen.group(`pod:${a.id}`, POD.x, POD_Y[a.id], () => {
-    const [fxKey, fxAttrs] = once(`pod:${a.id}:fx`, w, crashedNow ? "fx-fade" : null);
+    const [fxKey, fxAttrs] = once(`pod:${a.id}:fx`, w.frame, crashedNow ? "fx-fade" : null);
     pen.group(fxKey, 0, 0, () =>
       bob(pen, `pod:${a.id}:bob`, { x: 0, y: 0, color, tint, letter: a.id, mood, look: podLook(w, a), ghost: crashedNow, dashed: mood === "wait" }), fxAttrs);
     const nameColor = a.present ? color : COLOR.muted;
@@ -265,7 +255,7 @@ function drawPodArrows(pen: Pen, w: World): void {
 function drawBrowsers(pen: Pen, w: World): void {
   drawBrowserArrows(pen, w);
   const stale = w.clicks.some((c) => c.stale);
-  const [k, fx] = once("br", w, happened(w, "stale") ? "fx-shake" : null);
+  const [k, fx] = once("br", w.frame, happened(w, "stale") ? "fx-shake" : null);
   pen.group(k, 0, 0, () => {
     panel(pen, "br:box", { x: BROWSERS.x, y: BROWSERS.y, w: BROWSERS.w, h: BROWSERS.h, fill: stale ? COLOR.alarmBg : COLOR.surface, stroke: stale ? COLOR.error : COLOR.browser });
     iconText(pen, "br:title", "browser", BROWSERS.x + 16, BROWSERS.y + 38, "Браузеры", COLOR.browser, { ...SANS, "font-size": SIZE.say, "font-weight": 700 });
@@ -300,59 +290,14 @@ function drawBrowserArrows(pen: Pen, w: World): void {
   });
 }
 
-function drawBoard(pen: Pen, w: World): void {
-  if (!w.board) return;
-  const b = w.board;
-  pen.group("board", 0, 0, () => {
-    const lampX = [BOARD.x + 285, BOARD.x + 420];
-    const height = 46 + b.attempts.length * BOARD.rowH + 8;
-    panel(pen, "board:box", { x: BOARD.x, y: BOARD.y, w: BOARD.w, h: height });
-    b.criteria.forEach((c, i) =>
-      pen.text(`board:h${i}`, { x: lampX[i], y: BOARD.y + 30, ...SANS, fill: COLOR.muted, "text-anchor": "middle" }, c));
-    b.attempts.forEach((t, i) => {
-      const y = BOARD.y + 46 + i * BOARD.rowH;
-      const current = i === (b.focus ?? b.attempts.length - 1);
-      pen.group(`board:a${i}`, 0, 0, () => {
-        pen.text(`board:n${i}`, { x: BOARD.x + 18, y: y + 18, ...SANS, fill: current ? COLOR.ink : COLOR.muted, "font-weight": current ? 700 : 400 }, t.name);
-        lampX.forEach((x, j) => lamp(pen, `board:l${i}:${j}`, x, y + 12, t.lamps?.[j] ?? null, 10));
-      }, { opacity: current ? 1 : 0.45 });
-    });
-  }, fade(w, "board"));
-}
-
-function drawSql(pen: Pen, w: World): void {
-  if (!w.sql.length) return;
-  const lines: Span[][] = w.sql.flatMap((e) => {
-    const [first, ...rest] = e.split("\n");
-    const m = /^(Pod ([ABC])) ▸ (.*)$/.exec(first);
-    const head: Span[] = m
-      ? [{ text: `${m[1]} ▸ `, attrs: { fill: ACTOR[m[2] as ActorId].color, "font-weight": 700 } }, ...highlightSql(m[3])]
-      : highlightSql(first);
-    return [head, ...rest.map((line) => highlightSql(line))];
-  });
-  sqlWindow(pen, "sql", lines, { x: TABLE.x, bottom: BOTTOM, attrs: fade(w, "sql") });
-}
-
-function drawStamp(pen: Pen, text: string): void {
-  const label = text.replace(/^⟲\s*/, "");
-  const font = { ...SANS, "font-weight": 700 };
-  const wdt = pen.measure(label, font).width + 62;
-  const x = (DB.x + DB.w + 12 + POD.x - 12 - wdt) / 2;
-  pen.group("stamp", x, 22, () => {
-    pen.rect("stamp:bg", { width: wdt, height: 40, rx: 20, fill: COLOR.warn });
-    icon(pen, "stamp:i", "replay", 14, 9, 22, COLOR.bg);
-    pen.text("stamp:t", { x: 44, y: 27, ...font, fill: COLOR.bg }, label);
-  }, { class: "fx-stamp" });
-}
-
 function drawHeader(pen: Pen, w: World): void {
-  const [dbKey, dbFx] = once("db:nod", w, happened(w, "commit") ? "fx-nod" : null);
+  const [dbKey, dbFx] = once("db:nod", w.frame, happened(w, "commit") ? "fx-nod" : null);
   pen.group(dbKey, 0, 0, () => elephant(pen, "db:face", { x: TABLE.x + 4, y: 8, talking: !!w.db, scale: 1.08 }), dbFx);
   panel(pen, "db", { x: DB.x, y: 20, w: DB.w, h: 46, rx: 14, fill: COLOR.surface2, stroke: dbLoad(w) > 1 ? COLOR.error : COLOR.postgres });
   pen.text("db:name", { x: DB.x + 16, y: 50, ...SANS, "font-size": SIZE.say, "font-weight": 700, fill: COLOR.ink }, "Postgres");
   if (w.chapter) pill(pen, "chapter", `КЕЙС ${w.chapter}`, { x: POD.x, y: 22, fill: "none", color: COLOR.ink, stroke: COLOR.ink });
   if (!about(w, "clock", false) && !happened(w, "clock")) return;
-  const [clockKey, clockFx] = once("clock", w, happened(w, "clock") ? "fx-pulse" : null);
+  const [clockKey, clockFx] = once("clock", w.frame, happened(w, "clock") ? "fx-pulse" : null);
   pen.group(clockKey, 0, 0, () => {
     icon(pen, "clock:i", "clock", 1080, 26, 26, COLOR.muted);
     pen.text("clock:t", { x: 1114, y: 48, "font-family": FONT.mono, "font-size": SIZE.clock, "font-weight": 700, fill: COLOR.ink }, clock(w.clock));
@@ -365,8 +310,8 @@ export function render(pen: Pen, w: World): void {
   drawTable(pen, w);
   drawRedis(pen, w);
   if (w.term) pill(pen, "term", w.term, { x: POD.x, y: 76, fill: COLOR.surface2, color: COLOR.ink, stroke: COLOR.ink, mono: true, attrs: { class: "fx-slide" } });
-  drawBoard(pen, w);
-  drawSql(pen, w);
+  if (w.board) board(pen, w.board, { ...BOARD, lampX: [285, 420], attrs: fade(w, "board") });
+  if (w.sql.length) sqlWindow(pen, "sql", podSql(w.sql), { x: TABLE.x, bottom: BOTTOM, attrs: fade(w, "sql") }); // SQL — только где его надо прочитать
   drawPodArrows(pen, w);
   drawBrowsers(pen, w);
   for (const id of ACTORS) drawPod(pen, w, w.actors[id]);
@@ -375,7 +320,7 @@ export function render(pen: Pen, w: World): void {
       const [head, ...rest] = w.plate.split("\n");
       plate(pen, "plate", head, rest.join("\n"), STAGE);
     }
-    if (w.stamp) drawStamp(pen, w.stamp);
+    if (w.stamp) stamp(pen, w.stamp, { left: DB.x + DB.w + 12, right: POD.x - 12 });
     if (w.db) bubble(pen, "db:say", w.db, { x: DB.x + DB.w + 10, y: 43, tail: "left", attrs: { class: "fx-pop" } });
   });
 }

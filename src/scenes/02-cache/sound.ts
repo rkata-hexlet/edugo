@@ -1,5 +1,6 @@
 import type { Sound, Voice } from "../../engine/contract";
-import { type EventKind, type Lamp, type SimEvent, type World } from "./sim";
+import type { Lamp } from "../../kit/director";
+import { type EventKind, type SimEvent, type World } from "./sim";
 
 // Озвучка эпизода по карте sound-designer (21.10): Redis — коротко, сухо и высоко (память быстрая),
 // Postgres — низко и тяжелее, результат для посетителя — «динь» (верный адрес) или «бзз» (старый → 404).

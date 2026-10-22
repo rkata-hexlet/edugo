@@ -1,6 +1,7 @@
 import type { Sound, Voice } from "../../engine/contract";
 import { syllables } from "../../engine/audio";
-import { ACTORS, type ActorId, type EventKind, type Lamp, type SimEvent, type World } from "./sim";
+import type { Lamp } from "../../kit/director";
+import { ACTORS, type ActorId, type EventKind, type SimEvent, type World } from "./sim";
 
 // Озвучка эпизода по карте sound-designer (v5, под анимацию этапа 6): одно событие модели — один
 // узнаваемый звук. Звуки событий — в окне 0–0.45 с, в такт эффектам кадра (пик за 20–40 мс до
@@ -114,7 +115,7 @@ const RECIPES: Partial<Record<EventKind, Recipe>> = {
     s.tone({ freq: 220, dur: 0.1, wave: "square", gain: 0.13, at: at + 0.2 });
     s.tone({ freq: 180, to: 110, dur: 0.12, wave: "sawtooth", gain: 0.09, at: at + 0.32 });
   },
-  verdict: (s, at, e) => e.lamps?.forEach((lamp, i) => lampTone(s, at + 0.05 + 0.1 * i, lamp)),
+  verdict: (s, at, e) => e.lamps?.forEach((lamp, i) => lamp && lampTone(s, at + 0.05 + 0.1 * i, lamp)),
 };
 
 /** Сколько повторов одного события озвучивать и с каким шагом: несколько подов — не каша под диктором. */

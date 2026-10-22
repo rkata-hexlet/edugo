@@ -3,6 +3,8 @@
 // локальный карман L1 в каждом поде и журнал ответов браузерам. Детерминирована: время — счётчик секунд
 // world.clock, нагрузка — формула от потока кликов, без случайности.
 
+import type { Board, Verdict } from "../../kit/director";
+
 export type ActorId = "A" | "B" | "C";
 export const ACTORS: ActorId[] = ["A", "B", "C"];
 
@@ -73,13 +75,6 @@ export interface Click {
 
 export type Focus = ActorId | "table" | "row" | "redis" | "browsers" | "board" | "clock" | "sql" | "load";
 
-export type Lamp = "red" | "yellow" | "green";
-export interface Board {
-  criteria: [string, string];
-  attempts: { name: string; lamps: [Lamp | null, Lamp | null] | null }[];
-  focus?: number;
-}
-
 export type EventKind =
   | "flood" | "hit" | "miss" | "select" | "set" | "del" | "del0" | "update" | "commit"
   | "ok" | "stale" | "overload" | "calm" | "expire" | "l1hit" | "l1expire" | "crash"
@@ -89,7 +84,7 @@ export interface SimEvent {
   kind: EventKind;
   n?: number; // clock — на сколько секунд прыгнули часы
   by?: ActorId;
-  lamps?: [Lamp | null, Lamp | null];
+  lamps?: Verdict;
 }
 
 export interface World {
