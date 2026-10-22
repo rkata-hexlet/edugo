@@ -7,7 +7,7 @@ import { buildSteps as episode01 } from "../01-skip-locked/script";
 import { render as render01 } from "../01-skip-locked/view";
 import type { World as World01 } from "../01-skip-locked/sim";
 import {
-  ACTORS, OTHERS, POOL, contended, dbLoad, doubled, lost, pending,
+  ACTORS, HOT, OTHERS, POOL, SHARDS, contended, dbLoad, doubled, lost, pending,
   type Act, type Actor, type ActorId, type Focus, type SimEvent, type World,
 } from "./sim";
 
@@ -24,7 +24,6 @@ const COLS = [
 ];
 const TABLE_END = TABLE.x + 260;
 const QUEUE = { x: TABLE_END + 40, step: 28, n: 8 };
-const STRIP = { y: 258, cell: 22, step: 25 };
 const LOAD = { y: 306 };
 const ADDS = { x: 40, y: 330, w: 250, h: 140 };
 const FLUSHES = { x: 310, y: 330, w: 250, h: 140 };
@@ -52,51 +51,83 @@ const thousands = (n: number) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, " ")
 const jammed = (w: World) => ACTORS.some((id) => w.actors[id].waiting >= POOL);
 
 function drawTable(pen: Pen, w: World): void {
-  COLS.forEach((col, i) =>
-    pen.text(`hdr:${i}`, { x: TABLE.x + col.x + 12, y: TABLE.y - 12, ...MONO, fill: COLOR.muted, ...fade(w, "table") }, col.title));
-  pen.group(`rows:${w.scene}`, 0, 0, () => {
-    w.rows.forEach((r, i) => {
-      const hot = i === 0;
-      const added = hot && w.events.some((e) => e.kind === "commit" || e.kind === "dup" || e.kind === "shard");
-      pen.group(`row:${i}`, TABLE.x, rowY(i), () => {
-        COLS.forEach((col, c) => pen.rect(`row:${i}:c${c}`, {
-          x: col.x, width: col.w, height: TABLE.rowH, fill: COLOR.surface, stroke: hot && c === 1 && happened(w, "dup") ? COLOR.error : COLOR.line, "stroke-width": 1.5,
-        }));
-        pen.text(`row:${i}:code`, { x: 12, y: 25, ...MONO, fill: hot ? COLOR.ink : COLOR.muted, "font-weight": hot ? 700 : 400 }, r.code);
-        const [vk, vfx] = once(`row:${i}:n`, w.frame, added ? "fx-pop" : null);
-        pen.group(vk, 0, 0, () => pen.text(`${vk}:t`, { x: COLS[1].x + 12, y: 25, ...MONO, fill: hot ? COLOR.ink : COLOR.muted, "font-weight": hot ? 700 : 400 },
-          `${hot && r.shards ? "Σ " : ""}${thousands(r.clicks)}`), vfx);
-      }, fade(w, "table", ...(hot ? ["row" as Focus] : [])));
-    });
-    if (!w.rows[0].shards) pen.text("rows:more", { x: TABLE.x + 12, y: STRIP.y + 18, ...SANS, fill: COLOR.faint, ...fade(w, "table") }, "… ещё миллионы ссылок");
-  }, happened(w, "page") ? { class: "fx-cascade" } : {});
-  drawShards(pen, w);
+  if (w.rows[0].shards) drawShardTable(pen, w);
+  else {
+    COLS.forEach((col, i) =>
+      pen.text(`hdr:${i}`, { x: TABLE.x + col.x + 12, y: TABLE.y - 12, ...MONO, fill: COLOR.muted, ...fade(w, "table") }, col.title));
+    pen.group(`rows:${w.scene}`, 0, 0, () => {
+      w.rows.forEach((r, i) => {
+        const hot = i === 0;
+        const added = hot && w.events.some((e) => e.kind === "commit" || e.kind === "dup");
+        pen.group(`row:${i}`, TABLE.x, rowY(i), () => {
+          COLS.forEach((col, c) => pen.rect(`row:${i}:c${c}`, {
+            x: col.x, width: col.w, height: TABLE.rowH, fill: COLOR.surface, stroke: hot && c === 1 && happened(w, "dup") ? COLOR.error : COLOR.line, "stroke-width": 1.5,
+          }));
+          pen.text(`row:${i}:code`, { x: 12, y: 25, ...MONO, fill: hot ? COLOR.ink : COLOR.muted, "font-weight": hot ? 700 : 400 }, r.code);
+          const [vk, vfx] = once(`row:${i}:n`, w.frame, added ? "fx-pop" : null);
+          pen.group(vk, 0, 0, () => pen.text(`${vk}:t`, { x: COLS[1].x + 12, y: 25, ...MONO, fill: hot ? COLOR.ink : COLOR.muted, "font-weight": hot ? 700 : 400 },
+            thousands(r.clicks)), vfx);
+        }, fade(w, "table", ...(hot ? ["row" as Focus] : [])));
+      });
+      pen.text("rows:more", { x: TABLE.x + 12, y: rowY(3) + 18, ...SANS, fill: COLOR.faint, ...fade(w, "table") }, "… ещё миллионы ссылок");
+    }, happened(w, "page") ? { class: "fx-cascade" } : {});
+  }
   drawQueue(pen, w);
   // Нагрузка базы: полоса с потолком, без чисел (tech-expert).
   if (!about(w, "load", false) && !jammed(w)) return;
+  const y = w.rows[0].shards ? SHARD_SUM_Y + 44 : LOAD.y; // под суммой разложенного счётчика
   pen.group("dbload", 0, 0, () => {
-    pen.text("dbload:t", { x: TABLE.x, y: LOAD.y + 6, ...SANS, fill: COLOR.muted }, "нагрузка базы");
-    meter(pen, "dbload:m", { x: TABLE.x + 150, y: LOAD.y - 6, w: 230, h: 12, load: dbLoad(w) });
+    pen.text("dbload:t", { x: TABLE.x, y: y + 6, ...SANS, fill: COLOR.muted }, "нагрузка базы");
+    meter(pen, "dbload:m", { x: TABLE.x + 150, y: y - 6, w: 230, h: 12, load: dbLoad(w) });
   }, fade(w, "load", "table"));
 }
 
-/** Шестнадцать строк горячего счётчика: клеткой, куда попала прибавка, вспыхивает. */
-function drawShards(pen: Pen, w: World): void {
-  const shards = w.rows[0].shards;
-  if (!shards) return;
+/** Видимые строки разложенного счётчика: первые три и последняя, между ними — «… ещё 12 строк». */
+const SHOWN = [0, 1, 2, 15];
+const SHARD_COLS = [
+  { title: "code", x: 0, w: 110 },
+  { title: "shard", x: 110, w: 80 },
+  { title: "clicks", x: 190, w: 140 },
+];
+const SHARD_ROW_Y = [rowY(0), rowY(1), rowY(2), rowY(3) + 34];
+const SHARD_MORE_Y = rowY(3) + 20;
+const SHARD_SUM_Y = SHARD_ROW_Y[3] + TABLE.rowH + 30;
+
+/** Куда стрелка пода упирается в разложенный счётчик: в свою строку или в «… ещё 12 строк». */
+function shardTarget(shard: number): { x: number; y: number } {
+  const i = SHOWN.indexOf(shard);
+  return { x: TABLE.x + 338, y: i >= 0 ? SHARD_ROW_Y[i] + TABLE.rowH / 2 : SHARD_MORE_Y - 6 };
+}
+
+/** Sharded counter: та же ссылка — шестнадцать строк с номером shard; строка, куда попала прибавка, подсвечена;
+ *  под таблицей — сумма, это и есть счётчик. */
+function drawShardTable(pen: Pen, w: World): void {
+  const shards = w.rows[0].shards!;
   const hit = new Set(ACTORS.flatMap((id) => w.actors[id].acts.flatMap((a) => (a.kind === "add" && a.shard !== undefined ? [a.shard] : []))));
-  const any = happened(w, "shard");
+  SHARD_COLS.forEach((col, i) =>
+    pen.text(`shdr:${i}`, { x: TABLE.x + col.x + 12, y: TABLE.y - 12, ...MONO, fill: COLOR.muted, ...fade(w, "table") }, col.title));
   pen.group(`shards:${w.scene}`, 0, 0, () => {
-    shards.forEach((_, i) => {
-      const lit_ = hit.has(i) || (any && !hit.size);
-      pen.rect(`shard:${i}`, {
-        x: TABLE.x + i * STRIP.step, y: STRIP.y, width: STRIP.cell, height: 26, rx: 5,
-        fill: lit_ ? COLOR.doneBg : COLOR.surface, stroke: lit_ ? COLOR.ok : COLOR.line, "stroke-width": 1.5,
+    SHOWN.forEach((shard, i) => {
+      const lit_ = hit.has(shard);
+      pen.group(`shard:${shard}`, TABLE.x, SHARD_ROW_Y[i], () => {
+        SHARD_COLS.forEach((col, c) => pen.rect(`shard:${shard}:c${c}`, {
+          x: col.x, width: col.w, height: TABLE.rowH, fill: lit_ ? COLOR.doneBg : COLOR.surface, stroke: lit_ ? COLOR.ok : COLOR.line, "stroke-width": 1.5,
+        }));
+        pen.text(`shard:${shard}:code`, { x: 12, y: 25, ...MONO, fill: COLOR.ink, "font-weight": 700 }, HOT);
+        pen.text(`shard:${shard}:no`, { x: SHARD_COLS[1].x + 12, y: 25, ...MONO, fill: COLOR.ink }, String(shard));
+        const [vk, vfx] = once(`shard:${shard}:n`, w.frame, lit_ ? "fx-pop" : null);
+        pen.group(vk, 0, 0, () => pen.text(`${vk}:t`, { x: SHARD_COLS[2].x + 12, y: 25, ...MONO, fill: COLOR.ink }, thousands(shards[shard])), vfx);
       });
     });
+    const hidden = [...hit].some((x) => !SHOWN.includes(x));
+    pen.text("shards:more", { x: TABLE.x + 12, y: SHARD_MORE_Y, ...SANS, fill: hidden ? COLOR.ok : COLOR.faint, "font-weight": hidden ? 700 : 400 },
+      `… ещё ${SHARDS - SHOWN.length} частей счётчика ${HOT}`);
+    const [sk, sfx] = once("shards:sum", w.frame, hit.size ? "fx-pop" : null);
+    pen.group(sk, 0, 0, () => pen.text(`${sk}:t`, { x: TABLE.x + 12, y: SHARD_SUM_Y, ...MONO, "font-weight": 700, fill: COLOR.ink }, [
+      { text: `всего кликов ${HOT}: `, attrs: { fill: COLOR.muted } },
+      { text: thousands(w.rows[0].clicks) },
+    ]), sfx);
   }, { ...fade(w, "row", "table"), ...(happened(w, "rewind") ? { class: "fx-cascade" } : {}) });
-  // Поток идёт во все шарды разом: в кадре потока горят все.
-  if (w.flow > 0 && any) shards.forEach((_, i) => pen.rect(`shard:${i}:glow`, { x: TABLE.x + i * STRIP.step + 4, y: STRIP.y + 20, width: STRIP.cell - 8, height: 3, rx: 1.5, fill: COLOR.ok }));
 }
 
 /** Очередь к горячей строке: замок и ждущие запросы цветом своих подов; «…» — их тысячи. */
@@ -237,7 +268,7 @@ function drawPodArrows(pen: Pen, w: World): void {
     const from = { x: POD.x - 6, y: podMid(id) };
     const add = a.acts.find((x): x is Extract<Act, { kind: "add" }> => x.kind === "add");
     const fl = a.acts.find((x): x is Extract<Act, { kind: "flush" }> => x.kind === "flush");
-    const shardTo = add?.shard !== undefined ? { x: TABLE.x + add.shard * STRIP.step + STRIP.cell / 2, y: STRIP.y + 30 } : null;
+    const shardTo = add?.shard !== undefined ? shardTarget(add.shard) : null;
     const to = shardTo ?? { x: TABLE_END + 8, y: rowMid(0) };
     if (add || fl || a.waiting > 0) {
       const waits = a.waiting > 0 && !fl;

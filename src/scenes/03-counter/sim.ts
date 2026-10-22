@@ -231,7 +231,7 @@ export function click(w: World, who: ActorId, n = 1): void {
   }
   const row = hotRow(w);
   if (row.shards) {
-    const shard = (w.clicked + ACTORS.indexOf(who)) % SHARDS;
+    const shard = (w.clicked + 15 + 5 * ACTORS.indexOf(who)) % SHARDS; // «случайная» строка — детерминированно
     row.shards[shard] += n;
     row.clicks += n;
     a.acts.push({ kind: "add", n, shard });
