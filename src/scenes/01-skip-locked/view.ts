@@ -1,9 +1,8 @@
-import { STAGE, type Attrs, type Pen, type Span } from "../../engine/contract";
+import { STAGE, type Pen } from "../../engine/contract";
 import { BOB, bob, elephant, mailFace, type Look, type MailMood, type Mood } from "../../kit/characters";
 import { icon, type IconName } from "../../kit/icons";
-import { highlightSql } from "../../kit/sql";
 import { ACTOR, COLOR, DIM, FONT, SIZE } from "../../kit/theme";
-import { bubble, lamp, panel, pill, plate, sqlWindow } from "../../kit/widgets";
+import { board, bubble, iconText, once, panel, pill, plate, podSql, sqlWindow, stamp } from "../../kit/widgets";
 import { clock } from "./script";
 import {
   ACTORS, LEASE_TTL, duplicates, stuckRows, waitingFor, type Actor, type ActorId, type Focus, type Row, type SimEvent, type World,
@@ -42,16 +41,6 @@ const fade = (w: World, ...ids: Focus[]) => ({ opacity: lit(w, ...ids) ? 1 : DIM
 const carriers = (w: World, row: number) => ACTORS.filter((id) => w.actors[id].carrying === row);
 const happened = (w: World, kind: SimEvent["kind"], by?: ActorId) => w.events.some((e) => e.kind === kind && (by === undefined || e.by === by));
 /** Разовый эффект: при fx — новый ключ (узел создаётся заново, анимация проигрывается), иначе — постоянный. */
-const once = (key: string, w: World, fx: string | null): [string, Attrs] => (fx ? [`${key}:fx${w.frame}`, { class: fx }] : [key, {}]);
-
-/** Иконка + текст в строку; (x, y) — базовая линия текста. Возвращает правый край. */
-function iconText(pen: Pen, key: string, name: IconName, x: number, y: number, text: string, color: string, attrs: Attrs = SANS): number {
-  const size = 20;
-  icon(pen, `${key}:i`, name, x, y - 16, size, color);
-  if (!text) return x + size;
-  pen.text(`${key}:t`, { x: x + size + 5, y, fill: color, ...attrs }, text);
-  return x + size + 5 + pen.measure(text, attrs).width;
-}
 
 function drawRow(pen: Pen, w: World, r: Row, stuck: Set<number>): void {
   const seenByRace = w.race && ACTORS.some((id) => w.actors[id].seen === r.id);
@@ -224,7 +213,7 @@ function drawPod(pen: Pen, w: World, a: Actor): void {
     const unknown = !a.present && !crashedNow;
     const fx = mood === "won" ? "fx-hop" : mood === "lost" ? "fx-shake" : happened(w, "unfreeze", a.id) ? "fx-jolt"
       : crashedNow ? "fx-fade" : null;
-    const [fxKey, fxAttrs] = once(`pod:${a.id}:fx`, w, fx);
+    const [fxKey, fxAttrs] = once(`pod:${a.id}:fx`, w.frame, fx);
     pen.group(fxKey, 0, 0, () =>
       bob(pen, `pod:${a.id}:bob`, {
         x: 0, y: 0, color, tint, letter: a.id, mood: unknown ? "frozen" : mood, look: podLook(w, a), ghost: crashedNow, dashed: mood === "wait",
@@ -293,7 +282,7 @@ function drawPodArrows(pen: Pen, w: World): void {
 /** Почта: журнал писем; дубль — красным, повтор с ключом — значком ↺ и серым. */
 function drawMail(pen: Pen, w: World): void {
   drawMailArrows(pen, w); // под Почтой: стрелка упирается в журнал, а не перечёркивает его
-  const [mailKey, mailFx] = once("mail", w, happened(w, "duplicate") ? "fx-shake" : null);
+  const [mailKey, mailFx] = once("mail", w.frame, happened(w, "duplicate") ? "fx-shake" : null);
   pen.group(mailKey, 0, 0, () => drawMailBody(pen, w), { ...fade(w, "mail"), ...mailFx });
   // Реплика Почты — в журнале, хвостом к последнему письму: ответ про него.
   if (w.mail) {
@@ -351,43 +340,6 @@ function drawMailBody(pen: Pen, w: World): void {
   });
 }
 
-/** Табло главы: попытки сверху вниз, у каждой две лампы по критериям. */
-function drawBoard(pen: Pen, w: World): void {
-  if (w.board) pen.group("board", 0, 0, () => drawBoardBody(pen, w), fade(w, "board"));
-}
-
-function drawBoardBody(pen: Pen, w: World): void {
-  const b = w.board!;
-  const lampX = [BOARD.x + 290, BOARD.x + 425];
-  const height = 46 + b.attempts.length * BOARD.rowH + 8;
-  panel(pen, "board:box", { x: BOARD.x, y: BOARD.y, w: BOARD.w, h: height });
-  b.criteria.forEach((c, i) =>
-    pen.text(`board:h${i}`, { x: lampX[i], y: BOARD.y + 30, ...SANS, fill: COLOR.muted, "text-anchor": "middle" }, c));
-  b.attempts.forEach((t, i) => {
-    const y = BOARD.y + 46 + i * BOARD.rowH;
-    const current = i === (b.focus ?? b.attempts.length - 1);
-    // Ярко — только попытка, о которой речь; прошлые — фоном (learning-designer: 4×2 ламп не читают).
-    pen.group(`board:a${i}`, 0, 0, () => {
-      pen.text(`board:n${i}`, { x: BOARD.x + 18, y: y + 18, ...SANS, fill: current ? COLOR.ink : COLOR.muted, "font-weight": current ? 700 : 400 }, t.name);
-      lampX.forEach((x, j) => lamp(pen, `board:l${i}:${j}`, x, y + 12, t.lamps?.[j] ?? null, 10));
-    }, { opacity: current ? 1 : 0.45 });
-  });
-}
-
-function drawSql(pen: Pen, w: World): void {
-  if (!w.sql.length) return; // SQL — только там, где его надо прочитать
-  // Префикс «Pod A ▸» — цветом пода, сам запрос — с подсветкой.
-  const lines: Span[][] = w.sql.flatMap((entry) => {
-    const [first, ...rest] = entry.split("\n");
-    const m = /^(Pod ([ABC])) ▸ (.*)$/.exec(first);
-    const head: Span[] = m
-      ? [{ text: `${m[1]} ▸ `, attrs: { fill: ACTOR[m[2] as ActorId].color, "font-weight": 700 } }, ...highlightSql(m[3])]
-      : highlightSql(first);
-    return [head, ...rest.map((line) => highlightSql(line))];
-  });
-  sqlWindow(pen, "sql", lines, { x: TABLE.x, bottom: BOTTOM, attrs: fade(w, "sql") });
-}
-
 /** Титр — слева над окном SQL, табло не закрывает. */
 function drawCard(pen: Pen, text: string): void {
   const font = { ...SANS, "font-size": SIZE.accent, "font-weight": 600 };
@@ -400,29 +352,15 @@ function drawCard(pen: Pen, text: string): void {
   }, { class: "fx-rise" });
 }
 
-/** Штамп перехода: мир перемотан («⟲ вернёмся…»). Всегда на одном месте — в шапке, между
- *  Postgres и пилюлями кейса (реплики Postgres в этих кадрах нет — держит тест). */
-function drawStamp(pen: Pen, text: string): void {
-  const label = text.replace(/^⟲\s*/, "");
-  const font = { ...SANS, "font-weight": 700 };
-  const wdt = pen.measure(label, font).width + 62;
-  const x = (DB.x + DB.w + 12 + POD.x - 12 - wdt) / 2;
-  pen.group("stamp", x, 22, () => {
-    pen.rect("stamp:bg", { width: wdt, height: 40, rx: 20, fill: COLOR.warn });
-    icon(pen, "stamp:i", "replay", 14, 9, 22, COLOR.bg);
-    pen.text("stamp:t", { x: 44, y: 27, ...font, fill: COLOR.bg }, label);
-  }, { class: "fx-stamp" });
-}
-
 function drawHeader(pen: Pen, w: World): void {
   // Postgres — слон-«кладовщик» и табличка с именем.
   // Слон кивает на COMMIT: база зафиксировала.
-  const [dbKey, dbFx] = once("db:nod", w, happened(w, "commit") ? "fx-nod" : null);
+  const [dbKey, dbFx] = once("db:nod", w.frame, happened(w, "commit") ? "fx-nod" : null);
   pen.group(dbKey, 0, 0, () => elephant(pen, "db:face", { x: TABLE.x + 4, y: 8, talking: !!w.db, scale: 1.08 }), dbFx);
   panel(pen, "db", { x: DB.x, y: 20, w: DB.w, h: 46, rx: 14, fill: COLOR.surface2, stroke: COLOR.postgres });
   pen.text("db:name", { x: DB.x + 16, y: 50, ...SANS, "font-size": SIZE.say, "font-weight": 700, fill: COLOR.ink }, "Postgres");
   if (w.chapter) pill(pen, "chapter", `КЕЙС ${w.chapter}`, { x: POD.x, y: 22, fill: "none", color: COLOR.ink, stroke: COLOR.ink });
-  const [clockKey, clockFx] = once("clock", w, happened(w, "clock") ? "fx-pulse" : null);
+  const [clockKey, clockFx] = once("clock", w.frame, happened(w, "clock") ? "fx-pulse" : null);
   pen.group(clockKey, 0, 0, () => {
     icon(pen, "clock:i", "clock", 1080, 26, 26, COLOR.muted);
     pen.text("clock:t", { x: 1114, y: 48, "font-family": FONT.mono, "font-size": SIZE.clock, "font-weight": 700, fill: COLOR.ink }, clock(w.clock));
@@ -436,8 +374,8 @@ export function render(pen: Pen, w: World): void {
   drawTable(pen, w);
   // Ярлык-термин — контурный: залитые светлые пилюли — это реплики.
   if (w.term) pill(pen, "term", w.term, { x: POD.x, y: 76, fill: COLOR.surface2, color: COLOR.ink, stroke: COLOR.ink, mono: true, attrs: { class: "fx-slide" } });
-  drawBoard(pen, w);
-  drawSql(pen, w);
+  if (w.board) board(pen, w.board, { ...BOARD, lampX: [290, 425], attrs: fade(w, "board") });
+  if (w.sql.length) sqlWindow(pen, "sql", podSql(w.sql), { x: TABLE.x, bottom: BOTTOM, attrs: fade(w, "sql") }); // SQL — только где его надо прочитать
   drawPodArrows(pen, w); // под фигурами: линия уходит за бокс, а не перечёркивает его
   drawMail(pen, w);
   for (const id of ACTORS) drawPod(pen, w, w.actors[id]);
@@ -455,7 +393,7 @@ export function render(pen: Pen, w: World): void {
       const [head, ...rest] = w.plate.split("\n");
       plate(pen, "plate", head, rest.join("\n"), STAGE);
     }
-    if (w.stamp) drawStamp(pen, w.stamp);
+    if (w.stamp) stamp(pen, w.stamp, { left: DB.x + DB.w + 12, right: POD.x - 12 });
     // Поверх плашки: кладовщик комментирует и её.
     if (w.db) bubble(pen, "db:say", w.db, { x: DB.x + DB.w + 10, y: 43, tail: "left", attrs: { class: "fx-pop" } });
   });

@@ -1,7 +1,8 @@
 import type { Step } from "../../engine/contract";
+import { Director } from "../../kit/director";
 import {
   HOT, L1_TTL, NEW, OLD, TTL, addRedis, click, commit, crash, del, get, publish, reply, select, set, update, world,
-  type ActorId, type Board, type Focus, type Lamp, type World,
+  type ActorId, type Focus, type World,
 } from "./sim";
 
 // Акты эпизода — синхронно с docs/episodes/02-cache.md (сценарий v2, покадрово).
@@ -51,83 +52,30 @@ export function holdFor(caption: string, w: World): number {
   return Math.round((1.5 + 0.035 * text.length) * 10) / 10;
 }
 
-interface ShotOptions {
-  /** Показать SQL-панель: только где команды надо прочитать. */
-  sql?: boolean;
-  hold?: number;
-  /** Оценка текущей попытки на табло — в кадре, где результат уже виден. null — лампа ещё не горит. */
-  verdict?: [Lamp | null, Lamp | null];
-  voice?: string;
-  focus?: Focus[];
-  attempt?: number;
-}
-
-class Director {
-  readonly steps: Step<World>[] = [];
-  w: World = world();
-  private act = "";
-  private fresh = false;
-  private label: string | null = null;
-  private chapterNo: number | null = null;
-  private board: Board | null = null;
-  private sceneNo = 0;
+/** Сверх общего: итог — повтор уже виденного; журнал браузеров — последние шесть строк. */
+class Shots extends Director<Focus, World> {
   private replaying = false;
 
-  /** Новая сцена; `replay` — возврат к уже показанному моменту (перемотка, итог): без «перелистывания». */
-  scene(act: string, w: World = world(), { replay = false } = {}): void {
-    if (act !== this.act) this.label = null;
-    this.act = act;
-    this.w = w;
-    this.fresh = this.steps.length > 0 && !replay;
+  constructor() {
+    super(world);
+  }
+
+  override scene(act: string, w?: World, o?: { replay?: boolean }): void {
+    super.scene(act, w, o);
     this.replaying = act === ACT.summary;
-    if (!replay) this.sceneNo++;
   }
 
-  term(label: string): void {
-    this.label = label;
+  protected hold(caption: string, w: World): number {
+    return holdFor(caption, w);
   }
 
-  chapter(no: number | null, criteria: [string, string] | null = null): void {
-    this.chapterNo = no;
-    this.board = criteria ? { criteria, attempts: [] } : null;
-  }
-
-  attempt(name: string): void {
-    this.board!.attempts.push({ name, lamps: null });
-  }
-
-  shot(caption: string, action?: (w: World) => void, opts: ShotOptions = {}): void {
-    const w = this.w;
-    w.sql = [];
-    w.db = null;
-    w.plate = null;
-    w.stamp = null;
-    w.term = this.label;
-    w.focus = opts.focus ?? null;
-    w.events = this.fresh ? [{ kind: "page" }] : [];
-    this.fresh = false;
+  protected override clear(w: World): void {
     for (const a of Object.values(w.actors)) a.acts = [];
-    action?.(w);
-    if (!opts.sql) w.sql = [];
+  }
+
+  protected override finish(w: World): void {
     w.clicks = w.clicks.slice(-6); // в журнал браузеров влезает шесть строк
-    if (w.stamp) w.events.push({ kind: "rewind" });
-    if (opts.verdict) {
-      const a = this.board!.attempts.at(-1)!;
-      a.lamps = [opts.verdict[0] ?? a.lamps?.[0] ?? null, opts.verdict[1] ?? a.lamps?.[1] ?? null];
-      w.events.push({ kind: "verdict", lamps: opts.verdict });
-    }
-    w.chapter = this.chapterNo;
-    w.board = structuredClone(this.board);
-    if (w.board && opts.attempt !== undefined) w.board.focus = opts.attempt;
-    w.frame = this.steps.length;
-    w.scene = this.sceneNo;
     w.replay = this.replaying;
-    if (w.plate) w.events.push({ kind: "card" });
-    const state = structuredClone(w);
-    this.steps.push({
-      act: this.act, caption, state, hold: opts.hold ?? holdFor(caption, state),
-      ...(opts.voice ? { narration: opts.voice } : {}),
-    });
   }
 }
 
@@ -191,7 +139,7 @@ export function clock(t: number): string {
 }
 
 export function buildSteps(): Step<World>[] {
-  const d = new Director();
+  const d = new Shots();
 
   // 0. Хук: все клики — в базу.
   d.scene(ACT.hook);

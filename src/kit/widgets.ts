@@ -1,8 +1,11 @@
 import type { Attrs, Pen, Span, TextContent } from "../engine/contract";
+import type { Board } from "./director";
 import { icon, type IconName } from "./icons";
-import { COLOR, FONT, SIZE } from "./theme";
+import { highlightSql } from "./sql";
+import { ACTOR, COLOR, FONT, SIZE } from "./theme";
 
-// Виджеты серии: панель, пузырь реплики с хвостом, пилюля, лампа, окно SQL, полноэкранная плашка.
+// Виджеты серии: панель, пузырь реплики с хвостом, пилюля, лампа, табло, окно SQL, штамп перемотки,
+// полноэкранная плашка.
 // Размеры текстовых рамок — по `pen.measure`, а не по числу символов.
 
 /** Плоская тень: смещённая подложка без фильтров. */
@@ -110,6 +113,32 @@ export function lamp(pen: Pen, key: string, x: number, y: number, state: LampSta
   }, { class: "fx-pop" }); // новая оценка на табло вспыхивает
 }
 
+/**
+ * Табло главы: критерии в шапке, строка на попытку с двумя лампами. Ярко — только попытка, о которой речь;
+ * прошлые — фоном (learning-designer: 4×2 ламп не читают). `lampX` — центры ламп от левого края табло.
+ */
+export function board(
+  pen: Pen, b: Board,
+  o: { x: number; y: number; w: number; rowH: number; lampX: [number, number]; attrs?: Attrs },
+): void {
+  const font = { "font-family": FONT.sans, "font-size": SIZE.body };
+  const lampX = o.lampX.map((dx) => o.x + dx);
+  pen.group("board", 0, 0, () => {
+    const height = 46 + b.attempts.length * o.rowH + 8;
+    panel(pen, "board:box", { x: o.x, y: o.y, w: o.w, h: height });
+    b.criteria.forEach((c, i) =>
+      pen.text(`board:h${i}`, { x: lampX[i], y: o.y + 30, ...font, fill: COLOR.muted, "text-anchor": "middle" }, c));
+    b.attempts.forEach((t, i) => {
+      const y = o.y + 46 + i * o.rowH;
+      const current = i === (b.focus ?? b.attempts.length - 1);
+      pen.group(`board:a${i}`, 0, 0, () => {
+        pen.text(`board:n${i}`, { x: o.x + 18, y: y + 18, ...font, fill: current ? COLOR.ink : COLOR.muted, "font-weight": current ? 700 : 400 }, t.name);
+        lampX.forEach((x, j) => lamp(pen, `board:l${i}:${j}`, x, y + 12, t.lamps?.[j] ?? null, 10));
+      }, { opacity: current ? 1 : 0.45 });
+    });
+  }, o.attrs);
+}
+
 /** Окно редактора с SQL: строки — уже раскрашенные куски. Возвращает размер окна. */
 export function sqlWindow(
   pen: Pen, key: string, lines: Span[][],
@@ -130,6 +159,47 @@ export function sqlWindow(
     pen.text(`${key}:t`, { x: 18, y: top + size * 0.8, ...font }, spans);
   }, o.attrs);
   return { w, h };
+}
+
+/** Строки SQL-панели: префикс «Pod A ▸» — цветом пода, сам запрос — с подсветкой; `\n` — продолжение запроса. */
+export function podSql(entries: string[]): Span[][] {
+  return entries.flatMap((entry) => {
+    const [first, ...rest] = entry.split("\n");
+    const m = /^(Pod ([ABC])) ▸ (.*)$/.exec(first);
+    const head: Span[] = m
+      ? [{ text: `${m[1]} ▸ `, attrs: { fill: ACTOR[m[2] as keyof typeof ACTOR].color, "font-weight": 700 } }, ...highlightSql(m[3])]
+      : highlightSql(first);
+    return [head, ...rest.map((line) => highlightSql(line))];
+  });
+}
+
+/** Штамп перемотки «⟲ Иначе / Вернёмся: …» — по центру между `left` и `right`, в шапке. */
+export function stamp(pen: Pen, text: string, o: { left: number; right: number }): void {
+  const label = text.replace(/^⟲\s*/, "");
+  const font = { "font-family": FONT.sans, "font-size": SIZE.body, "font-weight": 700 };
+  const w = pen.measure(label, font).width + 62;
+  pen.group("stamp", (o.left + o.right - w) / 2, 22, () => {
+    pen.rect("stamp:bg", { width: w, height: 40, rx: 20, fill: COLOR.warn });
+    icon(pen, "stamp:i", "replay", 14, 9, 22, COLOR.bg);
+    pen.text("stamp:t", { x: 44, y: 27, ...font, fill: COLOR.bg }, label);
+  }, { class: "fx-stamp" });
+}
+
+/** Значок и текст в строку; возвращает x правого края. (x, y) — базовая линия текста. */
+export function iconText(
+  pen: Pen, key: string, name: IconName, x: number, y: number, text: string, color: string,
+  attrs: Attrs = { "font-family": FONT.sans, "font-size": SIZE.body },
+): number {
+  const size = 20;
+  icon(pen, `${key}:i`, name, x, y - 16, size, color);
+  if (!text) return x + size;
+  pen.text(`${key}:t`, { x: x + size + 5, y, fill: color, ...attrs }, text);
+  return x + size + 5 + pen.measure(text, attrs).width;
+}
+
+/** Разовый эффект кадра: с `fx` — новый ключ (эффект проигрывается заново) и класс; без — прежний ключ. */
+export function once(key: string, frame: number, fx: string | null): [string, Attrs] {
+  return fx ? [`${key}:fx${frame}`, { class: fx }] : [key, {}];
 }
 
 /** Полноэкранная плашка главы: надзаголовок и вопрос. */

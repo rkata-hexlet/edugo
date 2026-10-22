@@ -1,7 +1,8 @@
 import type { Step } from "../../engine/contract";
+import { Director } from "../../kit/director";
 import {
   claimLease, commit, complete, crash, selectTask, send, updateTask, world,
-  type ActorId, type Board, type Focus, type Lamp, type LockMode, type World,
+  type ActorId, type Focus, type LockMode, type World,
 } from "./sim";
 
 // Акты эпизода — синхронно с docs/episodes/01-skip-locked.md (сценарий v4.2, покадрово).
@@ -64,54 +65,13 @@ export function holdFor(caption: string, w: World): number {
   return Math.round((1.5 + 0.035 * text.length) * 10) / 10;
 }
 
-interface ShotOptions {
-  /** Показать SQL-панель: только где SQL надо прочитать. Глаголы пишут SQL всегда — панель полная. */
-  sql?: boolean;
-  /** Своё время кадра, с: плашка главы. */
-  hold?: number;
-  /** Оценка текущей попытки на табло — в кадре, где результат уже виден. */
-  verdict?: [Lamp, Lamp];
-  /** Текст диктора за кадром: объясняет то, что на экране, и называет термин. */
-  voice?: string;
-  /** О чём говорит диктор — это ярко, остальное приглушено. */
-  focus?: Focus[];
-  /** Какую попытку табло подсветить (по номеру); нет — последнюю. */
-  attempt?: number;
-}
-
-class Director {
-  readonly steps: Step<World>[] = [];
-  w: World = world();
-  private act = "";
-  private fresh = false;
-  private label: string | null = null;
-  private chapterNo: number | null = null;
-  private board: Board | null = null;
+/** Сверх общего: реплика Почты, окно гонки, титр, зачёркнутый токен и «?» над подом. */
+class Shots extends Director<Focus, World> {
   private doubtOf: ActorId | null = null;
-  private sceneNo = 0;
   private lastDoubt: ActorId | null = null;
 
-  /**
-   * Новая сцена (свежие 6 задач); ярлык переживает смену сцены внутри акта и сбрасывается на новом акте.
-   * `replay` — возврат к уже показанному моменту (перемотка, итог): без «перелистывания» и каскада стола.
-   */
-  scene(act: string, w: World = world(), { replay = false } = {}): void {
-    if (act !== this.act) this.label = null;
-    this.act = act;
-    this.w = w;
-    this.fresh = this.steps.length > 0 && !replay;
-    if (!replay) this.sceneNo++;
-  }
-
-  /** Ярлык акта — со следующего кадра, когда механика уже показана. */
-  term(label: string): void {
-    this.label = label;
-  }
-
-  /** Глава: номер в углу и чистое табло с двумя критериями; null — вне глав. */
-  chapter(no: number | null, criteria: [string, string] | null = null): void {
-    this.chapterNo = no;
-    this.board = criteria ? { criteria, attempts: [] } : null;
+  constructor() {
+    super(world);
   }
 
   /** «?» над подом: остальные не знают, жив ли он; null — снять. Переживает смену сцены. */
@@ -119,49 +79,26 @@ class Director {
     this.doubtOf = who;
   }
 
-  /** Новая строка табло — попытка, которую сейчас покажем. */
-  attempt(name: string): void {
-    this.board!.attempts.push({ name, lamps: null });
+  protected hold(caption: string, w: World): number {
+    return holdFor(caption, w);
   }
 
-  /** Применить действия и записать кадр. Реплики, SQL и титры живут один кадр. */
-  shot(caption: string, action?: (w: World) => void, opts: ShotOptions = {}): void {
-    const w = this.w;
-    w.sql = [];
-    w.db = null;
+  protected override clear(w: World): void {
     w.mail = null;
     w.race = false;
     w.card = null;
-    w.plate = null;
     w.ghost = null;
-    w.stamp = null;
-    w.term = this.label;
-    w.focus = opts.focus ?? null;
-    w.events = this.fresh ? [{ kind: "page" }] : [];
-    this.fresh = false;
     for (const a of Object.values(w.actors)) a.say = null;
-    action?.(w);
-    if (!opts.sql) w.sql = [];
-    // События подачи — для звука (звук берётся только из World.events, CLAUDE.md).
-    if (w.stamp) w.events.push({ kind: "rewind" });
-    if (opts.verdict) {
-      this.board!.attempts.at(-1)!.lamps = opts.verdict;
-      w.events.push({ kind: "verdict", lamps: opts.verdict });
-    }
+  }
+
+  protected override finish(w: World): void {
     if (this.doubtOf && this.doubtOf !== this.lastDoubt) w.events.push({ kind: "doubt", by: this.doubtOf });
     this.lastDoubt = this.doubtOf;
-    w.chapter = this.chapterNo;
-    w.board = structuredClone(this.board);
-    if (w.board && opts.attempt !== undefined) w.board.focus = opts.attempt;
     w.doubt = this.doubtOf;
-    w.frame = this.steps.length;
-    w.scene = this.sceneNo;
-    if (w.card || w.plate) w.events.push({ kind: "card" });
-    const state = structuredClone(w);
-    this.steps.push({
-      act: this.act, caption, state, hold: opts.hold ?? holdFor(caption, state),
-      ...(opts.voice ? { narration: opts.voice } : {}),
-    });
+  }
+
+  protected override carded(w: World): boolean {
+    return !!(w.card || w.plate);
   }
 }
 
@@ -292,7 +229,7 @@ export function clock(t: number): string {
 }
 
 export function buildSteps(): Step<World>[] {
-  const d = new Director();
+  const d = new Shots();
   const ALL = ["A", "B", "C"] as const;
 
   // 0. Хук: трое на одну задачу — три письма.
