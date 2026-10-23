@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { ACT, buildSteps } from "./script";
 import {
   ACTORS, PEOPLE, click, crowdVid, daySum, estimate, flood, flush, grow, hash, inflated, light, merge, place, realEstimate, record,
-  reported, trial, truth, union, world, year,
+  reported, truth, union, world, year,
 } from "./sim";
 import { flashbackState } from "./view";
 
@@ -13,7 +13,6 @@ describe("модель уникальных", () => {
     expect(hash(ANYA)).toBe(hash(ANYA));
     expect(place(ANYA)).toEqual({ box: 5, rho: 3 });
     expect(place(PEOPLE.boris.vid)).toEqual({ box: 11, rho: 1 });
-    expect(place(PEOPLE.vika.vid)).toEqual({ box: 5, rho: 2 });
   });
 
   it("set у каждого пода: Аня на трёх подах — три уникальных; пустеет со сбросом — снова новая", () => {
@@ -53,15 +52,7 @@ describe("модель уникальных", () => {
     expect(w.regs.join()).toBe(before);
     record(w, PEOPLE.boris.vid);
     expect(Math.round(estimate(w.regs))).toBe(2);
-    record(w, PEOPLE.vika.vid); // новый человек в регистре с максимумом побольше — оценка не выросла
-    expect(Math.round(estimate(w.regs))).toBe(2);
-    expect(truth(w)).toBe(3);
-  });
-
-  it("опыт без регистров (один максимум): 8 → 4 нуля, 64 → 5, 128 → 8 (оценка вдвое выше), 1000 → 9 (вдвое ниже) — как говорит голос", () => {
-    expect([8, 64, 128, 1000].map((n) => trial(n).k)).toEqual([4, 5, 8, 9]);
-    expect(2 ** trial(128).k / 128).toBe(2);
-    expect(2 ** trial(1000).k / 1000).toBeLessThan(0.55);
+    expect(truth(w)).toBe(2);
   });
 
   it("толпа 10 000: 16 регистров — «почти на треть» (как говорит голос), 16 384 регистра — около процента", () => {

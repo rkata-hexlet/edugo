@@ -7,7 +7,7 @@ import { buildSteps as episode03 } from "../03-counter/script";
 import { render as render03 } from "../03-counter/view";
 import type { World as World03 } from "../03-counter/sim";
 import {
-  ACTORS, BOXES, HOT, REAL_BOXES, YEAR, daySum, estimate, hash, leadingZeros, light, reported, streamVid, truth, union,
+  ACTORS, BOXES, HOT, REAL_BOXES, YEAR, daySum, estimate, light, reported, truth, union,
   type Act, type Actor, type ActorId, type Focus, type Probe, type SimEvent, type World,
 } from "./sim";
 
@@ -150,15 +150,6 @@ function drawProbes(pen: Pen, w: World, y: number): void {
 }
 
 function drawProbe(pen: Pen, w: World, p: Probe, i: number, y: number): void {
-  if (w.hashOnly) {
-    // Кадр хэша: только visitor ID → строка нулей и единиц, без регистров и разметки.
-    const [k, fx] = once(`probe${i}`, w.frame, "fx-slide");
-    pen.group(k, 0, 0, () => pen.text(`${k}:bits`, { x: LEFT.x, y: 260, ...MONO, "font-size": SIZE.accent, fill: COLOR.ink }, [
-      { text: `${p.vid} → `, attrs: { "font-weight": 700 } },
-      { text: `${p.bits.slice(0, 16).replace(/(.{4})/g, "$1 ")}…`, attrs: { fill: COLOR.muted } }, // хвост — за краем: не влезает к подам
-    ]), fx);
-    return;
-  }
   const head = p.bits.slice(0, 4);
   const rest = p.bits.slice(4);
   const zeros = rest.slice(0, p.zeros);
@@ -182,59 +173,6 @@ function drawProbe(pen: Pen, w: World, p: Probe, i: number, y: number): void {
       { text: p.changed ? " · новый максимум" : " · максимум тот же", attrs: { fill: p.changed ? COLOR.ok : COLOR.warn } },
     ]);
   }, { ...fx, ...fade(w, "probe") });
-}
-
-/** Доля хэшей с k ведущими нулями: каждый второй, четвёртый… тридцать второй. */
-function drawOdds(pen: Pen, w: World): void {
-  pen.group("odds", 0, 0, () => {
-    pen.text("odds:title", { x: LEFT.x, y: 150, ...SANS, fill: COLOR.muted }, "хэш начинается с");
-    for (let k = 1; k <= 5; k++) {
-      const last = k === 5;
-      pen.text(`odds:${k}`, { x: LEFT.x, y: 150 + k * 44, ...MONO, "font-size": SIZE.accent, "font-weight": 700, class: "fx-slide" }, [
-        { text: "0".repeat(k).padEnd(7, " "), attrs: { fill: COLOR.ok } },
-        { text: `у каждого ${2 ** k}-го`, attrs: { fill: last ? COLOR.warn : COLOR.ink } },
-      ]);
-    }
-  }, fade(w, "probe"));
-}
-
-const times = (r: number) => (Math.round(r) === 2 ? "вдвое" : `в ${Math.round(r)} раза`);
-
-/** Опыт без регистров: строки хэшей потока (ведущие нули подсвечены, рекордсмен в рамке) и шаги «прошло N → k → 2^k». */
-function drawTrial(pen: Pen, w: World): void {
-  pen.group("trial", 0, 0, () => {
-    // Строки: первые значения потока и обладатель максимума каждого шага (в рамке) — у кого самая длинная серия нулей.
-    // Без строк потока (шаг «промах») — только обладатели максимумов новых шагов кадра, о которых говорит голос.
-    const holders = new Set((w.stream ? w.trials : w.trials.slice(-2)).map((t) => t.holder));
-    const rows = [...new Set([...Array.from({ length: w.stream }, (_, i) => streamVid(i)), ...holders])];
-    rows.forEach((vid, i) => {
-      const bits = hash(vid).toString(2).padStart(32, "0");
-      const z = leadingZeros(vid);
-      const top = holders.has(vid);
-      const y = 124 + i * 30;
-      if (top) pen.rect(`trial:box${i}`, { x: LEFT.x - 8, y: y - 22, width: 400, height: 30, rx: 6, fill: "none", stroke: COLOR.ok, "stroke-width": 2, class: "fx-pop" });
-      pen.text(`trial:r${i}`, { x: LEFT.x, y, ...MONO }, [
-        { text: vid.padEnd(6, " "), attrs: { fill: top ? COLOR.ink : COLOR.muted, "font-weight": 700 } },
-        { text: bits.slice(0, z), attrs: { fill: COLOR.warn, "font-weight": 700 } },
-        { text: `${bits.slice(z, 20)}…`, attrs: { fill: COLOR.faint } },
-      ]);
-    });
-    const y0 = 124 + Math.max(rows.length, 1) * 30 + 34;
-    pen.text("trial:h", { x: LEFT.x, y: y0, ...SANS, fill: COLOR.muted }, "прошло   ·   максимум нулей   ·   оценка 2^k");
-    w.trials.forEach((t, i) => {
-      const est = 2 ** t.k;
-      const r = est / t.n;
-      // Промах — только когда голос о нём говорит (фокус «оценка»): в первом шаге опыта он отвлекал бы от роста.
-      const note = !about(w, "estimate", false) ? "" : r >= 1.9 ? `${times(r)} больше` : r <= 0.55 ? `${times(1 / r)} меньше` : "";
-      const [k, fx] = once(`trial:t${i}`, w.frame, "fx-slide");
-      pen.group(k, 0, 0, () => pen.text(`${k}:t`, { x: LEFT.x, y: y0 + 36 + i * 34, ...MONO, "font-size": SIZE.accent, "font-weight": 700 }, [
-        { text: thousands(t.n).padStart(5, " "), attrs: { fill: COLOR.ink } },
-        { text: `   ${String(t.k).padStart(2, " ")}   `, attrs: { fill: COLOR.warn } },
-        { text: thousands(est).padStart(5, " "), attrs: { fill: COLOR.ok } },
-        { text: note ? `  ${note}` : "", attrs: { fill: COLOR.error, "font-size": SIZE.body } },
-      ]), fx);
-    });
-  }, fade(w, "probe"));
 }
 
 /** Кейс 2: календарь — первые дни, «…», последний; на карточке число дня или полоска регистров. */
@@ -281,9 +219,6 @@ function drawBase(pen: Pen, w: World): void {
   if (w.days) return drawDays(pen, w);
   if (w.mode === "counter") return drawCounter(pen, w);
   if (w.mode === "list") return drawList(pen, w);
-  if (w.odds) return drawOdds(pen, w);
-  if (w.stream || w.trials.length) return drawTrial(pen, w);
-  if (w.hashOnly) return drawProbes(pen, w, 0);
   drawBoxes(pen, w, w.regs, { y: 136, unit: BOX.unit, title: `link_uniques · ${HOT}` });
   drawEstimate(pen, w, w.regs, 380);
   drawProbes(pen, w, 450);

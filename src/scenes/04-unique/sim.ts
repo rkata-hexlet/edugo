@@ -16,11 +16,10 @@ export const REAL_BOXES = 16_384;
 /** Окно сброса копилки пода, с (как в эпизоде 03). */
 export const WINDOW = 5;
 
-/** Visitor ID героев подобраны под регистры (tech-expert): Аня и Вика — регистр 5 (2 и 1 ноль), Борис — регистр 11. */
+/** Visitor ID героев подобраны под регистры (tech-expert): Аня — регистр 5 (2 нуля), Борис — регистр 11. */
 export const PEOPLE = {
   anya: { name: "Аня", vid: "8b91" },
   boris: { name: "Борис", vid: "2346" },
-  vika: { name: "Вика", vid: "12b4" },
 } as const;
 /** Как считаются уникальные: set у пода + счётчик в базе, общий список visitor ID, регистры HLL. */
 export type Mode = "counter" | "list" | "hll";
@@ -110,19 +109,11 @@ export interface World {
   real: number | null;
   /** visitor ID, прогнанные через хэш в этом кадре («лаборатория»). */
   probes: Probe[];
-  /** «Лаборатория» без регистров: только visitor ID → строка битов (кадр хэша). */
-  hashOnly: boolean;
   /** Кейс 2: календарь дней; period — сколько последних дней сливает запрос (null — не сливаем). */
   days: Day[] | null;
   period: number | null;
   /** Оценки за периоды (кейс 2): последние n дней — слиянием 16 регистров, «настоящим» HLL и на самом деле. */
   periods: { n: number; est: number; real: number; truth: number }[];
-  /** Кадр вероятностей: доля хэшей с k ведущими нулями — длинная серия нулей редка. */
-  odds: boolean;
-  /** Опыт без регистров: сколько первых значений потока показать строками хэшей. */
-  stream: number;
-  /** Опыт без регистров: шаги «прошло N → максимум нулей k → оценка 2^k». */
-  trials: Trial[];
   flashback: Flashback | null;
   sql: string[];
   db: string | null;
@@ -206,38 +197,6 @@ export function realEstimate(vids: Iterable<string>): number {
 /** Visitor ID посетителя толпы — по формуле, без случайности. */
 export const crowdVid = (i: number) => `v${i}`;
 
-/** Поток опыта: герои, затем толпа — те же значения, что потом пойдут в регистры. */
-export const streamVid = (i: number) => (i < 3 ? [PEOPLE.anya.vid, PEOPLE.boris.vid, PEOPLE.vika.vid][i] : crowdVid(i - 3));
-
-/** Ведущие нули всех 32 бит хэша (опыт без регистров). */
-export const leadingZeros = (vid: string) => Math.clz32(hash(vid));
-
-/** Шаг опыта: среди первых n значений потока самый длинный ряд ведущих нулей k и чей он. */
-export interface Trial {
-  n: number;
-  k: number;
-  holder: string;
-}
-
-/** Опыт Flajolet–Martin (один максимум, m = 1): 2^k — оценка n только по порядку, промах в разы в обе стороны. */
-export function trial(n: number): Trial {
-  let k = -1;
-  let holder = "";
-  for (let i = 0; i < n; i++) {
-    const z = leadingZeros(streamVid(i));
-    if (z > k) [k, holder] = [z, streamVid(i)];
-  }
-  return { n, k, holder };
-}
-
-/** Поток прошёл до n значений: новый шаг опыта. */
-export function runTrial(w: World, n: number): void {
-  const t = trial(n);
-  const before = w.trials.at(-1)?.k ?? -1;
-  w.trials.push(t);
-  w.events.push({ kind: t.k > before ? "reg" : "flat" });
-}
-
 // --- Мир ---
 
 export function world(): World {
@@ -256,13 +215,9 @@ export function world(): World {
     regs: empty(),
     real: null,
     probes: [],
-    hashOnly: false,
     days: null,
     period: null,
     periods: [],
-    odds: false,
-    stream: 0,
-    trials: [],
     flashback: null,
     sql: [],
     db: null,
