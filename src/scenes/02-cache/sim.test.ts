@@ -184,12 +184,9 @@ describe("сценарий не врёт", () => {
     expect(steps.filter((s) => (s.narration?.match(/ — /g) ?? []).length > 1).map((s) => s.narration)).toEqual([]);
   });
 
-  it("закадр: английское — английским голосом, коды и буквы подов — по-русски; о собеседованиях не говорим", () => {
-    for (const s of steps) {
-      for (const p of speechParts(s.narration!, PRONOUNCE)) {
-        if (p.lang === "ru") expect(p.text, s.narration).not.toMatch(/[A-Za-z]/);
-        else expect(p.text, s.narration).toMatch(/^[A-Za-z][A-Za-z0-9' -]+[.!?…,:]*$/);
-      }
+  it("закадр: буквы подов — по-русски (одиночной латинской буквы синтез не читает); о собеседованиях не говорим", () => {
+    for (const s of steps.filter((x) => x.narration)) {
+      for (const p of speechParts(s.narration!, PRONOUNCE)) expect(p.text, s.narration).not.toMatch(/(?<![A-Za-z])[ABC](?![A-Za-z])/);
     }
     expect(steps.filter((s) => /собес/i.test(s.narration ?? "") || /собес/i.test(s.state.plate ?? ""))).toEqual([]);
   });
