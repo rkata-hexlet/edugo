@@ -1,27 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { MAX_PHRASE, estimateMs, phraseStarts, phrases, speechParts } from "./narrator";
 
-describe("speechParts: куски фразы по языкам", () => {
-  it("английский термин — английским голосом, знаки конца — к последнему куску", () => {
-    expect(speechParts("Это классический race condition: сосед вклинился.", {}).map(({ text, lang }) => ({ text, lang }))).toEqual([
-      { text: "Это классический", lang: "ru" },
-      { text: "race condition", lang: "en" },
-      { text: ": сосед вклинился.", lang: "ru" },
-    ]);
-    expect(speechParts("Это затор — head-of-line blocking.", {}).map(({ text, lang }) => ({ text, lang }))).toEqual([
-      { text: "Это затор —", lang: "ru" },
-      { text: "head-of-line blocking.", lang: "en" },
+describe("speechParts: куски фразы для синтеза", () => {
+  it("кусок — целиком одним голосом, английское не отделяется", () => {
+    expect(speechParts("Это классический race condition: сосед вклинился.", {}).map((p) => p.text)).toEqual([
+      "Это классический race condition: сосед вклинился.",
     ]);
   });
 
-  it("словарь сцены — раньше языка: буквы подов по-русски; капс — строчными, аббревиатуры — как есть", () => {
+  it("словарь сцены: буквы подов по-русски; капс — строчными, аббревиатуры — как есть", () => {
     const pods = { A: "а", B: "бэ" };
-    expect(speechParts("Под A делает COMMIT, а B ждёт API.", pods).map(({ text, lang }) => ({ text, lang }))).toEqual([
-      { text: "Под а делает", lang: "ru" },
-      { text: "commit", lang: "en" },
-      { text: ", а бэ ждёт", lang: "ru" },
-      { text: "API.", lang: "en" },
-    ]);
+    expect(speechParts("Под A делает COMMIT, а B ждёт API.", pods).map((p) => p.text)).toEqual(["Под а делает commit, а бэ ждёт API."]);
   });
 
   it("предложения — отдельными кусками (онлайн-голоса обрывают длинные фразы)", () => {

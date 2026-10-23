@@ -277,12 +277,9 @@ describe("сценарий не врёт", () => {
     expect(choppy).toEqual([]);
   });
 
-  it("закадр: английское — английским голосом, буквы подов — по-русски; о собеседованиях не говорим", () => {
+  it("закадр: буквы подов — по-русски (одиночной латинской буквы синтез не читает); о собеседованиях не говорим", () => {
     for (const s of steps.filter((x) => x.narration)) {
-      for (const p of speechParts(s.narration!, PRONOUNCE)) {
-        if (p.lang === "ru") expect(p.text, s.narration).not.toMatch(/[A-Za-z]/);
-        else expect(p.text, s.narration).toMatch(/^[A-Za-z][A-Za-z0-9' -]+[.!?…,:]*$/); // не одна буква пода
-      }
+      for (const p of speechParts(s.narration!, PRONOUNCE)) expect(p.text, s.narration).not.toMatch(/(?<![A-Za-z])[ABC](?![A-Za-z])/);
     }
     const screen = steps.flatMap((s) => [s.caption, s.narration ?? "", s.state.card ?? "", s.state.plate ?? ""]);
     expect(screen.filter((t) => /собес/i.test(t))).toEqual([]);
