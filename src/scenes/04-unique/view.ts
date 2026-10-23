@@ -12,8 +12,8 @@ import {
 } from "./sim";
 
 // Поды стоят на месте; что они делают, говорят стрелки и мысли — только из состояния кадра (Actor.acts).
-// Сетка (1280×720): шапка; слева база — таблица попытки (link_stats / visitors / ящики link_uniques / календарь
-// дней) и «лаборатория» номерка (хэш → ящик → нули); в центре поды с блокнотом или ящиками; справа браузеры
+// Сетка (1280×720): шапка; слева база — таблица попытки (link_stats / visitors / регистры link_uniques / календарь
+// дней) и «лаборатория» visitor ID (хэш → регистр → нули); в центре поды с set или регистрами; справа браузеры
 // («людей было») и табло. Ниже SAFE_BOTTOM — пусто.
 
 const POD_Y: Record<ActorId, number> = { A: 128, B: 244, C: 360 };
@@ -26,7 +26,7 @@ const BOTTOM = 650;
 const DB = { x: 100, w: 130 };
 const NX = BOB.w + 14; // левый край подписи пода
 const TABLE_END = LEFT.x + 380;
-/** Ящики крупно: шаг, ширина, высота ступени рекорда. */
+/** Регистры крупно: шаг, ширина, высота ступени максимума. */
 const BOX = { pitch: 34, w: 26, unit: 10 };
 
 const MONO = { "font-family": FONT.mono, "font-size": SIZE.body };
@@ -60,7 +60,7 @@ function grid(pen: Pen, w: World, key: string, cols: { title: string; w: number 
   });
 }
 
-/** Попытка «блокнот»: link_stats с колонкой uniques; расходится с «людей было» — красным. */
+/** Попытка «set на каждом поде»: link_stats с колонкой uniques; расходится с «людей было» — красным. */
 function drawCounter(pen: Pen, w: World): void {
   const wrong = w.uniques > truth(w);
   pen.group("counter", 0, 0, () => {
@@ -84,7 +84,7 @@ function drawList(pen: Pen, w: World): void {
       const [k, fx] = once("vis:bulk", w.frame, happened(w, "grow") ? "fx-cascade" : null);
       pen.group(k, 0, 0, () => {
         for (let i = 0; i < 3; i++) pen.rect(`${k}:s${i}`, { x: LEFT.x, y: y - 16 + i * 14, width: 230, height: 8, rx: 4, fill: COLOR.line });
-        pen.text(`${k}:t`, { x: LEFT.x, y: y + 56, ...SANS, "font-weight": 700, fill: COLOR.warn }, `… ещё ${thousands(w.bulk)} номерков`);
+        pen.text(`${k}:t`, { x: LEFT.x, y: y + 56, ...SANS, "font-weight": 700, fill: COLOR.warn }, `… ещё ${thousands(w.bulk)} строк`);
       }, fx);
       y += 84;
     }
@@ -99,7 +99,7 @@ function drawList(pen: Pen, w: World): void {
   }, fade(w, "list", "table"));
 }
 
-/** 16 ящиков: столбик — рекорд нулей; ящик номерка из «лаборатории» подсвечен. top — верх области столбиков. */
+/** 16 регистров: столбик — максимум ведущих нулей; регистр из «лаборатории» подсвечен. top — верх области столбиков. */
 function drawBoxes(pen: Pen, w: World, regs: number[], o: { y: number; unit: number; title: string }): void {
   const base = o.y + 15 * o.unit;
   const last = w.probes.at(-1);
@@ -121,7 +121,7 @@ function drawBoxes(pen: Pen, w: World, regs: number[], o: { y: number; unit: num
   }, fade(w, "boxes"));
 }
 
-/** Оценка по ящикам (и «настоящий» HLL рядом, когда посчитан). */
+/** Оценка по регистрам (и «настоящий» HLL рядом, когда посчитан). */
 function drawEstimate(pen: Pen, w: World, regs: number[], y: number): void {
   if (!about(w, "estimate", false) && !w.real) return;
   pen.group("est", 0, 0, () => {
@@ -129,11 +129,11 @@ function drawEstimate(pen: Pen, w: World, regs: number[], y: number): void {
     const off = (e: number) => (t ? ` (${e >= t ? "+" : "−"}${(Math.abs(e / t - 1) * 100).toFixed(e / t > 0.9 && e / t < 1.1 ? 1 : 0).replace(".", ",")} %)` : "");
     const e16 = estimate(regs);
     pen.text("est:16", { x: LEFT.x, y, ...MONO, "font-weight": 700, fill: COLOR.ink }, [
-      { text: `${BOXES} ящиков ≈ `, attrs: { fill: COLOR.muted } }, { text: thousands(e16) },
+      { text: `${BOXES} регистров ≈ `, attrs: { fill: COLOR.muted } }, { text: thousands(e16) },
       ...(w.real && t ? [{ text: off(e16), attrs: { fill: COLOR.warn } }] : []),
     ]);
     if (w.real) pen.text("est:real", { x: LEFT.x, y: y + 32, ...MONO, "font-weight": 700, fill: COLOR.ok }, [
-      { text: `${thousands(REAL_BOXES)} ящика ≈ `, attrs: { fill: COLOR.muted } }, { text: thousands(w.real) },
+      { text: `${thousands(REAL_BOXES)} регистра ≈ `, attrs: { fill: COLOR.muted } }, { text: thousands(w.real) },
       ...(t ? [{ text: off(w.real), attrs: { fill: COLOR.ok } }] : []),
     ]);
     if (w.real && about(w, "weight", false)) {
@@ -144,14 +144,14 @@ function drawEstimate(pen: Pen, w: World, regs: number[], y: number): void {
   }, fade(w, "estimate"));
 }
 
-/** «Лаборатория»: номерок → 32 бита; первые 4 — ящик, нули в начале остатка — серия решек. */
+/** «Лаборатория»: visitor ID → 32 бита; первые 4 — регистр, ведущие нули остатка — его максимум. */
 function drawProbes(pen: Pen, w: World, y: number): void {
   w.probes.slice(-2).forEach((p, i) => drawProbe(pen, w, p, i, y + i * 76));
 }
 
 function drawProbe(pen: Pen, w: World, p: Probe, i: number, y: number): void {
   if (w.hashOnly) {
-    // Кадр хэша: только номерок → строка нулей и единиц, без ящиков и разметки.
+    // Кадр хэша: только visitor ID → строка нулей и единиц, без регистров и разметки.
     const [k, fx] = once(`probe${i}`, w.frame, "fx-slide");
     pen.group(k, 0, 0, () => pen.text(`${k}:bits`, { x: LEFT.x, y: 260, ...MONO, "font-size": SIZE.accent, fill: COLOR.ink }, [
       { text: `${p.vid} → `, attrs: { "font-weight": 700 } },
@@ -176,31 +176,29 @@ function drawProbe(pen: Pen, w: World, p: Probe, i: number, y: number): void {
   pen.group(k, 0, 0, () => {
     pen.text(`${k}:bits`, { x: LEFT.x, y, ...MONO }, spans);
     pen.text(`${k}:what`, { x: LEFT.x, y: y + 32, ...SANS, fill: COLOR.muted }, [
-      { text: `ящик ${p.box}`, attrs: { fill: COLOR.warn, "font-weight": 700 } },
-      { text: " · нулей в начале: " },
+      { text: `регистр ${p.box}`, attrs: { fill: COLOR.warn, "font-weight": 700 } },
+      { text: " · ведущих нулей: " },
       { text: String(p.zeros), attrs: { fill: COLOR.ok, "font-weight": 700 } },
-      { text: p.changed ? " · новый рекорд" : " · рекорд не вырос", attrs: { fill: p.changed ? COLOR.ok : COLOR.warn } },
+      { text: p.changed ? " · новый максимум" : " · максимум тот же", attrs: { fill: p.changed ? COLOR.ok : COLOR.warn } },
     ]);
   }, { ...fx, ...fade(w, "probe") });
 }
 
-/** Монетка: пять решек подряд — «бросали много раз». */
-function drawCoin(pen: Pen, w: World): void {
-  pen.group("coin", 0, 0, () => {
-    // Пять решек и орёл: серия до первого орла — тот же образ, что нули до первой единицы в хэше.
-    for (let i = 0; i < 6; i++) {
-      const head = i === 5;
-      const color = head ? COLOR.ok : COLOR.warn;
-      pen.group(`coin:${i}`, LEFT.x + 20 + i * 64, 200, () => {
-        pen.rect(`coin:${i}:c`, { x: 0, y: 0, width: 52, height: 52, rx: 26, fill: head ? COLOR.doneBg : COLOR.draftBg, stroke: color, "stroke-width": 2.5 });
-        pen.text(`coin:${i}:t`, { x: 26, y: 34, "font-family": FONT.sans, "font-size": SIZE.accent, "font-weight": 700, fill: color, "text-anchor": "middle" }, head ? "О" : "Р");
-      }, { class: "fx-pop" });
+/** Доля хэшей с k ведущими нулями: каждый второй, четвёртый… тридцать второй. */
+function drawOdds(pen: Pen, w: World): void {
+  pen.group("odds", 0, 0, () => {
+    pen.text("odds:title", { x: LEFT.x, y: 150, ...SANS, fill: COLOR.muted }, "хэш начинается с");
+    for (let k = 1; k <= 5; k++) {
+      const last = k === 5;
+      pen.text(`odds:${k}`, { x: LEFT.x, y: 150 + k * 44, ...MONO, "font-size": SIZE.accent, "font-weight": 700, class: "fx-slide" }, [
+        { text: "0".repeat(k).padEnd(7, " "), attrs: { fill: COLOR.ok } },
+        { text: `у каждого ${2 ** k}-го`, attrs: { fill: last ? COLOR.warn : COLOR.ink } },
+      ]);
     }
-    pen.text("coin:t", { x: LEFT.x + 20, y: 300, ...SANS, "font-size": SIZE.accent, "font-weight": 700, fill: COLOR.ink }, "5 решек подряд");
   }, fade(w, "probe"));
 }
 
-/** Кейс 2: календарь — первые дни, «…», последний; на карточке число дня или полоска ящиков. */
+/** Кейс 2: календарь — первые дни, «…», последний; на карточке число дня или полоска регистров. */
 function drawDays(pen: Pen, w: World): void {
   const days = w.days!;
   const shown = [0, 1, 2, YEAR - 1];
@@ -232,10 +230,6 @@ function drawDays(pen: Pen, w: World): void {
       ]));
       return;
     }
-    if (w.cannot.length) {
-      w.cannot.forEach((c, i) => iconText(pen, `no:${i}`, "cross", LEFT.x, 268 + i * 34, c, COLOR.error, { ...SANS, "font-weight": 700 }));
-      return;
-    }
     if (w.period) {
       const regs = union(w, w.period);
       drawBoxes(pen, w, regs, { y: 250, unit: 8, title: `слияние ${w.period} дней` });
@@ -248,7 +242,7 @@ function drawBase(pen: Pen, w: World): void {
   if (w.days) return drawDays(pen, w);
   if (w.mode === "counter") return drawCounter(pen, w);
   if (w.mode === "list") return drawList(pen, w);
-  if (w.coin) return drawCoin(pen, w);
+  if (w.odds) return drawOdds(pen, w);
   if (w.hashOnly) return drawProbes(pen, w, 0);
   drawBoxes(pen, w, w.regs, { y: 136, unit: BOX.unit, title: `link_uniques · ${HOT}` });
   drawEstimate(pen, w, w.regs, 380);
@@ -269,7 +263,7 @@ function podLook(a: Actor): Look {
   return { x: 0, y: 0 };
 }
 
-/** Мысль пода о клике: «Новая!» (нет в блокноте), «Уже была» (есть). У HLL-пода мыслей нет — он не знает. */
+/** Мысль пода о клике: «Новая!» (нет в set), «Уже была» (есть). У HLL-пода мыслей нет — он не знает. */
 function podThought(a: Actor): string | null {
   if (did(a, "new")) return "Новая!";
   if (did(a, "known")) return "Уже была";
@@ -289,17 +283,17 @@ function drawPod(pen: Pen, w: World, a: Actor): void {
       (sent ?? a.regs).forEach((r, j) => pen.rect(`pod:${a.id}:r${j}`, { x: NX + j * 9, y: 62 - Math.max(3, (r - 1) * 7), width: 7, height: Math.max(3, (r - 1) * 7), fill: r ? COLOR.warn : COLOR.line }));
       return;
     }
-    // Блокнот: что в нём сейчас, а в кадре сброса — что под в нём проверял (сброс его опустошил).
+    // Set: что в нём сейчас, а в кадре сброса — что под в нём проверял (сброс его опустошил).
     const looked = a.acts.flatMap((x) => (x.kind === "new" || x.kind === "known" ? [x.vid] : []));
     const note = a.seen.length ? a.seen : looked;
     if (note.length || about(w, "jar", false)) {
-      const text = note.length ? `блокнот: ${[...new Set(note)].join(", ")}` : "блокнот: пусто";
+      const text = note.length ? `set: ${[...new Set(note)].join(", ")}` : "set: пусто";
       pen.text(`pod:${a.id}:note`, { x: NX, y: 54, ...MONO, fill: note.length ? COLOR.ink : COLOR.faint }, text);
     }
   }, fade(w, a.id));
 }
 
-/** Стрелки пода: ответ браузеру, номерок браузеру, сброс в базу. */
+/** Стрелки пода: ответ браузеру, visitor ID браузеру, сброс в базу. */
 function drawPodArrows(pen: Pen, w: World): void {
   for (const id of ACTORS) {
     const a = w.actors[id];
@@ -313,7 +307,7 @@ function drawPodArrows(pen: Pen, w: World): void {
       const mid = { x: (POD.x + to.x) / 2 - 40, y: (podMid(id) + to.y) / 2 - 30 };
       const fl = a.acts.find((x): x is Extract<Act, { kind: "flush" }> => x.kind === "flush");
       const label = w.mode === "counter" ? `+${fl?.n ?? 0}`
-        : w.mode === "list" ? (dup ? "уже есть" : ins.map((x) => x.vid).join(", ")) : "ящики";
+        : w.mode === "list" ? (dup ? "уже есть" : ins.map((x) => x.vid).join(", ")) : "регистры";
       pill(pen, `arr:${id}:pill`, label, { x: mid.x, y: mid.y, fill: COLOR.surface2, color: dup ? COLOR.error : COLOR.ink, stroke: dup ? COLOR.error : color, mono: true, attrs: { class: "fx-pop", opacity: op } });
     }
     const ck = a.acts.find((x): x is Extract<Act, { kind: "cookie" }> => x.kind === "cookie");
@@ -343,8 +337,7 @@ function drawBrowsers(pen: Pen, w: World): void {
     } else {
       w.browsers.forEach((b, i) => {
         const y = B.y + 78 + i * 34;
-        const tg = b.name.includes("Telegram");
-        pen.text(`br:b${i}`, { x: B.x + 16, y, ...SANS, "font-weight": 700, fill: tg || (w.phone && b.name === "Аня") ? COLOR.warn : COLOR.ink }, b.name.replace("Аня · ", ""));
+        pen.text(`br:b${i}`, { x: B.x + 16, y, ...SANS, "font-weight": 700, fill: COLOR.ink }, b.name);
         if (b.vid) pill(pen, `br:v${i}`, b.vid, { x: B.x + 104, y: y - 22, fill: COLOR.surface2, color: COLOR.warn, stroke: COLOR.line, mono: true });
         if (b.clicks) pen.text(`br:c${i}`, { x: B.x + 196, y, ...MONO, fill: COLOR.muted }, `×${b.clicks}`);
       });
@@ -354,7 +347,7 @@ function drawBrowsers(pen: Pen, w: World): void {
     pen.text("br:was", { x: B.x + 16, y: B.y + 244, ...SANS, fill: COLOR.muted }, "людей было");
     const [nk, nfx] = once("br:n", w.frame, happened(w, "click") || happened(w, "flood") ? "fx-pop" : null);
     pen.group(nk, 0, 0, () => pen.text(`${nk}:t`, { x: B.x + 16, y: B.y + 280, "font-family": FONT.mono, "font-size": SIZE.title, "font-weight": 700, fill: COLOR.ink }, thousands(t)), nfx);
-  }, fade(w, "browsers", "phone"));
+  }, fade(w, "browsers"));
 }
 
 function drawHeader(pen: Pen, w: World): void {

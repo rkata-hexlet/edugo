@@ -3,7 +3,7 @@ import type { Lamp } from "../../kit/director";
 import { type EventKind, type SimEvent, type World } from "./sim";
 
 // Озвучка эпизода (MVP, по словарю эпизодов 01–03; карту sound-designer — после утверждения сюжета): клик — тихий
-// «тик», «Новая!» — звонкий «динь», повтор — глухой «тук», сброс — «бум», ящик вырос — восходящий тон, не вырос —
+// «тик», «Новая!» — звонкий «динь», повтор — глухой «тук», сброс — «бум», регистр вырос — восходящий тон, не вырос —
 // ровный, слияние — аккорд, толпа — шорох. Звуки событий — в окне 0–0.45 с, с 0.5 с говорит диктор.
 
 /** Окно звуков событий, с. Держит тест: дальше начинается голос диктора. */
@@ -53,7 +53,6 @@ const RECIPES: Partial<Record<EventKind, Recipe>> = {
     s.tone({ freq: 220, dur: 0.12, wave: "square", gain: 0.08, at: at + 0.1 });
     s.tone({ freq: 196, dur: 0.15, wave: "square", gain: 0.08, at: at + 0.25 });
   },
-  no: (s, at) => s.tone({ freq: 300, to: 150, dur: 0.2, wave: "sawtooth", gain: 0.07, at: at + 0.1 }),
   verdict: (s, at, e) => e.lamps?.forEach((lamp, i) => lamp && lampTone(s, at + 0.05 + 0.1 * i, lamp)),
 };
 
@@ -86,7 +85,7 @@ export function sound(out: Sound, w: World, replay = false): void {
   const s = scaled(out, replay ? 0.7 : 1);
   const byKind = new Map<EventKind, SimEvent[]>();
   for (const e of w.events) byKind.set(e.kind, [...(byKind.get(e.kind) ?? []), e]);
-  if (replay) for (const k of ["clock", "flood", "sum", "no", "page"] as const) byKind.delete(k);
+  if (replay) for (const k of ["clock", "flood", "sum", "page"] as const) byKind.delete(k);
 
   for (const [kind, events] of byKind) {
     if (kind === "clock") {
