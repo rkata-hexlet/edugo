@@ -258,7 +258,7 @@ function drawFlashback(pen: Pen, w: World): void {
 
 /** Лесенка уровней изоляции Postgres снизу вверх: пройденные — ярко, остальные — с короткой пометкой. */
 const LADDER = [
-  { name: "READ UNCOMMITTED", note: "в Postgres = READ COMMITTED", seen: false },
+  { name: "READ UNCOMMITTED", note: "dirty read в Postgres нет", seen: false },
   { name: "READ COMMITTED", note: "по умолчанию", seen: true },
   { name: "REPEATABLE READ", note: "снимок на транзакцию", seen: true },
   { name: "SERIALIZABLE", note: "и конфликты разных строк", seen: false },
