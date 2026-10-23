@@ -67,7 +67,14 @@ export interface Customer {
   status: Status;
 }
 
-export type Focus = ActorId | "row" | "orders" | "shop" | "board" | "clock" | "sql" | "ladder";
+export type Focus = ActorId | "row" | "orders" | "shop" | "board" | "clock" | "sql" | "ladder" | "code";
+
+/** Код пода на Go в кадре: строки и подсвеченные места (warn — где беда, ok — что поправили). */
+export interface Code {
+  title: string;
+  lines: string[];
+  mark: { line: number; tone: "warn" | "ok" }[];
+}
 
 export type EventKind =
   | "press" | "read" | "write" | "wait" | "zero" | "insert" | "commit" | "fail" | "retry" | "ok" | "none"
@@ -92,6 +99,7 @@ export interface World {
   showcase: boolean;
   flashback: boolean;
   ladder: boolean; // лесенка четырёх уровней изоляции Postgres
+  code: Code | null;
   sql: string[];
   db: string | null;
   plate: string | null;
@@ -123,6 +131,7 @@ export function world(): World {
     showcase: false,
     flashback: false,
     ladder: false,
+    code: null,
     sql: [],
     db: null,
     plate: null,

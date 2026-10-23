@@ -126,9 +126,9 @@ describe("сценарий не врёт", () => {
 
   it("каждая попытка стартует одинаково: свежий стол с одной кружкой", () => {
     for (const act of [ACT.naive, ACT.atomic, ACT.rr]) {
-      const w = frames(act)[0];
-      expect(w.versions[0].stock, act).toBe(1);
-      expect(kinds(w), act).toContain("press");
+      const w = frames(act).find((x) => kinds(x).includes("press"))!;
+      expect(w, act).toBeDefined();
+      expect(w.versions[0], act).toEqual({ stock: 1, by: null, at: 0 });
     }
   });
 

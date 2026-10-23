@@ -28,6 +28,32 @@ const SQL = {
   insert: "INSERT INTO orders (product_id) VALUES (7)",
 };
 
+/** Код покупки на Go: наивный (проверка в Go, UPDATE с готовым числом) и с условием в самом UPDATE. */
+const GO = {
+  naive: [
+    "tx, _ := db.Begin(ctx)",
+    "var stock int",
+    "tx.QueryRow(ctx, `SELECT stock FROM products",
+    "  WHERE id = 7`).Scan(&stock)",
+    "if stock > 0 {",
+    "  tx.Exec(ctx, `UPDATE products SET stock = $1",
+    "    WHERE id = 7`, stock-1)",
+    "  tx.Exec(ctx, `INSERT INTO orders ...`)",
+    "}",
+    "tx.Commit(ctx)",
+  ],
+  atomic: [
+    "tx, _ := db.Begin(ctx)",
+    "res, _ := tx.Exec(ctx, `UPDATE products",
+    "  SET stock = stock - 1",
+    "  WHERE id = 7 AND stock > 0`)",
+    "if res.RowsAffected() == 1 {",
+    "  tx.Exec(ctx, `INSERT INTO orders ...`)",
+    "}",
+    "tx.Commit(ctx)",
+  ],
+};
+
 /** Мысль-заблуждение пода: висит, пока он верит прочитанному. */
 const MINE = "Вижу 1 — моя!";
 
@@ -70,6 +96,7 @@ class Shots extends Director<Focus, World> {
     w.showcase = false;
     w.flashback = false;
     w.ladder = false;
+    w.code = null;
   }
 
   protected override finish(w: World): void {
@@ -194,10 +221,10 @@ export function buildSteps(): Step<World>[] {
     voice: "Заказы оформляет сервис из двух подов, A и B. Остатки и заказы лежат в Postgres: в таблице products у кружки записан остаток, stock, а в таблицу orders падают оформленные заказы.",
   });
   d.shot("", (w) => {
-    for (const line of [SQL.begin("RC"), `${SQL.select}  -- 1`, "-- в Go: stock = stock - 1", SQL.set(0), SQL.insert, "COMMIT"]) sql(w, null, line);
+    w.code = { title: "Go · оформление заказа", lines: GO.naive, mark: [{ line: 4, tone: "warn" }, { line: 5, tone: "warn" }, { line: 6, tone: "warn" }] };
   }, {
-    sql: true, focus: ["sql"],
-    voice: "Покупка устроена просто, всё в одной транзакции. Под читает остаток, и если товар есть, вычитает единицу у себя в коде на Go, записывает новое число и добавляет заказ. Важная деталь: обычное чтение строку не запирает. Замок на строке появляется, когда в неё пишут, и держится до конца транзакции.",
+    focus: ["code"],
+    voice: "Покупку оформляет вот такой код на Go, всё в одной транзакции. Под читает остаток, и если товар есть, записывает число на единицу меньше и добавляет заказ. Заметьте главное: проверка «товар есть» живёт в Go, а сам UPDATE просто пишет готовое число и проверяет только номер товара. Запомним это место.",
   });
 
   // Хук: оба нажали в одну секунду.
@@ -250,7 +277,7 @@ export function buildSteps(): Step<World>[] {
   d.scene(ACT.case1);
   d.chapter(1, ["не продали лишнего", "без повторов"]);
   d.shot("", (w) => {
-    w.plate = "Кейс\nКак не продать последнюю кружку дважды?";
+    w.plate = "Кейс\nКак не продать\nпоследнюю кружку дважды?";
   }, { hold: 2.5, voice: "Разберёмся, что пошло не так при одновременном нажатии. И будем следить за двумя вещами: чтобы лишнего не продали и чтобы транзакцию не пришлось повторять." });
 
   // 1.1 Прочитал → посчитал в Go → записал.
@@ -295,13 +322,19 @@ export function buildSteps(): Step<World>[] {
   d.scene(ACT.atomic, table());
   d.attempt("атомарный UPDATE");
   d.shot("", (w) => {
-    w.stamp = "⟲ Иначе: считает база";
+    w.stamp = "⟲ Иначе: условие в UPDATE";
+    w.code = { title: "Go · тот же код, другой запрос", lines: GO.atomic, mark: [1, 2, 3, 4].map((line) => ({ line, tone: "ok" as const })) };
+  }, {
+    focus: ["code"],
+    voice: "Раз код на Go не видит соседа, перенесём проверку в сам запрос. Код на Go почти тот же, поменялся только UPDATE: теперь он сам уменьшает остаток на единицу и пишет, только если остаток больше нуля. А заказ добавляем, только если UPDATE действительно изменил строку.",
+  });
+  d.shot("", (w) => {
     press(w, "RC", "A", "B");
     writeAtomic(w, "A");
     writeAtomic(w, "B");
   }, {
     sql: true, focus: ["A", "B", "row", "sql"],
-    voice: "Раз код на Go не видит соседа, пусть считает сама база. Оба пода сразу отправляют один UPDATE: уменьши остаток на единицу, но только если он больше нуля. Под A меняет строку, а под B снова ждёт.",
+    voice: "Снова Аня и Борис жмут одновременно, и оба пода отправляют этот UPDATE. Под A меняет строку, а под B снова ждёт.",
   });
   d.term("Atomic update");
   d.shot("", (w) => {

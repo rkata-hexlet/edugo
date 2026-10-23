@@ -1,7 +1,8 @@
-import { STAGE, type Pen } from "../../engine/contract";
+import { STAGE, type Pen, type Span } from "../../engine/contract";
 import { BOB, bob, elephant, type Look, type Mood } from "../../kit/characters";
 import { icon } from "../../kit/icons";
-import { ACTOR, COLOR, DIM, FONT, SIZE } from "../../kit/theme";
+import { ACTOR, COLOR, DIM, FONT, SIZE, SQL_COLOR } from "../../kit/theme";
+import { highlightSql } from "../../kit/sql";
 import { board, bubble, iconText, once, panel, pill, plate, podSql, sqlWindow, stamp } from "../../kit/widgets";
 import { clock } from "./script";
 import { ACTORS, STOCK, latest, type Act, type Actor, type ActorId, type Focus, type SimEvent, type World } from "./sim";
@@ -286,6 +287,53 @@ function drawLadder(pen: Pen, w: World): void {
   }, { class: "fx-fade" });
 }
 
+const GO_KEYWORDS = /^(if|var|for|func|return|break|range|else)$/;
+
+/** Строки Go: SQL внутри `…` — подсветкой SQL, снаружи — ключевые слова Go. Строка-литерал может тянуться на несколько строк. */
+function highlightGo(lines: string[]): Span[][] {
+  let inside = false;
+  return lines.map((line) => {
+    const spans: Span[] = [];
+    line.split("`").forEach((part, i) => {
+      if (i > 0) {
+        spans.push({ text: "`", attrs: { fill: SQL_COLOR.string } });
+        inside = !inside;
+      }
+      if (!part) return;
+      if (inside) spans.push(...highlightSql(part));
+      else for (const m of part.matchAll(/([A-Za-z_]\w*)|(\d+)|([^A-Za-z_\d]+)/g)) {
+        const fill = m[1] && GO_KEYWORDS.test(m[1]) ? SQL_COLOR.keyword : m[2] ? SQL_COLOR.number : COLOR.ink;
+        spans.push({ text: m[0], attrs: { fill } });
+      }
+    });
+    return spans;
+  });
+}
+
+/** Код пода на Go: окно поверх сцены, подсвеченные строки — где беда (жёлтым) или что поправили (зелёным). */
+function drawCode(pen: Pen, w: World): void {
+  const c = w.code;
+  if (!c) return;
+  const lineH = 30;
+  const x = 200;
+  const y = 104;
+  const h = 72 + c.lines.length * lineH + 12;
+  pen.group("code", 0, 0, () => {
+    panel(pen, "code:box", { x, y, w: 880, h, fill: "#11172e", stroke: COLOR.muted });
+    pen.text("code:title", { x: x + 28, y: y + 40, ...SANS, "font-size": SIZE.accent, "font-weight": 700, fill: COLOR.muted }, c.title);
+    highlightGo(c.lines).forEach((spans, i) => {
+      const ly = y + 82 + i * lineH;
+      const mark = c.mark.find((m) => m.line === i);
+      if (mark) {
+        const tone = mark.tone === "warn" ? COLOR.warn : COLOR.ok;
+        pen.rect(`code:m${i}`, { x: x + 16, y: ly - 21, width: 848, height: lineH - 2, rx: 4, fill: mark.tone === "warn" ? COLOR.draftBg : COLOR.doneBg, class: "fx-fade" });
+        pen.rect(`code:b${i}`, { x: x + 16, y: ly - 21, width: 4, height: lineH - 2, fill: tone });
+      }
+      pen.text(`code:l${i}`, { x: x + 32, y: ly, ...MONO }, spans);
+    });
+  }, { class: "fx-fade" });
+}
+
 function drawHeader(pen: Pen, w: World): void {
   const [dbKey, dbFx] = once("db:nod", w.frame, happened(w, "fail") || happened(w, "zero") ? "fx-nod" : null);
   pen.group(dbKey, 0, 0, () => elephant(pen, "db:face", { x: TABLE.x + 4, y: 8, talking: !!w.db, scale: 1.08 }), dbFx);
@@ -313,6 +361,7 @@ export function render(pen: Pen, w: World): void {
   pen.layer("top", () => {
     drawFlashback(pen, w);
     drawLadder(pen, w);
+    drawCode(pen, w);
     if (w.plate) {
       const [head, ...rest] = w.plate.split("\n");
       plate(pen, "plate", head, rest.join("\n"), STAGE);
