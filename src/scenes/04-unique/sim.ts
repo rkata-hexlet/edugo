@@ -109,6 +109,14 @@ export interface World {
   real: number | null;
   /** visitor ID, прогнанные через хэш в этом кадре («лаборатория»). */
   probes: Probe[];
+  /** Кадр цели HLL: «уникальных ≈ ?». */
+  goal: boolean;
+  /** Кадр аналогии: самая длинная серия орлов → сколько было бросков. */
+  coin: boolean;
+  /** Поток без регистров: сколько первых значений показать строками хэшей. */
+  stream: number;
+  /** Поток без регистров: шаги «прошло N → рекорд нулей k → уникальных ≈ 2^k». */
+  trials: Trial[];
   /** Кейс 2: календарь дней; period — сколько последних дней сливает запрос (null — не сливаем). */
   days: Day[] | null;
   period: number | null;
@@ -197,6 +205,38 @@ export function realEstimate(vids: Iterable<string>): number {
 /** Visitor ID посетителя толпы — по формуле, без случайности. */
 export const crowdVid = (i: number) => `v${i}`;
 
+/** Поток кадра «хэш вместо монетки»: герои, затем толпа — те же значения, что потом пойдут в регистры. */
+export const streamVid = (i: number) => (i < 2 ? [PEOPLE.anya.vid, PEOPLE.boris.vid][i] : crowdVid(i - 2));
+
+/** Ведущие нули всех 32 бит хэша (поток без регистров). */
+export const leadingZeros = (vid: string) => Math.clz32(hash(vid));
+
+/** Шаг потока: среди первых n значений самый длинный ряд ведущих нулей k (рекорд) и чей он. */
+export interface Trial {
+  n: number;
+  k: number;
+  holder: string;
+}
+
+/** Один рекорд на весь поток (Flajolet–Martin, m = 1): 2^k — оценка n только по порядку. */
+export function trial(n: number): Trial {
+  let k = -1;
+  let holder = "";
+  for (let i = 0; i < n; i++) {
+    const z = leadingZeros(streamVid(i));
+    if (z > k) [k, holder] = [z, streamVid(i)];
+  }
+  return { n, k, holder };
+}
+
+/** Поток прошёл до n значений: новый шаг. */
+export function runTrial(w: World, n: number): void {
+  const t = trial(n);
+  const before = w.trials.at(-1)?.k ?? -1;
+  w.trials.push(t);
+  w.events.push({ kind: t.k > before ? "reg" : "flat" });
+}
+
 // --- Мир ---
 
 export function world(): World {
@@ -215,6 +255,10 @@ export function world(): World {
     regs: empty(),
     real: null,
     probes: [],
+    goal: false,
+    coin: false,
+    stream: 0,
+    trials: [],
     days: null,
     period: null,
     periods: [],

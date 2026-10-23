@@ -7,7 +7,7 @@ import { buildSteps as episode03 } from "../03-counter/script";
 import { render as render03 } from "../03-counter/view";
 import type { World as World03 } from "../03-counter/sim";
 import {
-  ACTORS, BOXES, HOT, REAL_BOXES, YEAR, daySum, estimate, light, reported, truth, union,
+  ACTORS, BOXES, HOT, REAL_BOXES, YEAR, daySum, estimate, hash, leadingZeros, light, reported, streamVid, truth, union,
   type Act, type Actor, type ActorId, type Focus, type Probe, type SimEvent, type World,
 } from "./sim";
 
@@ -170,9 +170,63 @@ function drawProbe(pen: Pen, w: World, p: Probe, i: number, y: number): void {
       { text: `регистр ${p.box}`, attrs: { fill: COLOR.warn, "font-weight": 700 } },
       { text: " · ведущих нулей: " },
       { text: String(p.zeros), attrs: { fill: COLOR.ok, "font-weight": 700 } },
-      { text: p.changed ? " · новый максимум" : " · максимум тот же", attrs: { fill: p.changed ? COLOR.ok : COLOR.warn } },
+      { text: p.changed ? " · новый рекорд" : " · рекорд тот же", attrs: { fill: p.changed ? COLOR.ok : COLOR.warn } },
     ]);
   }, { ...fx, ...fade(w, "probe") });
+}
+
+/** Цель HLL: одно число — сколько разных visitor ID. */
+function drawGoal(pen: Pen, w: World): void {
+  pen.group("goal", 0, 0, () => {
+    pen.text("goal:q", { x: LEFT.x, y: 200, ...SANS, "font-size": SIZE.accent, fill: COLOR.muted }, "сколько разных visitor ID?");
+    pen.text("goal:n", { x: LEFT.x, y: 270, "font-family": FONT.mono, "font-size": SIZE.plate, "font-weight": 700, fill: COLOR.ink, class: "fx-pop" }, "≈ ?");
+    pen.text("goal:w", { x: LEFT.x, y: 330, ...SANS, fill: COLOR.ok }, "без самих ID, в килобайтах");
+  }, fade(w, "estimate"));
+}
+
+/** Аналогия: самая длинная серия — 10 орлов подряд, шанс 1 из 1 024 → бросков около тысячи. */
+function drawCoin(pen: Pen, w: World): void {
+  pen.group("coin", 0, 0, () => {
+    pen.text("coin:t", { x: LEFT.x, y: 170, ...SANS, fill: COLOR.muted }, "самая длинная серия у друга");
+    for (let i = 0; i < 10; i++) {
+      pen.group(`coin:${i}`, LEFT.x + i * 46, 196, () => {
+        pen.rect(`coin:${i}:c`, { x: 0, y: 0, width: 38, height: 38, rx: 19, fill: COLOR.draftBg, stroke: COLOR.warn, "stroke-width": 2.5 });
+        pen.text(`coin:${i}:o`, { x: 19, y: 26, ...SANS, "font-weight": 700, fill: COLOR.warn, "text-anchor": "middle" }, "О");
+      }, { class: "fx-pop" });
+    }
+    pen.text("coin:n", { x: LEFT.x, y: 276, ...MONO, "font-size": SIZE.accent, "font-weight": 700, fill: COLOR.ink }, "10 орлов подряд: шанс 1 из 1 024");
+    pen.text("coin:e", { x: LEFT.x, y: 320, ...MONO, "font-size": SIZE.accent, "font-weight": 700, fill: COLOR.ok }, "бросков было ≈ 1 000");
+  }, fade(w, "probe"));
+}
+
+/** Хэш вместо монетки: строки потока (ведущие нули подсвечены, рекордсмен в рамке) и «прошло N → рекорд k → ≈ 2^k». */
+function drawTrial(pen: Pen, w: World): void {
+  pen.group("trial", 0, 0, () => {
+    const holders = new Set(w.trials.map((t) => t.holder));
+    const rows = [...new Set([...Array.from({ length: w.stream }, (_, i) => streamVid(i)), ...holders])];
+    rows.forEach((vid, i) => {
+      const bits = hash(vid).toString(2).padStart(32, "0");
+      const z = leadingZeros(vid);
+      const top = holders.has(vid);
+      const y = 124 + i * 30;
+      if (top) pen.rect(`trial:box${i}`, { x: LEFT.x - 8, y: y - 22, width: 400, height: 30, rx: 6, fill: "none", stroke: COLOR.ok, "stroke-width": 2, class: "fx-pop" });
+      pen.text(`trial:r${i}`, { x: LEFT.x, y, ...MONO }, [
+        { text: vid.padEnd(6, " "), attrs: { fill: top ? COLOR.ink : COLOR.muted, "font-weight": 700 } },
+        { text: bits.slice(0, z), attrs: { fill: COLOR.warn, "font-weight": 700 } },
+        { text: `${bits.slice(z, 20)}…`, attrs: { fill: COLOR.faint } },
+      ]);
+    });
+    const y0 = 124 + rows.length * 30 + 34;
+    if (w.trials.length) pen.text("trial:h", { x: LEFT.x, y: y0, ...SANS, fill: COLOR.muted }, "прошло   ·   рекорд нулей   ·   уникальных ≈ 2^k");
+    w.trials.forEach((t, i) => {
+      const [k, fx] = once(`trial:t${i}`, w.frame, "fx-slide");
+      pen.group(k, 0, 0, () => pen.text(`${k}:t`, { x: LEFT.x, y: y0 + 36 + i * 34, ...MONO, "font-size": SIZE.accent, "font-weight": 700 }, [
+        { text: thousands(t.n).padStart(5, " "), attrs: { fill: COLOR.ink } },
+        { text: `   ${String(t.k).padStart(2, " ")}   `, attrs: { fill: COLOR.warn } },
+        { text: thousands(2 ** t.k).padStart(5, " "), attrs: { fill: COLOR.ok } },
+      ]), fx);
+    });
+  }, fade(w, "probe"));
 }
 
 /** Кейс 2: календарь — первые дни, «…», последний; на карточке число дня или полоска регистров. */
@@ -219,6 +273,9 @@ function drawBase(pen: Pen, w: World): void {
   if (w.days) return drawDays(pen, w);
   if (w.mode === "counter") return drawCounter(pen, w);
   if (w.mode === "list") return drawList(pen, w);
+  if (w.goal) return drawGoal(pen, w);
+  if (w.coin) return drawCoin(pen, w);
+  if (w.stream) return drawTrial(pen, w);
   drawBoxes(pen, w, w.regs, { y: 136, unit: BOX.unit, title: `link_uniques · ${HOT}` });
   drawEstimate(pen, w, w.regs, 380);
   drawProbes(pen, w, 450);
