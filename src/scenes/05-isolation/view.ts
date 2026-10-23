@@ -60,8 +60,8 @@ function drawRow(pen: Pen, w: World): void {
           width: TABLE.w, height: TABLE.rowH, rx: 6, fill: draft ? COLOR.draftBg : COLOR.surface,
           stroke: draft ? COLOR.warn : COLOR.line, "stroke-width": 1.5, ...(draft ? { "stroke-dasharray": "6 4" } : {}),
         });
-        // Без стопки незакоммиченная правка видна в той же строке: «1 → 0».
-        const value = !w.stack && draft ? `${w.versions[top].stock} → ${v.stock}` : `${v.stock}`;
+        // Без стопки — одна строка: незакоммиченный 0 под замком, без «1 → 0» (строку не правят на месте, tech-expert).
+        const value = `${v.stock}`;
         pen.text(`${k}:t`, { x: 14, y: 25, ...MONO, fill: COLOR.ink }, [
           { text: "stock ", attrs: { fill: COLOR.muted } },
           { text: value, attrs: { "font-weight": 700 } },
@@ -261,7 +261,7 @@ const LADDER = [
   { name: "READ UNCOMMITTED", note: "dirty read в Postgres нет", seen: false },
   { name: "READ COMMITTED", note: "по умолчанию", seen: true },
   { name: "REPEATABLE READ", note: "снимок на транзакцию", seen: true },
-  { name: "SERIALIZABLE", note: "и конфликты разных строк", seen: false },
+  { name: "SERIALIZABLE", note: "как будто по очереди", seen: false },
 ];
 
 function drawLadder(pen: Pen, w: World): void {
