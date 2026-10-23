@@ -256,6 +256,36 @@ function drawFlashback(pen: Pen, w: World): void {
   }, { class: "fx-fade" });
 }
 
+/** Лесенка уровней изоляции Postgres снизу вверх: пройденные — ярко, остальные — с короткой пометкой. */
+const LADDER = [
+  { name: "READ UNCOMMITTED", note: "в Postgres = READ COMMITTED", seen: false },
+  { name: "READ COMMITTED", note: "по умолчанию", seen: true },
+  { name: "REPEATABLE READ", note: "снимок на транзакцию", seen: true },
+  { name: "SERIALIZABLE", note: "и конфликты разных строк", seen: false },
+];
+
+function drawLadder(pen: Pen, w: World): void {
+  if (!w.ladder) return;
+  const x = 300;
+  const y = 104;
+  pen.group("ladder", 0, 0, () => {
+    panel(pen, "ladder:box", { x, y, w: 680, h: 380, fill: COLOR.bg2, stroke: COLOR.muted });
+    pen.text("ladder:title", { x: x + 24, y: y + 40, ...SANS, "font-size": SIZE.accent, "font-weight": 700, fill: COLOR.muted }, "Уровни изоляции в Postgres");
+    LADDER.forEach((l, i) => {
+      const sy = y + 300 - i * 70;
+      const sx = x + 24 + i * 40;
+      pen.group(`ladder:s${i}`, 0, 0, () => {
+        pen.rect(`ladder:s${i}:bg`, {
+          x: sx, y: sy, width: 632 - i * 40, height: 56, rx: 10, fill: l.seen ? COLOR.surface2 : COLOR.surface,
+          stroke: l.seen ? COLOR.ok : COLOR.line, "stroke-width": l.seen ? 2.5 : 1.5,
+        });
+        pen.text(`ladder:s${i}:n`, { x: sx + 18, y: sy + 35, ...MONO, "font-size": SIZE.say, "font-weight": 700, fill: l.seen ? COLOR.ink : COLOR.muted }, l.name);
+        pen.text(`ladder:s${i}:t`, { x: x + 640, y: sy + 35, ...SANS, fill: l.seen ? COLOR.ok : COLOR.muted, "text-anchor": "end" }, l.note);
+      }, { class: "fx-rise" });
+    });
+  }, { class: "fx-fade" });
+}
+
 function drawHeader(pen: Pen, w: World): void {
   const [dbKey, dbFx] = once("db:nod", w.frame, happened(w, "fail") || happened(w, "zero") ? "fx-nod" : null);
   pen.group(dbKey, 0, 0, () => elephant(pen, "db:face", { x: TABLE.x + 4, y: 8, talking: !!w.db, scale: 1.08 }), dbFx);
@@ -282,6 +312,7 @@ export function render(pen: Pen, w: World): void {
   for (const id of ACTORS) drawPod(pen, w, w.actors[id]);
   pen.layer("top", () => {
     drawFlashback(pen, w);
+    drawLadder(pen, w);
     if (w.plate) {
       const [head, ...rest] = w.plate.split("\n");
       plate(pen, "plate", head, rest.join("\n"), STAGE);

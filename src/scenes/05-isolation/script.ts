@@ -16,6 +16,7 @@ export const ACT = {
   naive: "1.1 Посчитали в Go",
   atomic: "1.2 Атомарный UPDATE",
   rr: "1.3 REPEATABLE READ",
+  levels: "Уровни Postgres",
   summary: "Итог",
 } as const;
 
@@ -68,6 +69,7 @@ class Shots extends Director<Focus, World> {
     for (const a of Object.values(w.actors)) a.acts = [];
     w.showcase = false;
     w.flashback = false;
+    w.ladder = false;
   }
 
   protected override finish(w: World): void {
@@ -362,8 +364,18 @@ export function buildSteps(): Step<World>[] {
     voice: "Это не ответ покупателю, а сигнал повторить. Под B откатывает прерванную транзакцию, начинает её заново, получает свежий снимок, видит ноль, и Борис узнаёт, что кружки нет. Лишнего не продали, но код теперь обязан уметь повторять транзакцию. И так ведёт себя именно Postgres: в MySQL с InnoDB тот же уровень потерял бы обновление молча.",
   });
 
-  // Итог — повтором уже виденных образов.
+  // Лесенка: уровней в Postgres четыре, пройдены два (решение пользователя 23.10: заголовок «Уровни изоляции»).
   d.chapter(null);
+  d.scene(ACT.levels, structuredClone(d.w), { replay: true });
+  d.shot("", (w) => {
+    w.ladder = true;
+    w.clockShown = false;
+  }, {
+    focus: ["ladder"],
+    voice: "Оглянемся на лестницу уровней изоляции. В Postgres их четыре, и мы прошли два: READ COMMITTED, уровень по умолчанию, и REPEATABLE READ. Ступенька ниже, READ UNCOMMITTED, в Postgres работает так же, как READ COMMITTED: чужие незакоммиченные изменения он не показывает никогда. А на самом верху SERIALIZABLE. Он ловит и конфликты, где транзакции пишут в разные строки, но и повторять транзакции с ним приходится чаще.",
+  });
+
+  // Итог — повтором уже виденных образов.
   const recap = (saved: World, voice: string) => {
     d.scene(ACT.summary, structuredClone(saved), { replay: true });
     d.shot("", (x) => {

@@ -147,6 +147,13 @@ describe("сценарий не врёт", () => {
     expect(checked).toBe(3);
   });
 
+  it("лесенка уровней — один кадр после REPEATABLE READ, вне кейса", () => {
+    const i = steps.findIndex((s) => s.state.ladder);
+    expect(steps.filter((s) => s.state.ladder)).toHaveLength(1);
+    expect(steps[i - 1].act).toBe(ACT.rr);
+    expect(steps[i].state.chapter).toBeNull();
+  });
+
   it("40001 — только на REPEATABLE READ, 0 строк — только у атомарного UPDATE", () => {
     const fails = steps.filter((s) => kinds(s.state).includes("fail") && s.act !== ACT.summary).map((s) => s.act);
     expect(new Set(fails)).toEqual(new Set([ACT.rr]));
@@ -183,7 +190,7 @@ describe("сценарий не врёт", () => {
       expect(fs.slice(0, first + 1).some((w) => kinds(w).includes(kind)), act).toBe(true);
       expect(fs.slice(first).every((w) => w.term === fs[first].term), act).toBe(true);
     }
-    const bare = [ACT.intro, ACT.hook, ACT.norm, ACT.case1, ACT.summary] as string[];
+    const bare = [ACT.intro, ACT.hook, ACT.norm, ACT.case1, ACT.levels, ACT.summary] as string[];
     expect(steps.filter((s) => bare.includes(s.act)).every((s) => s.state.term === null)).toBe(true);
   });
 });

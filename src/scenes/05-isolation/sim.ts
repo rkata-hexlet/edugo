@@ -67,7 +67,7 @@ export interface Customer {
   status: Status;
 }
 
-export type Focus = ActorId | "row" | "orders" | "shop" | "board" | "clock" | "sql";
+export type Focus = ActorId | "row" | "orders" | "shop" | "board" | "clock" | "sql" | "ladder";
 
 export type EventKind =
   | "press" | "read" | "write" | "wait" | "zero" | "insert" | "commit" | "fail" | "retry" | "ok" | "none"
@@ -91,6 +91,7 @@ export interface World {
   clockShown: boolean;
   showcase: boolean;
   flashback: boolean;
+  ladder: boolean; // лесенка четырёх уровней изоляции Postgres
   sql: string[];
   db: string | null;
   plate: string | null;
@@ -121,6 +122,7 @@ export function world(): World {
     clockShown: false,
     showcase: false,
     flashback: false,
+    ladder: false,
     sql: [],
     db: null,
     plate: null,
