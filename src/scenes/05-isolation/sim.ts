@@ -54,6 +54,9 @@ export interface Actor {
   label: string;
   tx: Tx | null;
   thought: string | null; // мысль пода — пока она его заблуждение
+  crossed: string | null; // мысль, которую только что опровергли (живёт кадр)
+  /** Последний снимок транзакции — держится и после отката, до нового BEGIN (линия снимка в кадре 40001). */
+  seen: number | null;
   failed: boolean; // получил 40001 — до повтора
   retried: boolean; // транзакция начата заново после 40001
   acts: Act[];
@@ -100,6 +103,10 @@ export interface World {
   flashback: boolean;
   ladder: boolean; // лесенка четырёх уровней изоляции Postgres
   code: Code | null;
+  /** Чью линию снимка рисуем (одна линия — learning-designer); null — никакую. */
+  horizon: ActorId | null;
+  /** Сверка условия UPDATE после ожидания: что проверила база и прошло ли. */
+  check: { text: string; ok: boolean } | null;
   sql: string[];
   db: string | null;
   plate: string | null;
@@ -115,7 +122,7 @@ export interface World {
 }
 
 export function world(): World {
-  const actor = (id: ActorId): Actor => ({ id, label: `Pod ${id}`, tx: null, thought: null, failed: false, retried: false, acts: [] });
+  const actor = (id: ActorId): Actor => ({ id, label: `Pod ${id}`, tx: null, thought: null, crossed: null, seen: null, failed: false, retried: false, acts: [] });
   return {
     clock: 0,
     versions: [{ stock: STOCK, by: null, at: 0 }],
@@ -132,6 +139,8 @@ export function world(): World {
     flashback: false,
     ladder: false,
     code: null,
+    horizon: null,
+    check: null,
     sql: [],
     db: null,
     plate: null,
@@ -175,6 +184,7 @@ function statement(w: World, who: ActorId): Tx {
   const t = tx(w, who);
   w.clock++;
   if (t.level === "RC" || t.snapshot === null) t.snapshot = w.clock;
+  w.actors[who].seen = t.snapshot;
   return t;
 }
 
@@ -182,6 +192,7 @@ export function begin(w: World, who: ActorId, level: Level = "RC"): void {
   const a = w.actors[who];
   a.tx = { level, snapshot: null, read: null, waiting: null };
   a.failed = false;
+  a.seen = null;
 }
 
 /** SELECT stock: число из видимой версии. */

@@ -16,7 +16,7 @@ const POD_Y: Record<ActorId, number> = { A: 150, B: 300 };
 const POD = { x: 640 };
 const TABLE = { x: 40, y: 124, w: 400, rowH: 38, gap: 5 };
 const ORDERS = { y: 312 };
-const SHOP = { x: 984, y: 130, w: 256, h: 300 };
+const SHOP = { x: 984, y: 130, w: 256, h: 326 };
 const CARD_Y: Record<ActorId, number> = { A: 236, B: 366 };
 const BOARD = { x: 750, y: 466, w: 490, rowH: 26 };
 const BOTTOM = 650;
@@ -80,23 +80,37 @@ function drawRow(pen: Pen, w: World): void {
     }
   }, happened(w, "page") ? { class: "fx-cascade" } : {});
   drawSnapshots(pen, w);
+  drawCheck(pen, w);
+}
+
+/** Что база перепроверила в условии UPDATE после ожидания: прошло (зелёным) или нет (красным). */
+function drawCheck(pen: Pen, w: World): void {
+  const c = w.check;
+  if (!c) return;
+  const color = c.ok ? COLOR.ok : COLOR.error;
+  pen.group("check", TABLE.x + TABLE.w + 14, TABLE.y + 54, () => {
+    pen.rect("check:bg", { x: 0, y: 0, width: 176, height: 34, rx: 8, fill: c.ok ? COLOR.doneBg : COLOR.alarmBg, stroke: color, "stroke-width": 1.5 });
+    pen.text("check:t", { x: 10, y: 23, ...MONO, fill: COLOR.ink }, c.text);
+    icon(pen, "check:i", c.ok ? "check" : "cross", 146, 6, 22, color);
+  }, { class: "fx-pop" });
 }
 
 /** Снимок транзакции на REPEATABLE READ: линия над версиями, которых она не видит. */
 function drawSnapshots(pen: Pen, w: World): void {
-  if (!w.stack || !w.clockShown) return;
-  ACTORS.forEach((id, n) => {
-    const tx = w.actors[id].tx;
-    if (!tx || tx.level !== "RR" || tx.snapshot === null) return;
-    let seen = w.versions.length - 1;
-    while (seen > 0 && !(w.versions[seen].at !== null && w.versions[seen].at! <= tx.snapshot!)) seen--;
-    const y = rowY(slot(w, seen)) - TABLE.gap / 2 - 1 + n * 3;
-    const color = ACTOR[id].color;
-    pen.group(`snap:${id}`, 0, 0, () => {
-      pen.line(`snap:${id}:l`, { x1: TABLE.x - 10, y1: y, x2: TABLE.x + TABLE.w + 10, y2: y, stroke: color, "stroke-width": 3, "stroke-dasharray": "8 6" });
-      pen.text(`snap:${id}:t`, { x: TABLE.x + TABLE.w + 18, y: y + 6 + n * 22, ...SANS, fill: color, "font-weight": 700 }, `снимок ${id} · ${clock(tx.snapshot!)}`);
-    }, fade(w, id, "row"));
-  });
+  const id = w.horizon;
+  if (!w.stack || !id) return;
+  // Снимок держится и после 40001 (до нового BEGIN): в кадре отказа видно, что новая версия выше него.
+  const snap = w.actors[id].seen;
+  if (snap === null) return;
+  let seen = w.versions.length - 1;
+  while (seen > 0 && !(w.versions[seen].at !== null && w.versions[seen].at! <= snap)) seen--;
+  const y = rowY(slot(w, seen)) - TABLE.gap / 2 - 1;
+  const color = ACTOR[id].color;
+  pen.group(`snap:${id}`, 0, 0, () => {
+    pen.line(`snap:${id}:l`, { x1: TABLE.x - 10, y1: y, x2: TABLE.x + TABLE.w + 10, y2: y, stroke: color, "stroke-width": 4, "stroke-dasharray": "10 6" });
+    pen.text(`snap:${id}:t`, { x: TABLE.x + TABLE.w + 18, y: y + 26, ...SANS, fill: color, "font-weight": 700 }, `снимок ${id}`);
+    pen.text(`snap:${id}:c`, { x: TABLE.x + TABLE.w + 18, y: y + 50, ...MONO, fill: color }, clock(snap));
+  }, fade(w, id, "row"));
 }
 
 function drawOrders(pen: Pen, w: World): void {
@@ -155,6 +169,12 @@ function drawPod(pen: Pen, w: World, a: Actor): void {
       }, { class: "fx-pop" });
     } else if (a.thought) {
       bubble(pen, `pod:${a.id}:think`, a.thought, { x: nx - 4, y: 52, tail: "left", thought: true });
+    }
+    // Опровергнутая мысль: зачёркнута красным в кадре отказа.
+    if (a.crossed) {
+      const ty = a.failed ? 92 : 52;
+      const b = bubble(pen, `pod:${a.id}:crossed`, a.crossed, { x: nx - 4, y: ty, tail: "left", thought: true, attrs: { opacity: 0.6 } });
+      pen.line(`pod:${a.id}:strike`, { x1: nx + 8, y1: ty, x2: nx + 8 + b.w, y2: ty, stroke: COLOR.error, "stroke-width": 3.5, "stroke-linecap": "round", pathLength: 1, class: "fx-draw" });
     }
   }, fade(w, a.id));
 }
@@ -224,6 +244,8 @@ function drawShop(pen: Pen, w: World): void {
         pen.text(`${k}:n`, { x: SHOP.x + 16, y, ...SANS, "font-size": SIZE.say, "font-weight": 700, fill: COLOR.ink }, c.name);
         if (st.icon) iconText(pen, `${k}:s`, st.icon, SHOP.x + 16, y + 32, st.text, st.color, { ...SANS, "font-weight": 600 });
         else pen.text(`${k}:s:t`, { x: SHOP.x + 16, y: y + 32, ...SANS, fill: st.color }, st.text);
+        // Сквозной гэг: Борису «нет в наличии» — и стикер «скоро завезём».
+        if (c.status === "none") pill(pen, `${k}:sticker`, "скоро завезём", { x: SHOP.x + 40, y: y + 48, fill: COLOR.warn, color: COLOR.bg, attrs: { class: "fx-stamp" } });
       }, fx);
     }
   }, fade(w, "shop"));
@@ -253,13 +275,12 @@ function drawFlashback(pen: Pen, w: World): void {
       { text: "UPDATE tasks SET status = 'in_progress'\n" },
       { text: "  WHERE id = 1 AND status = 'new'" },
     ]);
-    pen.text("fb:note", { x: x + 24, y: y + 336, ...SANS, fill: COLOR.muted }, "ждали COMMIT пода A → условие перепроверено");
   }, { class: "fx-fade" });
 }
 
 /** Лесенка уровней изоляции Postgres снизу вверх: пройденные — ярко, остальные — с короткой пометкой. */
 const LADDER = [
-  { name: "READ UNCOMMITTED", note: "dirty read в Postgres нет", seen: false },
+  { name: "READ UNCOMMITTED", note: "в Postgres = READ COMMITTED", seen: false },
   { name: "READ COMMITTED", note: "по умолчанию", seen: true },
   { name: "REPEATABLE READ", note: "снимок на транзакцию", seen: true },
   { name: "SERIALIZABLE", note: "как будто по очереди", seen: false },
@@ -284,6 +305,11 @@ function drawLadder(pen: Pen, w: World): void {
         pen.text(`ladder:s${i}:t`, { x: x + 640, y: sy + 35, ...SANS, fill: l.seen ? COLOR.ok : COLOR.muted, "text-anchor": "end" }, l.note);
       }, { class: "fx-rise" });
     });
+    // Наши поды стоят на ступени, до которой дошли, — REPEATABLE READ.
+    const rr = { x: x + 34, y: y + 300 - 2 * 70 + 10 };
+    ACTORS.forEach((id, i) =>
+      pen.group(`ladder:pod:${id}`, rr.x + i * 34, rr.y, () =>
+        bob(pen, `ladder:pod:${id}:bob`, { x: 0, y: 0, color: ACTOR[id].color, tint: ACTOR[id].tint, letter: id, mood: "idle", look: { x: 1, y: 0 } }), { class: "fx-hop" }, { scale: 0.5 }));
   }, { class: "fx-fade" });
 }
 
