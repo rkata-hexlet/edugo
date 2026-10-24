@@ -111,7 +111,7 @@ function drawCheck(pen: Pen, w: World): void {
     pen.rect("check:bg", { x: 0, y: 0, width, height: 34, rx: 8, fill: c.ok ? COLOR.doneBg : COLOR.alarmBg, stroke: color, "stroke-width": 1.5 });
     pen.text("check:t", { x: 10, y: 23, ...MONO, fill: COLOR.ink }, c.text);
     icon(pen, "check:i", c.ok ? "check" : "cross", width - 30, 6, 22, color);
-  }, { class: "fx-pop" });
+  }, { class: c.ok ? "fx-pop" : "fx-shake" }); // условие не прошло — плашка вздрагивает
 }
 
 /** Снимок транзакции на REPEATABLE READ: линия над версиями, которых она не видит. */
@@ -126,12 +126,13 @@ function drawSnapshots(pen: Pen, w: World): void {
   const y = rowY(slot(w, seen)) - TABLE.gap / 2 - 1;
   const color = ACTOR[id].color;
   const top = rowY(0) - 4;
-  pen.group(`snap:${id}`, 0, 0, () => {
+  // Ключ — момент снимка: новый снимок проявляется заново, прежний держится без движения.
+  pen.group(`snap:${id}:${snap}`, 0, 0, () => {
     // Вуаль над линией — версии, которых транзакция не видит; подпись — чипом в шапке таблицы, не на стрелках.
     if (y > top) pen.rect(`snap:${id}:veil`, { x: TABLE.x - 10, y: top, width: TABLE.w + 20, height: y - top, rx: 4, fill: color, opacity: 0.1 });
     pen.line(`snap:${id}:l`, { x1: TABLE.x - 10, y1: y, x2: TABLE.x + TABLE.w + 10, y2: y, stroke: color, "stroke-width": 3, "stroke-dasharray": "10 6" });
     pill(pen, `snap:${id}:chip`, `снимок ${id} · ${clock(snap)}`, { x: 330, y: TABLE.y - 40, fill: COLOR.bg, color, stroke: color, mono: true });
-  }, fade(w, id, "row"));
+  }, { ...fade(w, id, "row"), class: "fx-fade" });
 }
 
 function drawOrders(pen: Pen, w: World): void {
@@ -183,7 +184,10 @@ function drawPod(pen: Pen, w: World, a: Actor): void {
   const mood = podMood(w, a);
   const failedNow = did(a, "fail");
   pen.group(`pod:${a.id}`, POD.x, POD_Y[a.id], () => {
-    const [fxKey, fxAttrs] = once(`pod:${a.id}:fx`, w.frame, failedNow ? "fx-jolt" : null);
+    // Отказ — вздрогнул; «нет в наличии» — сник; ждёт — дышит (единственный цикл пода, держит «ждёт»).
+    const oneShot = failedNow ? "fx-jolt" : happened(w, "none", a.id) ? "fx-droop" : null;
+    const [fxKey, fxOnce] = once(`pod:${a.id}:fx`, w.frame, oneShot);
+    const fxAttrs = oneShot ? fxOnce : mood === "wait" ? { class: "fx-breathe" } : {};
     pen.group(fxKey, 0, 0, () =>
       bob(pen, `pod:${a.id}:bob`, { x: 0, y: 0, color, tint, letter: a.id, mood, look: podLook(w, a), dashed: mood === "wait" }), fxAttrs, { scale: POD_SCALE });
     const nx = PB.w + 14;
@@ -192,7 +196,7 @@ function drawPod(pen: Pen, w: World, a: Actor): void {
       pill(pen, `pod:${a.id}:err`, "40001 · откат", { x: nx, y: 34, fill: COLOR.alarmBg, color: COLOR.error, stroke: COLOR.error, attrs: failedNow ? { class: "fx-pop" } : {} });
     } else if (a.retried && happened(w, "retry", a.id)) {
       pen.group(`pod:${a.id}:retry`, nx, 34, () => {
-        icon(pen, `pod:${a.id}:retry:i`, "replay", 0, 2, 24, COLOR.warn);
+        pen.group(`pod:${a.id}:retry:spin`, 0, 0, () => icon(pen, `pod:${a.id}:retry:i`, "replay", 0, 2, 24, COLOR.warn), { class: "fx-spin" });
         pen.text(`pod:${a.id}:retry:t`, { x: 30, y: 20, ...SANS, fill: COLOR.warn, "font-weight": 700 }, "заново");
       }, { class: "fx-pop" });
     } else if (a.thought) {
@@ -227,7 +231,7 @@ function drawPodArrows(pen: Pen, w: World): void {
         const t = to(x.version);
         pen.line(key, { ...base, x2: t.x, y2: t.y + 4, stroke: color, "stroke-width": 4, ...DRAW });
       } else if (x.kind === "wait" && a.tx?.waiting) {
-        pen.line(key, { ...base, x2: top.x + 6, y2: top.y + 14, stroke: color, "stroke-width": 2.5, "stroke-dasharray": "7 6" });
+        pen.line(key, { ...base, x2: top.x + 6, y2: top.y + 14, stroke: color, "stroke-width": 2.5, "stroke-dasharray": "7 6", class: "fx-march" });
       } else if (x.kind === "zero") {
         pen.line(key, { ...base, x2: top.x, y2: top.y + 8, stroke: COLOR.muted, "stroke-width": 2.5, ...DRAW });
         // Подпись ближе к концу стрелки, с ореолом фона — линия её не режет.
@@ -291,7 +295,7 @@ function drawShop(pen: Pen, w: World): void {
         if (c.status === "ok") {
           iconText(pen, `${k}:s`, "check", tx, top + 60, "Заказ принят", COLOR.ok, { ...SANS, "font-weight": 600 });
           // Кружка у покупателя; у лишнего заказа — только контур: подтверждение есть, кружки нет (рифма с хуком).
-          mug(pen, `${k}:mug`, { x: x + SHOP.w - MUG.w - 14, y: top + 4, ghost: extra === c.pod });
+          mug(pen, `${k}:mug`, { x: x + SHOP.w - MUG.w - 14, y: top + 4, ghost: extra === c.pod, attrs: { class: "fx-slide" } });
         }
         if (c.status === "none") {
           iconText(pen, `${k}:s`, "cross", tx, top + 60, "Нет в наличии", COLOR.muted, { ...SANS, "font-weight": 600 });
