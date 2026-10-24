@@ -1,4 +1,5 @@
 import { STAGE, type Pen, type Span } from "../../engine/contract";
+import type { Board } from "../../kit/director";
 import { BOB, bob, elephant, type Look, type Mood } from "../../kit/characters";
 import { icon } from "../../kit/icons";
 import { ACTOR, COLOR, DIM, FONT, SIZE, SQL_COLOR } from "../../kit/theme";
@@ -360,6 +361,11 @@ function drawCode(pen: Pen, w: World): void {
   }, { class: "fx-fade" });
 }
 
+/** Табло до кадра цены: только первый критерий — второй («без повтора») зритель ещё не понимает. */
+function firstOnly(b: Board): Board {
+  return { ...b, criteria: [b.criteria[0], ""], attempts: b.attempts.map((a) => ({ ...a, lamps: a.lamps && [a.lamps[0], null] })) };
+}
+
 function drawHeader(pen: Pen, w: World): void {
   const [dbKey, dbFx] = once("db:nod", w.frame, happened(w, "fail") || happened(w, "zero") ? "fx-nod" : null);
   pen.group(dbKey, 0, 0, () => elephant(pen, "db:face", { x: TABLE.x + 4, y: 8, talking: !!w.db, scale: 1.08 }), dbFx);
@@ -379,7 +385,7 @@ export function render(pen: Pen, w: World): void {
   drawRow(pen, w);
   drawOrders(pen, w);
   if (w.term) pill(pen, "term", w.term, { x: POD.x, y: 76, fill: COLOR.surface2, color: COLOR.ink, stroke: COLOR.ink, mono: true, attrs: { class: "fx-slide" } });
-  if (w.board) board(pen, w.board, { ...BOARD, lampX: [225, 410], attrs: fade(w, "board") });
+  if (w.board) board(pen, w.costShown ? w.board : firstOnly(w.board), { ...BOARD, lampX: [225, 410], attrs: fade(w, "board") });
   if (w.sql.length) sqlWindow(pen, "sql", podSql(w.sql), { x: TABLE.x, bottom: BOTTOM, attrs: fade(w, "sql") }); // SQL — только где его надо прочитать
   drawPodArrows(pen, w);
   drawShop(pen, w);

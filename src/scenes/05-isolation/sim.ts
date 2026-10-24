@@ -105,6 +105,8 @@ export interface World {
   code: Code | null;
   /** Чью линию снимка рисуем (одна линия — learning-designer); null — никакую. */
   horizon: ActorId | null;
+  /** Второй критерий табло («без повтора») виден с кадра, где голос называет цену повтора. */
+  costShown: boolean;
   /** Сверка условия UPDATE после ожидания: что проверила база и прошло ли. */
   check: { text: string; ok: boolean } | null;
   sql: string[];
@@ -141,6 +143,7 @@ export function world(): World {
     code: null,
     horizon: null,
     check: null,
+    costShown: false,
     sql: [],
     db: null,
     plate: null,
