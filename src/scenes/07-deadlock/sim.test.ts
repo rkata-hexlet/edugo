@@ -118,8 +118,8 @@ describe("сценарий не врёт", () => {
     expect(JSON.stringify(buildSteps())).toBe(JSON.stringify(steps));
   });
 
-  it("30 кадров; вставка эпизода 05 — кадр, где B ждёт у запертой строки", () => {
-    expect(steps).toHaveLength(30);
+  it("34 кадра; вставка эпизода 05 — кадр, где B ждёт у запертой строки", () => {
+    expect(steps).toHaveLength(34);
     expect(RECALL).toBeGreaterThanOrEqual(0);
     expect(steps[0].state.flashback).toBe(RECALL);
   });

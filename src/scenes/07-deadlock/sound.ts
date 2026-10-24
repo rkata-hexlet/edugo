@@ -86,11 +86,11 @@ const SPAN: Partial<Record<EventKind, number>> = {
 const TAIL: Partial<Record<EventKind, number>> = { page: 0.21, rewind: 0.15, wait: 0.28, ring: 0.12, tick: 0.3, resume: 0.05, verdict: 0.08 };
 
 /**
- * Развязка (40P01): абсолютные смещения, собранные с конца, — хвост «бзз-бзз, ну вот, динь» одинаков в кадре хука и
- * в попытке SERIALIZABLE. Перед хвостом — «так» секундомера (хук) или кольцо (SERIALIZABLE), затем двойной пинг детектора.
+ * Развязка (40P01): абсолютные смещения — «так» секундомера, двойной пинг детектора, «бзз-бзз» звучат одинаково в хуке
+ * и в попытке SERIALIZABLE. В SERIALIZABLE следом в том же кадре «ну вот» и «динь»; в хуке они — в следующем кадре.
  */
-export const RESOLUTION: Partial<Record<EventKind, number>> = { tick: 0, ring: 0, fail: 0.17, refused: 0.31, ok: 0.41 };
-const DETECT_AT = { afterTick: 0.06, afterRing: 0.1 };
+export const RESOLUTION: Partial<Record<EventKind, number>> = { tick: 0, fail: 0.17, refused: 0.31, ok: 0.41 };
+const DETECT_AT = 0.06;
 
 /** Две записи и два «динь» — да; остальное — по разу. */
 const REPEAT: Partial<Record<EventKind, number>> = { write: 2, ok: 2 };
@@ -100,11 +100,10 @@ const RECAP = new Set<EventKind>(["ring", "tick", "detect", "resume", "fail", "c
 const has = (w: World, k: EventKind) => w.events.some((e) => e.kind === k);
 
 export function score(w: World, replay = false): SimEvent[] {
-  // Развязка: только цепочка — кольцо или «так», детектор, «бзз», отказ, «динь». Записи победителя, перелистывание и
+  // Развязка: только цепочка — «так», детектор, «бзз», отказ, «динь». Записи победителя, перелистывание и
   // красная лампа тонут: кадр и так плотный, лампу видно.
   if (has(w, "fail")) {
-    // Кольцо и развязка в одном кадре (SERIALIZABLE): секунду не тикаем — её слышали в хуке.
-    const keep = new Set<EventKind>([has(w, "ring") ? "ring" : "tick", "detect", "fail", "refused", "ok"]);
+    const keep = new Set<EventKind>(["tick", "detect", "fail", "refused", "ok"]);
     const seen = new Set<EventKind>();
     return w.events.filter((e) => keep.has(e.kind) && !seen.has(e.kind) && seen.add(e.kind));
   }
@@ -130,7 +129,7 @@ export function score(w: World, replay = false): SimEvent[] {
 /** Когда звучит каждое событие кадра: развязка — по таблице, остальное — подряд, сжатое в окно событий. */
 export function schedule(w: World, events: SimEvent[]): number[] {
   if (has(w, "fail")) {
-    return events.map((e) => (e.kind === "detect" ? (has(w, "ring") ? DETECT_AT.afterRing : DETECT_AT.afterTick) : RESOLUTION[e.kind] ?? 0));
+    return events.map((e) => (e.kind === "detect" ? DETECT_AT : RESOLUTION[e.kind] ?? 0));
   }
   const starts: number[] = [];
   let t = 0;

@@ -78,10 +78,10 @@ function drawProduct(pen: Pen, w: World, p: Product, i: number): void {
       const [lk, sh] = once(`${k}:lock`, w.frame, fresh ? "fx-lock" : null);
       lock(pen, lk, { x: TABLE.w - 36, y: 9, color: ACTOR[by].color, shackle: sh });
     }
-    // Откат: списание пода, которого прервали, вернулось на склад — пунктирный чип его цвета уходит от строки.
+    // Откат: списание пода, которого прервали, отменено — пунктирный чип его цвета в строке, на месте замка: строка уже свободна.
     const undone = ACTORS.find((id) => w.actors[id].acts.some((a) => a.kind === "fail" && a.undone.includes(p.id)));
     if (undone) {
-      pen.group(`${k}:undo:${w.frame}`, TABLE.w + 14, 6, () => {
+      pen.group(`${k}:undo:${w.frame}`, TABLE.w - 98, 6, () => {
         pen.rect(`${k}:undo:bg`, { width: 92, height: 32, rx: 16, fill: COLOR.bg, stroke: ACTOR[undone].color, "stroke-width": 2, "stroke-dasharray": "5 4" });
         pen.text(`${k}:undo:t`, { x: 46, y: 22, ...SANS, "font-weight": 700, fill: ACTOR[undone].color, "text-anchor": "middle" }, "откат");
       }, { class: "fx-rise d1" });
@@ -174,10 +174,12 @@ function planSpans(w: World, a: Actor): Span[] {
   return a.plan.flatMap((id, i) => {
     const mine = holder(w, id) === a.id;
     const waits = a.tx?.waiting === id;
+    const idle = !a.tx && a.acts.length === 0; // ещё не начал — порядок обхода и есть главное
     const name = product(w, id).name;
     const attrs: Attrs = mine
       ? { fill: ACTOR[a.id].color, "font-weight": 700 }
-      : waits ? { fill: COLOR.warn, "font-weight": 700 } : { fill: COLOR.muted };
+      : waits ? { fill: COLOR.warn, "font-weight": 700 }
+      : idle ? { fill: ACTOR[a.id].color, "font-weight": 700 } : { fill: COLOR.muted };
     return [...(i ? [{ text: " → ", attrs: { fill: COLOR.faint } }] : []), { text: name, attrs }];
   });
 }
@@ -246,7 +248,9 @@ function drawShop(pen: Pen, w: World): void {
         look: c.status === "idle" ? { x: 0, y: -1 } : { x: -1, y: 0 }, attrs: pfx,
       });
       pen.text(`shop:${c.pod}:n`, { x: tx, y: top + 18, ...SANS, "font-size": SIZE.say, "font-weight": 700, fill: COLOR.ink }, c.name);
-      pen.text(`shop:${c.pod}:cart`, { x: tx, y: top + 44, ...SANS, fill: COLOR.muted }, c.cart.map((id) => product(w, id).name).join(", "));
+      // Порядок корзины — стрелкой; до нажатия — цветом пода: на встречном порядке держится весь эпизод.
+      const fresh = c.status === "idle";
+      pen.text(`shop:${c.pod}:cart`, { x: tx, y: top + 44, ...SANS, fill: fresh ? ACTOR[c.pod].color : COLOR.muted, "font-weight": fresh ? 700 : 400 }, c.cart.map((id) => product(w, id).name).join(" → "));
       pen.group(k, 0, 0, () => {
         const sx = x + 16;
         const sy = top + 80;
@@ -313,14 +317,17 @@ function drawAside(pen: Pen, a: Aside | null): void {
     return;
   }
   if (a === "paths") {
-    const rows: [string, string, boolean][] = [["оформление", "3 → 7", true], ["правка из админки", "3 → 7", true], ["приёмка на складе", "3 → 7", true], ["отмена", "7 → 3", false]];
+    const rows: [string, string, boolean][] = [
+      ["оформление", "Чайник → Кружка", true], ["правка из админки", "Чайник → Кружка", true],
+      ["приёмка на складе", "Чайник → Кружка", true], ["отмена", "Кружка → Чайник", false],
+    ];
     panel(pen, "paths:box", { x: 300, y: 170, w: 680, h: 70 + rows.length * 70 });
     rows.forEach(([name, order, ok], i) => {
       const y = 230 + i * 70;
       pen.text(`paths:n${i}`, { x: 336, y, ...SANS, "font-size": SIZE.accent, fill: ok ? COLOR.ink : COLOR.error, "font-weight": ok ? 400 : 700 }, name);
-      pen.text(`paths:o${i}`, { x: 640, y, ...MONO, "font-size": SIZE.accent, "font-weight": 700, fill: ok ? COLOR.ok : COLOR.error }, order);
-      if (ok) icon(pen, `paths:i${i}`, "check", 760, y - 20, 26, COLOR.ok);
-      else pill(pen, `paths:e${i}`, "40P01", { x: 760, y: y - 26, fill: COLOR.alarmBg, color: COLOR.error, stroke: COLOR.error, mono: true, attrs: { class: "fx-pop d2" } });
+      pen.text(`paths:o${i}`, { x: 600, y, ...SANS, "font-size": SIZE.accent, "font-weight": 700, fill: ok ? COLOR.ok : COLOR.error }, order);
+      if (ok) icon(pen, `paths:i${i}`, "check", 880, y - 20, 26, COLOR.ok);
+      else pill(pen, `paths:e${i}`, "40P01", { x: 860, y: y - 26, fill: COLOR.alarmBg, color: COLOR.error, stroke: COLOR.error, mono: true, attrs: { class: "fx-pop d2" } });
     });
     return;
   }

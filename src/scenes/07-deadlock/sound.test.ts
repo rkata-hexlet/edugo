@@ -52,25 +52,27 @@ describe("озвучка эпизода 07", () => {
     expect(k).not.toContain("wait");
   });
 
-  it("развязка хука: секунда, детектор, «бзз» 40P01 громче всего, отказ Борису и «динь» Ане", () => {
+  it("развязка хука: секунда, детектор, «бзз» 40P01 громче всего; следом отказ Борису и «динь» Ане", () => {
     const i = at(ACT.hook, "fail");
-    expect(kindsOf(i)).toEqual(["tick", "detect", "fail", "refused", "ok"]);
+    expect(kindsOf(i)).toEqual(["tick", "detect", "fail"]);
+    expect(kindsOf(i + 1)).toEqual(expect.arrayContaining(["refused", "ok"]));
+    expect(kindsOf(i + 1)).not.toContain("fail");
     const { s, calls } = recorder();
     sound(s, steps[i].state);
     expect(calls.some((c) => c.wave === "square" && c.gain >= 0.13)).toBe(true);
   });
 
-  it("рифма развязок: хвост «бзз, отказ, динь» в хуке и в попытке SERIALIZABLE звучит в те же моменты", () => {
+  it("рифма развязок: «так», пинг и «бзз» в хуке и в попытке SERIALIZABLE звучат в те же моменты", () => {
     const tail = (i: number) => {
       const w = steps[i].state;
       const ev = score(w);
       const at = schedule(w, ev);
-      return Object.fromEntries(ev.map((e, j) => [e.kind, at[j]]).filter(([k]) => ["fail", "refused", "ok"].includes(k as string)));
+      return Object.fromEntries(ev.map((e, j) => [e.kind, at[j]]).filter(([k]) => ["tick", "detect", "fail"].includes(k as string)));
     };
     const hook = tail(at(ACT.hook, "fail"));
-    expect(Object.keys(hook)).toEqual(["fail", "refused", "ok"]);
+    expect(Object.keys(hook)).toEqual(["tick", "detect", "fail"]);
     expect(tail(at(ACT.ser, "fail"))).toEqual(hook);
-    expect(kindsOf(at(ACT.ser, "fail"))).toEqual(["ring", "detect", "fail", "refused", "ok"]);
+    expect(kindsOf(at(ACT.ser, "fail"))).toEqual(["tick", "detect", "fail", "refused", "ok"]);
   });
 
   it("очередь звучит спокойнее кольца: в кадре сортировки нет лязга, тики ожидания тише", () => {
