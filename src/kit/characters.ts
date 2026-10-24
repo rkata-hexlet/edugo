@@ -91,7 +91,11 @@ function mouth(pen: Pen, key: string, mood: Mood): void {
 }
 
 /** Слон-Postgres: голова с ухом, хоботом и очками. (x, y) — левый верхний угол квадрата 56×56; scale — крупнее. */
-export function elephant(pen: Pen, key: string, o: { x: number; y: number; talking: boolean; scale?: number }): void {
+/**
+ * Слон-Postgres. `look` — куда смотрят зрачки (на строку, на поды); `frown` — нахмурен (отказ, 0 строк).
+ * Без них — прежний слон эпизодов 01–02.
+ */
+export function elephant(pen: Pen, key: string, o: { x: number; y: number; talking: boolean; scale?: number; look?: Look; frown?: boolean }): void {
   const skin = "#8ea4d6";
   pen.group(key, o.x, o.y, () => {
     pen.rect(`${key}:ear`, { x: 22, y: 4, width: 34, height: 40, rx: 17, fill: "#6d82b3" });
@@ -104,7 +108,11 @@ export function elephant(pen: Pen, key: string, o: { x: number; y: number; talki
     // Очки: две оправы и перемычка.
     [8, 24].forEach((ex, i) => pen.rect(`${key}:lens${i}`, { x: ex, y: 15, width: 13, height: 12, rx: 6, fill: "#e8edff", stroke: COLOR.bg, "stroke-width": 2 }));
     pen.line(`${key}:bridge`, { x1: 21, y1: 21, x2: 24, y2: 21, stroke: COLOR.bg, "stroke-width": 2 });
-    [14.5, 30.5].forEach((ex, i) => pen.rect(`${key}:pupil${i}`, { x: ex - 2.5, y: 19, width: 5, height: 5, rx: 2.5, fill: COLOR.bg }));
+    const px = (o.look?.x ?? 0) * 3;
+    const py = (o.look?.y ?? 0) * 2.5;
+    [14.5, 30.5].forEach((ex, i) => pen.rect(`${key}:pupil${i}`, { x: ex - 2.5 + px, y: 19 + py, width: 5, height: 5, rx: 2.5, fill: COLOR.bg }));
+    if (o.frown) [[8, 10, 19, 14], [36, 10, 25, 14]].forEach(([x1, y1, x2, y2], i) =>
+      pen.line(`${key}:brow${i}`, { x1, y1, x2, y2, stroke: COLOR.bg, "stroke-width": 3, "stroke-linecap": "round" }));
   }, {}, { scale: o.scale ?? 1 });
 }
 
