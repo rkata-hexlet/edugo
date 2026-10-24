@@ -7,7 +7,7 @@ import { awning, buyButton, lock, MUG, mug, person, PERSON, type PersonMood } fr
 import { highlightSql } from "../../kit/sql";
 import { board, bubble, iconText, once, panel, pill, plate, podSql, sqlWindow, stamp } from "../../kit/widgets";
 import { clock } from "./script";
-import { ACTORS, STOCK, latest, type Act, type Actor, type ActorId, type Focus, type SimEvent, type World } from "./sim";
+import { ACTORS, STOCK, latest, type Act, type Actor, type ActorId, type Code, type Focus, type SimEvent, type World } from "./sim";
 
 // Поды стоят на месте; что они делают, говорят стрелки — только из состояния кадра (Actor.acts).
 // Сетка (1280×720): шапка; слева строка товара стопкой версий (новая сверху) и таблица orders, под ними SQL;
@@ -395,9 +395,8 @@ function highlightGo(lines: string[]): Span[][] {
   });
 }
 
-/** Код пода на Go: окно поверх сцены, подсвеченные строки — где беда (жёлтым) или что поправили (зелёным). */
-function drawCode(pen: Pen, w: World): void {
-  const c = w.code;
+/** Код пода на Go: окно поверх сцены, подсвеченные строки — где беда (жёлтым) или что поправили (зелёным). Эпизод 06 берёт его же. */
+export function drawCode(pen: Pen, c: Code | null): void {
   if (!c) return;
   // Окно одного размера во всех кадрах кода: при смене кадра меняются только подсвеченные строки.
   const lineH = 34;
@@ -459,7 +458,7 @@ export function render(pen: Pen, w: World): void {
     if (w.code || w.flashback || w.ladder) pen.rect("scrim", { x: 0, y: OVERLAY.y - 8, width: STAGE.w, height: SAFE_BOTTOM - OVERLAY.y + 8, fill: COLOR.bg, opacity: 0.92, class: "fx-fade" });
     drawFlashback(pen, w);
     drawLadder(pen, w);
-    drawCode(pen, w);
+    drawCode(pen, w.code);
     if (w.plate) {
       const [head, ...rest] = w.plate.split("\n");
       plate(pen, "plate", head, rest.join("\n"), STAGE);

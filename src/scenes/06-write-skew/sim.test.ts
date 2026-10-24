@@ -142,3 +142,121 @@ describe("счётчик в строке слота (2.3)", () => {
     expect(w.reason.B).toBe("update");
   });
 });
+
+import { speechParts } from "../../engine/narrator";
+import { ACT, PRONOUNCE, RECALL_STEP, buildSteps } from "./script";
+import type { EventKind } from "./sim";
+
+const steps = buildSteps();
+const frames = (act: string) => steps.filter((s) => s.act === act).map((s) => s.state);
+const kinds = (w: World) => w.events.map((e) => e.kind);
+
+describe("сценарий не врёт", () => {
+  it("детерминирован", () => {
+    expect(JSON.stringify(buildSteps())).toBe(JSON.stringify(steps));
+  });
+
+  it("открывается кадром 40001 эпизода 05", () => {
+    expect(RECALL_STEP).toBeGreaterThanOrEqual(0);
+    expect(steps[0].state.flashback).toBe(RECALL_STEP);
+    expect(steps.filter((s) => s.state.flashback !== null)).toHaveLength(1);
+  });
+
+  it("хук на REPEATABLE READ: никто не ждал и не упал, оба получили подтверждение, коробок четыре", () => {
+    const fs = frames(ACT.hook);
+    const w = fs.at(-1)!;
+    expect(overloaded(w)).toBe(true);
+    expect(boxes(w)).toBe(4);
+    expect(w.customers.map((c) => c.status)).toEqual(["ok", "ok"]);
+    expect(fs.some((x) => kinds(x).includes("wait") || kinds(x).includes("fail"))).toBe(false);
+    expect(steps.find((s) => s.act === ACT.hook)!.state.sql.length).toBe(0);
+  });
+
+  it("норма: по очереди — Аня записалась, Борис видит «слот занят»", () => {
+    const w = frames(ACT.norm).at(-1)!;
+    expect(overloaded(w)).toBe(false);
+    expect(w.customers.map((c) => c.status)).toEqual(["ok", "busy"]);
+  });
+
+  it("каждая попытка стартует одинаково: два заказа в слоте на три места", () => {
+    for (const act of [ACT.rr, ACT.ser, ACT.counter]) {
+      const w = frames(act).find((x) => kinds(x).includes("press"))!;
+      expect(w, act).toBeDefined();
+      expect(w.orders.filter((o) => o.by === null), act).toHaveLength(2);
+      expect(w.slot[0], act).toEqual({ booked: 2, by: null, at: 0 });
+    }
+  });
+
+  it("табло не врёт: лампы сверены с моделью в кадре оценки", () => {
+    let checked = 0;
+    for (const step of steps) {
+      const w = step.state;
+      if (!kinds(w).includes("verdict")) continue;
+      checked++;
+      const t = w.board!.attempts.at(-1)!;
+      const [load, again] = t.lamps!;
+      if (load) expect(load === "green", `${t.name}: курьер`).toBe(!overloaded(w));
+      if (again) expect(again === "green", `${t.name}: повторы`).toBe(!retried(w));
+    }
+    expect(checked).toBe(3);
+  });
+
+  it("второй критерий табло виден с кадра цены и до конца кейса", () => {
+    const from = steps.findIndex((s) => s.state.costShown);
+    expect(steps[from].act).toBe(ACT.ser);
+    expect(steps.slice(from).filter((s) => s.state.board).every((s) => s.state.costShown)).toBe(true);
+  });
+
+  it("SERIALIZABLE: никто не ждёт; 40001 у B — на COMMIT, после коммита A; метки — без замка", () => {
+    const fs = frames(ACT.ser);
+    expect(fs.some((x) => kinds(x).includes("wait"))).toBe(false);
+    const fail = fs.find((x) => kinds(x).includes("fail"))!;
+    expect(fail.reason.B ?? "deps").toBe("deps");
+    const k = kinds(fail);
+    expect(k.indexOf("commit")).toBeLessThan(k.indexOf("fail"));
+    expect(fail.events.find((e) => e.kind === "fail")!.by).toBe("B");
+    expect(fs.some((x) => x.slotLockedBy !== null)).toBe(false);
+  });
+
+  it("40001 — только на SERIALIZABLE; ожидание и 0 строк — только у счётчика в строке, на READ COMMITTED", () => {
+    const acts = (kind: EventKind) => new Set(steps.filter((s) => kinds(s.state).includes(kind) && s.act !== ACT.summary).map((s) => s.act));
+    expect(acts("fail")).toEqual(new Set([ACT.ser]));
+    expect(acts("zero")).toEqual(new Set([ACT.counter]));
+    expect(acts("wait")).toEqual(new Set([ACT.counter]));
+    const press = frames(ACT.counter).find((x) => kinds(x).includes("press"))!;
+    expect(press.sql.filter((q) => q.includes("BEGIN")).every((q) => q.endsWith("BEGIN"))).toBe(true);
+  });
+
+  it("диктор есть во всех кадрах и не читает команды целиком", () => {
+    expect(steps.every((s) => s.narration), "кадр без голоса").toBe(true);
+    for (const s of steps) expect(s.narration).not.toMatch(/SELECT|WHERE|BEGIN|INSERT/);
+  });
+
+  it("закадр: не больше одного тире на кадр", () => {
+    expect(steps.filter((s) => (s.narration?.match(/ — /g) ?? []).length > 1).map((s) => s.narration)).toEqual([]);
+  });
+
+  it("закадр: буквы подов — по-русски; о собеседованиях не говорим; слово «фантом» не берём", () => {
+    for (const s of steps.filter((x) => x.narration)) {
+      for (const p of speechParts(s.narration!, PRONOUNCE)) expect(p.text, s.narration).not.toMatch(/(?<![A-Za-z])[AB](?![A-Za-z])/);
+    }
+    expect(steps.filter((s) => /собес|фантом|phantom/i.test(s.narration ?? ""))).toEqual([]);
+  });
+
+  it("реплика Postgres — до 37 знаков", () => {
+    expect(steps.map((s) => s.state.db).filter((t) => t && t.length > 37)).toEqual([]);
+  });
+
+  it("ярлык акта появляется не раньше своей механики и держится до конца акта", () => {
+    const mechanic: Record<string, EventKind> = { [ACT.rr]: "overload", [ACT.ser]: "dep", [ACT.counter]: "zero" };
+    for (const [act, kind] of Object.entries(mechanic)) {
+      const fs = frames(act);
+      const first = fs.findIndex((w) => w.term !== null);
+      expect(first, act).toBeGreaterThanOrEqual(0);
+      expect(fs.slice(0, first + 1).some((w) => kinds(w).includes(kind)), act).toBe(true);
+      expect(fs.slice(first).every((w) => w.term === fs[first].term), act).toBe(true);
+    }
+    const bare = [ACT.intro, ACT.hook, ACT.norm, ACT.case2, ACT.choice, ACT.summary] as string[];
+    expect(steps.filter((s) => bare.includes(s.act)).every((s) => s.state.term === null)).toBe(true);
+  });
+});
