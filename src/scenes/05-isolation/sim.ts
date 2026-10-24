@@ -76,7 +76,7 @@ export type Focus = ActorId | "row" | "orders" | "shop" | "board" | "clock" | "s
 export interface Code {
   title: string;
   lines: string[];
-  mark: { line: number; tone: "warn" | "ok" }[];
+  mark: { line: number; tone: "warn" | "ok"; note?: string }[];
 }
 
 export type EventKind =

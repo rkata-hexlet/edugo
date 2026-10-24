@@ -2,7 +2,7 @@ import { STAGE, type Pen, type Span } from "../../engine/contract";
 import type { Board } from "../../kit/director";
 import { BOB, bob, elephant, type Look, type Mood } from "../../kit/characters";
 import { icon } from "../../kit/icons";
-import { ACTOR, COLOR, DIM, FONT, SIZE, SQL_COLOR } from "../../kit/theme";
+import { ACTOR, COLOR, DIM, FONT, SAFE_BOTTOM, SIZE, SQL_COLOR } from "../../kit/theme";
 import { highlightSql } from "../../kit/sql";
 import { board, bubble, iconText, once, panel, pill, plate, podSql, sqlWindow, stamp } from "../../kit/widgets";
 import { clock } from "./script";
@@ -19,13 +19,17 @@ const TABLE = { x: 40, y: 124, w: 400, rowH: 38, gap: 5 };
 const ORDERS = { y: 312 };
 const SHOP = { x: 984, y: 130, w: 256, h: 326 };
 const CARD_Y: Record<ActorId, number> = { A: 236, B: 366 };
-const BOARD = { x: 750, y: 466, w: 490, rowH: 26 };
+const BOARD = { x: 750, y: 486, w: 490, rowH: 26 };
+/** Оверлеи (код, вставка 01, лесенка): под ярлыком акта, на скриме поверх сцены. */
+const OVERLAY = { y: 124 };
 const BOTTOM = 650;
 const DB = { x: 100, w: 130 };
 
 const MONO = { "font-family": FONT.mono, "font-size": SIZE.body };
 const SANS = { "font-family": FONT.sans, "font-size": SIZE.body };
 const DRAW = { pathLength: 1, class: "fx-draw" };
+/** Ореол фона вокруг подписи на линии. */
+const HALO = { "paint-order": "stroke", stroke: COLOR.bg, "stroke-width": 6, "stroke-linejoin": "round" };
 
 const rowY = (p: number) => TABLE.y + p * (TABLE.rowH + TABLE.gap);
 const orderY = (i: number) => ORDERS.y + i * (TABLE.rowH + TABLE.gap);
@@ -89,10 +93,12 @@ function drawCheck(pen: Pen, w: World): void {
   const c = w.check;
   if (!c) return;
   const color = c.ok ? COLOR.ok : COLOR.error;
-  pen.group("check", TABLE.x + TABLE.w + 14, TABLE.y + 54, () => {
-    pen.rect("check:bg", { x: 0, y: 0, width: 176, height: 34, rx: 8, fill: c.ok ? COLOR.doneBg : COLOR.alarmBg, stroke: color, "stroke-width": 1.5 });
+  // У пода B, а не на его стрелке: это его условие перепроверила база (motion-designer).
+  const width = pen.measure(c.text, MONO).width + 52;
+  pen.group("check", POD.x + BOB.w + 14, POD_Y.B + 34, () => {
+    pen.rect("check:bg", { x: 0, y: 0, width, height: 34, rx: 8, fill: c.ok ? COLOR.doneBg : COLOR.alarmBg, stroke: color, "stroke-width": 1.5 });
     pen.text("check:t", { x: 10, y: 23, ...MONO, fill: COLOR.ink }, c.text);
-    icon(pen, "check:i", c.ok ? "check" : "cross", 146, 6, 22, color);
+    icon(pen, "check:i", c.ok ? "check" : "cross", width - 30, 6, 22, color);
   }, { class: "fx-pop" });
 }
 
@@ -107,10 +113,12 @@ function drawSnapshots(pen: Pen, w: World): void {
   while (seen > 0 && !(w.versions[seen].at !== null && w.versions[seen].at! <= snap)) seen--;
   const y = rowY(slot(w, seen)) - TABLE.gap / 2 - 1;
   const color = ACTOR[id].color;
+  const top = rowY(0) - 4;
   pen.group(`snap:${id}`, 0, 0, () => {
-    pen.line(`snap:${id}:l`, { x1: TABLE.x - 10, y1: y, x2: TABLE.x + TABLE.w + 10, y2: y, stroke: color, "stroke-width": 4, "stroke-dasharray": "10 6" });
-    pen.text(`snap:${id}:t`, { x: TABLE.x + TABLE.w + 18, y: y + 26, ...SANS, fill: color, "font-weight": 700 }, `снимок ${id}`);
-    pen.text(`snap:${id}:c`, { x: TABLE.x + TABLE.w + 18, y: y + 50, ...MONO, fill: color }, clock(snap));
+    // Вуаль над линией — версии, которых транзакция не видит; подпись — чипом в шапке таблицы, не на стрелках.
+    if (y > top) pen.rect(`snap:${id}:veil`, { x: TABLE.x - 10, y: top, width: TABLE.w + 20, height: y - top, rx: 4, fill: color, opacity: 0.1 });
+    pen.line(`snap:${id}:l`, { x1: TABLE.x - 10, y1: y, x2: TABLE.x + TABLE.w + 10, y2: y, stroke: color, "stroke-width": 3, "stroke-dasharray": "10 6" });
+    pill(pen, `snap:${id}:chip`, `снимок ${id} · ${clock(snap)}`, { x: 330, y: TABLE.y - 40, fill: COLOR.bg, color, stroke: color, mono: true });
   }, fade(w, id, "row"));
 }
 
@@ -174,7 +182,7 @@ function drawPod(pen: Pen, w: World, a: Actor): void {
     // Опровергнутая мысль: зачёркнута красным в кадре отказа.
     if (a.crossed) {
       const ty = a.failed ? 92 : 52;
-      const b = bubble(pen, `pod:${a.id}:crossed`, a.crossed, { x: nx - 4, y: ty, tail: "left", thought: true, attrs: { opacity: 0.6 } });
+      const b = bubble(pen, `pod:${a.id}:crossed`, a.crossed, { x: nx - 4, y: ty, tail: "left", thought: true, attrs: { opacity: 0.4 } });
       pen.line(`pod:${a.id}:strike`, { x1: nx + 8, y1: ty, x2: nx + 8 + b.w, y2: ty, stroke: COLOR.error, "stroke-width": 3.5, "stroke-linecap": "round", pathLength: 1, class: "fx-draw" });
     }
   }, fade(w, a.id));
@@ -191,21 +199,28 @@ function drawPodArrows(pen: Pen, w: World): void {
     const top = { x: TABLE.x + TABLE.w + 8, y: rowY(0) + TABLE.rowH / 2 };
     a.acts.forEach((x, n) => {
       const key = `arr:${id}:${n}`;
-      const base = { x1: from.x, y1: from.y - 10 + n * 4, "stroke-linecap": "round", marker: "arrow", opacity: op };
+      // Концы стрелок разнесены по высоте: чтение выше, запись по центру, ожидание ниже — наконечники не сливаются.
+      const base = { x1: from.x, y1: from.y - 12 + n * 8, "stroke-linecap": "round", marker: "arrow", opacity: op };
       if (x.kind === "read") {
         const t = to(x.version);
-        pen.line(key, { ...base, x2: t.x, y2: t.y + (id === "A" ? -6 : 6), stroke: COLOR.muted, "stroke-width": 2, ...DRAW });
+        pen.line(key, { ...base, x2: t.x, y2: t.y - 8, stroke: COLOR.muted, "stroke-width": 2, ...DRAW });
       } else if (x.kind === "write") {
         const t = to(x.version);
-        pen.line(key, { ...base, x2: t.x, y2: t.y, stroke: color, "stroke-width": 4, ...DRAW });
+        pen.line(key, { ...base, x2: t.x, y2: t.y + 4, stroke: color, "stroke-width": 4, ...DRAW });
       } else if (x.kind === "wait" && a.tx?.waiting) {
-        pen.line(key, { ...base, x2: top.x, y2: top.y + 8, stroke: color, "stroke-width": 2.5, "stroke-dasharray": "7 6" });
+        pen.line(key, { ...base, x2: top.x + 6, y2: top.y + 14, stroke: color, "stroke-width": 2.5, "stroke-dasharray": "7 6" });
       } else if (x.kind === "zero") {
         pen.line(key, { ...base, x2: top.x, y2: top.y + 8, stroke: COLOR.muted, "stroke-width": 2.5, ...DRAW });
-        pen.text(`${key}:t`, { x: (from.x + top.x) / 2 - 30, y: (from.y + top.y) / 2 - 6, ...SANS, fill: COLOR.muted, "font-weight": 700, opacity: op }, "0 строк");
+        // Подпись ближе к концу стрелки, с ореолом фона — линия её не режет.
+        const lx = from.x + (top.x - from.x) * 0.72;
+        const ly = from.y + (top.y - from.y) * 0.72;
+        pen.text(`${key}:t`, { x: lx + 14, y: ly + 6, ...SANS, fill: COLOR.muted, "font-weight": 700, opacity: op, ...HALO }, "0 строк");
       } else if (x.kind === "fail") {
         pen.line(key, { ...base, x2: top.x, y2: top.y + 8, stroke: COLOR.error, "stroke-width": 3, ...DRAW });
-        icon(pen, `${key}:x`, "cross", (from.x + top.x) / 2 - 12, (from.y + top.y) / 2 - 14, 24, COLOR.error, { opacity: op });
+        const cx = (from.x + top.x) / 2;
+        const cy = (from.y + top.y) / 2;
+        pen.rect(`${key}:xb`, { x: cx - 15, y: cy - 15, width: 30, height: 30, rx: 15, fill: COLOR.bg, opacity: op });
+        icon(pen, `${key}:x`, "cross", cx - 12, cy - 12, 24, COLOR.error, { opacity: op });
       }
     });
     // Итог для покупателя: подтверждение или «нет в наличии».
@@ -255,8 +270,8 @@ function drawShop(pen: Pen, w: World): void {
 /** Вставка эпизода 01: та же развилка в очереди задач — B и C дождались коммита A, условие перепроверено. */
 function drawFlashback(pen: Pen, w: World): void {
   if (!w.flashback) return;
-  const x = 280;
-  const y = 104;
+  const x = (STAGE.w - 700) / 2;
+  const y = OVERLAY.y;
   pen.group("fb", 0, 0, () => {
     panel(pen, "fb:box", { x, y, w: 700, h: 360, fill: COLOR.bg2, stroke: COLOR.muted });
     pen.text("fb:title", { x: x + 24, y: y + 40, ...SANS, "font-size": SIZE.accent, "font-weight": 700, fill: COLOR.muted }, "Эпизод 01 · очередь задач");
@@ -290,7 +305,7 @@ const LADDER = [
 function drawLadder(pen: Pen, w: World): void {
   if (!w.ladder) return;
   const x = 300;
-  const y = 104;
+  const y = OVERLAY.y;
   pen.group("ladder", 0, 0, () => {
     panel(pen, "ladder:box", { x, y, w: 680, h: 380, fill: COLOR.bg2, stroke: COLOR.muted });
     pen.text("ladder:title", { x: x + 24, y: y + 40, ...SANS, "font-size": SIZE.accent, "font-weight": 700, fill: COLOR.muted }, "Уровни изоляции в Postgres");
@@ -307,12 +322,15 @@ function drawLadder(pen: Pen, w: World): void {
       }, { class: "fx-rise" });
     });
     // Наши поды стоят на ступени, до которой дошли, — REPEATABLE READ.
-    const rr = { x: x + 34, y: y + 300 - 2 * 70 + 10 };
+    const rr = { x: x + 22, y: y + 300 - 2 * 70 + 10 };
     ACTORS.forEach((id, i) =>
       pen.group(`ladder:pod:${id}`, rr.x + i * 34, rr.y, () =>
         bob(pen, `ladder:pod:${id}:bob`, { x: 0, y: 0, color: ACTOR[id].color, tint: ACTOR[id].tint, letter: id, mood: "idle", look: { x: 1, y: 0 } }), { class: "fx-hop" }, { scale: 0.5 }));
   }, { class: "fx-fade" });
 }
+
+/** Строк в самом длинном фрагменте кода — по нему высота окна. */
+const CODE_LINES = 10;
 
 const GO_KEYWORDS = /^(if|var|for|func|return|break|range|else)$/;
 
@@ -341,22 +359,24 @@ function highlightGo(lines: string[]): Span[][] {
 function drawCode(pen: Pen, w: World): void {
   const c = w.code;
   if (!c) return;
-  const lineH = 30;
+  // Окно одного размера во всех кадрах кода: при смене кадра меняются только подсвеченные строки.
+  const lineH = 34;
   const x = 200;
-  const y = 104;
-  const h = 72 + c.lines.length * lineH + 12;
+  const y = OVERLAY.y;
+  const h = 76 + CODE_LINES * lineH + 8;
   pen.group("code", 0, 0, () => {
     panel(pen, "code:box", { x, y, w: 880, h, fill: "#11172e", stroke: COLOR.muted });
     pen.text("code:title", { x: x + 28, y: y + 40, ...SANS, "font-size": SIZE.accent, "font-weight": 700, fill: COLOR.muted }, c.title);
     highlightGo(c.lines).forEach((spans, i) => {
-      const ly = y + 82 + i * lineH;
+      const ly = y + 86 + i * lineH;
       const mark = c.mark.find((m) => m.line === i);
       if (mark) {
         const tone = mark.tone === "warn" ? COLOR.warn : COLOR.ok;
-        pen.rect(`code:m${i}`, { x: x + 16, y: ly - 21, width: 848, height: lineH - 2, rx: 4, fill: mark.tone === "warn" ? COLOR.draftBg : COLOR.doneBg, class: "fx-fade" });
-        pen.rect(`code:b${i}`, { x: x + 16, y: ly - 21, width: 4, height: lineH - 2, fill: tone });
+        pen.rect(`code:m${i}`, { x: x + 16, y: ly - 24, width: 848, height: lineH - 2, rx: 4, fill: mark.tone === "warn" ? COLOR.draftBg : COLOR.doneBg, class: "fx-fade" });
+        pen.rect(`code:b${i}`, { x: x + 16, y: ly - 24, width: 4, height: lineH - 2, fill: tone });
+        if (mark.note) pill(pen, `code:n${i}`, mark.note, { x: x + 856 - pen.measure(mark.note, SANS).width - 28, y: ly - 22, fill: COLOR.bg, color: tone, stroke: tone, attrs: { class: "fx-pop" } });
       }
-      pen.text(`code:l${i}`, { x: x + 32, y: ly, ...MONO }, spans);
+      pen.text(`code:l${i}`, { x: x + 32, y: ly, ...MONO, "font-size": SIZE.say }, spans);
     });
   }, { class: "fx-fade" });
 }
@@ -391,6 +411,8 @@ export function render(pen: Pen, w: World): void {
   drawShop(pen, w);
   for (const id of ACTORS) drawPod(pen, w, w.actors[id]);
   pen.layer("top", () => {
+    // Скрим под оверлеями: сцена не торчит по краям окна; шапку, ярлык и пустой низ кадра не трогает.
+    if (w.code || w.flashback || w.ladder) pen.rect("scrim", { x: 0, y: OVERLAY.y - 8, width: STAGE.w, height: SAFE_BOTTOM - OVERLAY.y + 8, fill: COLOR.bg, opacity: 0.92, class: "fx-fade" });
     drawFlashback(pen, w);
     drawLadder(pen, w);
     drawCode(pen, w);
