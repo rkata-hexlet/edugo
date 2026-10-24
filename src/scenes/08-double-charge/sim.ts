@@ -88,6 +88,8 @@ export interface SimEvent {
   kind: EventKind;
   by?: ActorId;
   lamps?: Verdict;
+  /** tick: сколько секунд прошло. */
+  n?: number;
 }
 
 export interface World {
@@ -275,7 +277,7 @@ export function crash(w: World, who: ActorId): void {
 /** Часы БД идут. */
 export function advance(w: World, seconds: number): void {
   w.clock += seconds;
-  w.events.push({ kind: "tick" });
+  w.events.push({ kind: "tick", n: seconds });
 }
 
 /** Попытки с двумя списаниями: по ключу попытки, без ключа — по номеру заказа. */

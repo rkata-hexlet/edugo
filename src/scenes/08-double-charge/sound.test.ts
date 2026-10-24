@@ -40,4 +40,12 @@ describe("озвучка эпизода 08", () => {
       expect(steps.some((s) => s.act === act && score(s.state).some((e) => e.kind === "double")), act).toBe(true);
     }
   });
+
+  it("полминуты на часах БД звучат трелью, а не одним тиком", () => {
+    const tick = steps.find((x) => x.state.events.some((e) => e.kind === "tick" && (e.n ?? 0) >= 20));
+    expect(tick).toBeDefined();
+    const { s, calls } = recorder();
+    sound(s, { ...tick!.state, events: tick!.state.events.filter((e) => e.kind === "tick") });
+    expect(calls.filter((c) => c.kind === "tone").length).toBe(6);
+  });
 });
