@@ -7,9 +7,10 @@ import { skipLocked } from "./scenes/01-skip-locked";
 import { cache } from "./scenes/02-cache";
 import { isolation } from "./scenes/05-isolation";
 import { writeSkew } from "./scenes/06-write-skew";
+import { deadlock } from "./scenes/07-deadlock";
 
 // У каждой сцены свой тип состояния; плееру он не важен — сцена сама рисует своё состояние.
-const scenes: Record<string, Scene<any>> = { [skipLocked.id]: skipLocked, [cache.id]: cache, [isolation.id]: isolation, [writeSkew.id]: writeSkew };
+const scenes: Record<string, Scene<any>> = { [skipLocked.id]: skipLocked, [cache.id]: cache, [isolation.id]: isolation, [writeSkew.id]: writeSkew, [deadlock.id]: deadlock };
 
 const params = new URLSearchParams(location.search);
 const scene = scenes[params.get("scene") ?? skipLocked.id] ?? skipLocked;
