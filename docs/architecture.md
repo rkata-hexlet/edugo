@@ -26,7 +26,7 @@
   префиксом пода `podSql`, штамп перемотки `stamp`, `iconText`, разовый эффект `once`, плашка главы),
   `director` (режиссёр серии, см. `script.ts` ниже; типы `Board`, `Lamp`, `Verdict`), `sql`
   (`highlightSql` → `Span[]`), `characters` (под-«боб» с эмоцией `Mood` и взглядом `Look`,
-  слон-Postgres, лицо Почты), `widgets.meter` (полоса нагрузки с потолком), `motion.css` (словарь движений `fx-*`: pop, slide, rise,
+  слон-Postgres, лицо Почты), `widgets.meter` (полоса нагрузки с потолком), `code` (окно кода на Go `codeWindow`, подсветка `highlightGo`; SQL внутри `…` — как SQL), `motion.css` (словарь движений `fx-*`: pop, slide, rise,
   stamp, draw, hop, shake, jolt, nod, pulse, cascade — всё в первые 450 мс кадра). Kit не знает ни
   плеера, ни моделей эпизодов: эмоцию, взгляд и эффект выбирает `view.ts` по состоянию кадра и
   `World.events`. Разовый эффект — новый ключ узла (`World.frame` в ключе), свежий стол — `World.scene`.
