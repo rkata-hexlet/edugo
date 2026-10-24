@@ -116,7 +116,8 @@ function drawArrows(pen: Pen, w: World): void {
     a.acts.forEach((x, n) => {
       const k = `arr:${id}:${n}`;
       const draw = drawIn(n);
-      if (x.kind === "req") {
+      // В кадрах балансировщика запрос идёт через его узел — ветку рисует drawBalancer.
+      if (x.kind === "req" && !w.focus?.includes("lb")) {
         pen.line(k, { x1: phoneEdge, y1: mid - 14, x2: left, y2: mid - 14, stroke: color, "stroke-width": 3, marker: "arrow", opacity: op, ...draw });
         if (x.key && !a.dead) icon(pen, `${k}:key`, "key", (phoneEdge + left) / 2 - 13, mid - 46, 26, COLOR.warn, { opacity: op });
       }
@@ -180,10 +181,11 @@ function drawBalancer(pen: Pen, w: World): void {
   const to = ACTORS.filter((id) => !w.actors[id].acts.length || w.actors[id].acts.some((x) => x.kind === "req"));
   const all = to.length === ACTORS.length;
   pen.group("lb", 0, 0, () => {
-    pen.line("lb:in", { x1: PHONE.x + PHONE.w + 6, y1: LB.y, x2: LB.x - LB.r - 4, y2: LB.y, stroke: COLOR.muted, "stroke-width": 2, marker: "arrow", ...drawIn(0) });
+    const one = all ? null : ACTOR[to[0]].color;
+    pen.line("lb:in", { x1: PHONE.x + PHONE.w + 6, y1: LB.y, x2: LB.x - LB.r - 4, y2: LB.y, stroke: one ?? COLOR.muted, "stroke-width": one ? 3 : 2, marker: "arrow", ...drawIn(0) });
     to.forEach((id) => pen.line(`lb:to${id}`, {
-      x1: LB.x + LB.r, y1: LB.y, x2: POD.x - 10, y2: podMid(id), stroke: ACTOR[id].color, "stroke-width": 2,
-      ...(all ? { "stroke-dasharray": "4 4", opacity: 0.6 } : {}), marker: "arrow", ...drawIn(1),
+      x1: LB.x + LB.r, y1: LB.y, x2: POD.x - 10, y2: podMid(id), stroke: ACTOR[id].color,
+      ...(all ? { "stroke-width": 2, "stroke-dasharray": "4 4", opacity: 0.6 } : { "stroke-width": 3 }), marker: "arrow", ...drawIn(1),
     }));
     pen.rect("lb:node", { x: LB.x - LB.r, y: LB.y - LB.r, width: LB.r * 2, height: LB.r * 2, rx: LB.r, fill: COLOR.bg2, stroke: COLOR.muted, "stroke-width": 2, class: "fx-pop" });
     pen.path("lb:fork", { d: `M${LB.x - 8} ${LB.y}H${LB.x}M${LB.x} ${LB.y}L${LB.x + 7} ${LB.y - 7}M${LB.x} ${LB.y}L${LB.x + 7} ${LB.y + 7}`, stroke: COLOR.muted, "stroke-width": 2, fill: "none" });
