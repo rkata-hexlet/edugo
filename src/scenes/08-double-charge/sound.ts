@@ -78,6 +78,9 @@ const RECIPES: Partial<Record<EventKind, Recipe>> = {
   }),
 };
 
+/** Самое позднее смещение тона внутри рецепта, с. */
+const SPAN: Partial<Record<EventKind, number>> = { double: 0.4, replayed: 0.2, lost: 0.12, conflict: 0.12, done: 0.1, charge: 0.1, tick: 0.24, crash: 0.05, page: 0.05 };
+
 /** Смена сцены первой, табло — последним; остальное — в порядке событий. */
 const RANK: Partial<Record<EventKind, number>> = { rewind: 0, page: 0, card: 0, verdict: 3 };
 const RECAP = new Set<EventKind>(["lost", "charge", "double", "replayed", "conflict", "crash", "takeover", "reply"]);
@@ -105,16 +108,12 @@ export function sound(out: Sound, w: World, replay = false): void {
     noise: (o) => out.noise({ ...o, gain: (o.gain ?? 0.1) * k }),
     babble: (v, t, a) => out.babble({ ...v, gain: v.gain * k }, t, a),
   };
-  // Хвосты рецептов не выходят из окна событий: голос диктора — с 0.5 с.
-  const t: Sound = {
-    ...s,
-    tone: (o) => s.tone({ ...o, at: Math.min(o.at ?? 0, EVENT_WINDOW) }),
-    noise: (o) => s.noise({ ...o, at: Math.min(o.at ?? 0, EVENT_WINDOW) }),
-  };
+  // Окно событий держат смещения рецептов: звук начинается не позже, чем его хвост ещё влезает в окно (зажим каждого
+  // тона схлопнул бы «касса — бзз-бзз — стон» в одну точку).
   const events = score(w, replay);
   const quiet = events.some((e) => e.kind === "double");
   const step = events.length > 1 ? (EVENT_WINDOW - 0.2) / (events.length - 1) : 0;
-  events.forEach((e, i) => RECIPES[e.kind]!(t, i * step, e, quiet));
+  events.forEach((e, i) => RECIPES[e.kind]!(s, Math.min(i * step, EVENT_WINDOW - (SPAN[e.kind] ?? 0)), e, quiet));
   if (speakable(w.db)) s.babble(DB_VOICE, w.db, BABBLE_AT);
   else if (speakable(w.bank)) s.babble(BANK_VOICE, w.bank, BABBLE_AT);
 }
