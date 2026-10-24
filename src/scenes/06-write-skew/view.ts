@@ -159,7 +159,7 @@ function drawDeps(pen: Pen, w: World): void {
   }
   if (w.deps.length === 2 && ACTORS.every((id) => row(id) >= 0)) {
     const cy = (rowY(row("A")) + rowY(row("B"))) / 2 + TABLE.rowH / 2;
-    pill(pen, "dep:ring", "кольцо", { x: cx - 140, y: cy - 15, fill: COLOR.bg, color: COLOR.warn, stroke: COLOR.warn, attrs: { class: "fx-pop", ...fade(w, "marks", "orders") } });
+    pill(pen, "dep:ring", "цикл", { x: cx - 140, y: cy - 15, fill: COLOR.bg, color: COLOR.warn, stroke: COLOR.warn, attrs: { class: "fx-pop", ...fade(w, "marks", "orders") } });
   }
 }
 
