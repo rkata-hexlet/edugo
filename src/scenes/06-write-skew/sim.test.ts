@@ -93,6 +93,16 @@ describe("SERIALIZABLE (SSI)", () => {
     expect(boxes(w)).toBe(3);
   });
 
+  it("обречённая транзакция получает 40001 и на подсчёте: count — null, транзакция откатана", () => {
+    const w = world();
+    race(w, "SER");
+    commit(w, "A");
+    expect(count(w, "B")).toBeNull();
+    expect(w.actors.B.failed).toBe(true);
+    expect(w.actors.B.tx).toBeNull();
+    expect(boxes(w)).toBe(3);
+  });
+
   it("повтор B: свежий снимок видит 3 из 3, заказ не вставляем", () => {
     const w = world();
     race(w, "SER");

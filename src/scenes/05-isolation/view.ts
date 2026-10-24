@@ -399,9 +399,10 @@ function highlightGo(lines: string[]): Span[][] {
 export function drawCode(pen: Pen, c: Code | null, rows = CODE_LINES): void {
   if (!c) return;
   // Окно одного размера во всех кадрах кода эпизода (rows — его самый длинный код): меняются только подсвеченные строки.
-  const lineH = 34;
+  // Длинный код теснит строки, чтобы окно не заходило ниже SAFE_BOTTOM.
   const x = 200;
   const y = OVERLAY.y;
+  const lineH = Math.min(34, Math.floor((SAFE_BOTTOM - 8 - y - 84) / rows));
   const h = 76 + rows * lineH + 8;
   pen.group("code", 0, 0, () => {
     panel(pen, "code:box", { x, y, w: 880, h, fill: "#11172e", stroke: COLOR.muted });
@@ -421,7 +422,7 @@ export function drawCode(pen: Pen, c: Code | null, rows = CODE_LINES): void {
 }
 
 /** Табло до кадра цены: только первый критерий — второй («без повтора») зритель ещё не понимает. */
-function firstOnly(b: Board): Board {
+export function firstOnly(b: Board): Board {
   return { ...b, criteria: [b.criteria[0], ""], attempts: b.attempts.map((a) => ({ ...a, lamps: a.lamps && [a.lamps[0], null] })) };
 }
 

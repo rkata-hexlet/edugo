@@ -37,7 +37,6 @@ export interface SlotVersion {
 export interface Tx {
   level: Level;
   snapshot: number | null; // видны коммиты не позже этого момента; null — оператора ещё не было
-  read: number | null; // сколько заказов слота насчитал последний SELECT count(*)
   mark: boolean; // SERIALIZABLE: метка чтения на заказах слота (SIRead)
   waiting: boolean; // UPDATE строки слота ждёт чужого COMMIT
   doomed: boolean; // SSI: сосед закоммитил, кольцо замкнулось — следующая проверка даст 40001
@@ -111,9 +110,8 @@ export interface World {
   marks: Partial<Record<ActorId, boolean>>;
   actors: Record<ActorId, Actor>;
   customers: Customer[];
-  /** Подача: колонка booked видна (акт 2.3); витрина со слотами; код; сверка условия UPDATE; ошибка 40001 пода. */
+  /** Подача: колонка booked видна (акт 2.3); код; сверка условия UPDATE; ошибка 40001 пода. */
   counter: boolean;
-  showcase: boolean;
   code: Code | null;
   check: { text: string; ok: boolean } | null;
   reason: Partial<Record<ActorId, FailReason>>;
@@ -155,7 +153,6 @@ export function world(): World {
       { name: "Борис", pod: "B", status: "idle" },
     ],
     counter: false,
-    showcase: false,
     code: null,
     check: null,
     reason: {},
@@ -201,7 +198,7 @@ export function sees(w: World, who: ActorId, o: Order): boolean {
 
 export function begin(w: World, who: ActorId, level: Level): void {
   const a = w.actors[who];
-  a.tx = { level, snapshot: null, read: null, mark: false, waiting: false, doomed: false };
+  a.tx = { level, snapshot: null, mark: false, waiting: false, doomed: false };
   a.failed = false;
 }
 
@@ -213,11 +210,10 @@ function doomCheck(w: World, who: ActorId): boolean {
 }
 
 /** SELECT count(*) FROM orders WHERE slot_id = 7 — по снимку; на SERIALIZABLE ставит метку чтения. */
-export function count(w: World, who: ActorId): number {
-  if (doomCheck(w, who)) return -1;
+export function count(w: World, who: ActorId): number | null {
+  if (doomCheck(w, who)) return null;
   const t = statement(w, who);
   const n = w.orders.filter((o) => sees(w, who, o)).length;
-  t.read = n;
   w.actors[who].acts.push({ kind: "count", seen: n });
   w.events.push({ kind: "count", by: who });
   if (t.level === "SER" && !t.mark) {

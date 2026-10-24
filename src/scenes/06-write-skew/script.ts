@@ -33,10 +33,12 @@ const SQL = {
 /** Код приёма заказа на Go: наивный (подсчёт в отдельном чтении), на SERIALIZABLE, со счётчиком в строке слота. */
 const GO = {
   naive: (level: "RepeatableRead" | "Serializable") => [
-    "tx, _ := db.BeginTx(ctx, pgx.TxOptions{",
+    "tx, err := db.BeginTx(ctx, pgx.TxOptions{",
     `  IsoLevel: pgx.${level}})`,
+    "if err != nil { return err }",
+    "defer tx.Rollback(ctx)",
     "var booked, cap int",
-    "err := tx.QueryRow(ctx, `SELECT count(*) FROM orders",
+    "err = tx.QueryRow(ctx, `SELECT count(*) FROM orders",
     "  WHERE slot_id = 7`).Scan(&booked)",
     "if err == nil { err = tx.QueryRow(ctx,",
     "  `SELECT cap FROM slots WHERE id = 7`).Scan(&cap) }",
@@ -47,15 +49,18 @@ const GO = {
     "return tx.Commit(ctx)",
   ],
   counter: [
-    "tx, _ := db.BeginTx(ctx, pgx.TxOptions{",
+    "tx, err := db.BeginTx(ctx, pgx.TxOptions{",
     "  IsoLevel: pgx.ReadCommitted})",
-    "res, _ := tx.Exec(ctx, `UPDATE slots",
+    "if err != nil { return err }",
+    "defer tx.Rollback(ctx)",
+    "res, err := tx.Exec(ctx, `UPDATE slots",
     "  SET booked = booked + 1",
     "  WHERE id = 7 AND booked < cap`)",
-    "if res.RowsAffected() == 1 {",
-    "  tx.Exec(ctx, `INSERT INTO orders ...`)",
+    "if err == nil && res.RowsAffected() == 1 {",
+    "  _, err = tx.Exec(ctx, `INSERT INTO orders ...`)",
     "}",
-    "tx.Commit(ctx)",
+    "if err != nil { return err }",
+    "return tx.Commit(ctx)",
   ],
 };
 
@@ -116,7 +121,6 @@ class Shots extends Director<Focus, World> {
       a.acts = [];
       a.crossed = null;
     }
-    w.showcase = false;
     w.courierTalk = false;
     w.code = null;
     w.check = null;
@@ -148,9 +152,14 @@ function press(w: World, level: Level, ...who: ActorId[]): void {
   }
 }
 
-/** Подсчёт заказов слота: под принимает число за правду. */
-function tally(w: World, who: ActorId): number {
+/** Подсчёт заказов слота: под принимает число за правду; null — транзакция обречена и получила 40001 на этом запросе. */
+function tally(w: World, who: ActorId): number | null {
   const n = count(w, who);
+  if (n === null) {
+    sql(w, who, SQL.count);
+    fault(w, who);
+    return null;
+  }
   sql(w, who, `${SQL.count}  -- ${n}`);
   w.actors[who].thought = n < CAP ? FREE : null;
   return n;
@@ -174,6 +183,8 @@ function fault(w: World, who: ActorId): void {
 }
 
 function done(w: World, who: ActorId): void {
+  // Ошибка пришла раньше коммита — код на Go вернул её до Commit.
+  if (w.actors[who].failed && !w.actors[who].tx) return;
   const ordered = w.orders.some((o) => o.by === who && o.at === null);
   if (!commit(w, who)) {
     sql(w, who, "COMMIT");
@@ -195,7 +206,8 @@ function done(w: World, who: ActorId): void {
 /** Заказ целиком, без соседа: подсчитал → вставил, если есть место → COMMIT. */
 function book(w: World, who: ActorId, level: Level): void {
   press(w, level, who);
-  if (tally(w, who) < CAP) order(w, who);
+  const n = tally(w, who);
+  if (n !== null && n < CAP) order(w, who);
   done(w, who);
 }
 
@@ -211,7 +223,6 @@ function wake(w: World, who: ActorId): "write" | "zero" | "fail" {
   return out;
 }
 
-/** Свежий стол попытки. */
 /** Свежий стол попытки; цену повтора зритель уже знает — второй критерий табло держится и на новом столе. */
 function table(o: { counter?: boolean; cost?: boolean } = {}): World {
   const w = world();
@@ -235,7 +246,6 @@ export function buildSteps(): Step<World>[] {
   // Знакомство: курьер, слот, таблицы, код.
   d.scene(ACT.intro);
   d.shot("", (w) => {
-    w.showcase = true;
     w.courierTalk = true;
   }, {
     focus: ["courier", "shop"],
@@ -254,7 +264,7 @@ export function buildSteps(): Step<World>[] {
   d.shot("", (w) => {
     w.code = {
       title: "Go · приём заказа", lines: GO.naive("RepeatableRead"),
-      mark: [{ line: 3, tone: "warn", note: "проверка" }, { line: 4, tone: "warn" }, { line: 8, tone: "warn", note: "новая строка" }],
+      mark: [{ line: 5, tone: "warn", note: "проверка" }, { line: 6, tone: "warn" }, { line: 10, tone: "warn", note: "новая строка" }],
     };
   }, {
     focus: ["code"],
@@ -365,7 +375,7 @@ export function buildSteps(): Step<World>[] {
     voice: "Раз REPEATABLE READ не следит за прочитанным, нам нужен уровень, который следит. В Postgres это самый строгий, SERIALIZABLE, и в коде меняется всего одна строка.",
   });
   d.shot("", (w) => {
-    w.code = serCode([{ line: 1, tone: "ok" }, { line: 10, tone: "warn", note: "40001 с любого запроса" }, { line: 11, tone: "warn", note: "или на коммите" }]);
+    w.code = serCode([{ line: 1, tone: "ok" }, { line: 12, tone: "warn", note: "40001 с любого запроса" }, { line: 13, tone: "warn", note: "или на коммите" }]);
   }, {
     focus: ["code"],
     voice: "Только не думайте, что он выстраивает транзакции в очередь или запирает таблицу: поды по-прежнему работают параллельно. Просто Postgres гарантирует результат, как если бы они шли по очереди в каком-то порядке, как в нашей норме. А если так не выходит, он прерывает одну из транзакций с ошибкой 40001, и повторяет её уже наш код, как в прошлый раз.",
@@ -427,7 +437,7 @@ export function buildSteps(): Step<World>[] {
   const counterCode = (mark: Code["mark"]) => ({ title: "Go · счётчик в строке слота", lines: GO.counter, mark });
   d.shot("", (w) => {
     w.stamp = "⟲ Иначе: счётчик в слоте";
-    w.code = counterCode([{ line: 2, tone: "ok", note: "проверка и запись" }, { line: 3, tone: "ok" }, { line: 4, tone: "ok", note: "одним запросом" }]);
+    w.code = counterCode([{ line: 4, tone: "ok", note: "проверка и запись" }, { line: 5, tone: "ok" }, { line: 6, tone: "ok", note: "одним запросом" }]);
   }, {
     focus: ["code", "slot"],
     voice: "Сделаем то же и со слотом: сведём правило к одной строке! Заведём в slots счётчик занятых мест, booked, и будем увеличивать его одним запросом, только если он ещё меньше вместимости. Заказ вставляем, лишь если UPDATE изменил строку.",
@@ -480,7 +490,10 @@ export function buildSteps(): Step<World>[] {
   const recap = (saved: World, voice: string) => {
     d.scene(ACT.summary, structuredClone(saved), { replay: true });
     d.shot("", (x) => {
-      for (const id of ["A", "B"] as const) x.actors[id].acts = structuredClone(saved.actors[id].acts);
+      for (const id of ["A", "B"] as const) {
+        x.actors[id].acts = structuredClone(saved.actors[id].acts);
+        x.actors[id].crossed = saved.actors[id].crossed;
+      }
       x.sql = [...saved.sql];
       x.db = null;
       x.check = saved.check;

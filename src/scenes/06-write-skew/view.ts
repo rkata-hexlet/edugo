@@ -1,11 +1,10 @@
 import { STAGE, type Pen } from "../../engine/contract";
-import type { Board } from "../../kit/director";
 import { BOB, bob, elephant, type Look, type Mood } from "../../kit/characters";
 import { icon } from "../../kit/icons";
 import { ACTOR, COLOR, DIM, FONT, SAFE_BOTTOM, SIZE } from "../../kit/theme";
 import { awning, buyButton, lock, person, PERSON, type PersonMood } from "../../kit/props";
 import { board, bubble, iconText, once, panel, pill, plate, podSql, sqlWindow, stamp } from "../../kit/widgets";
-import { drawCode, render as render05 } from "../05-isolation/view";
+import { drawCode, firstOnly, render as render05 } from "../05-isolation/view";
 import { CODE_ROWS, recallWorld } from "./script";
 import {
   ACTORS, CAP, boxes, overloaded, slotTop,
@@ -137,11 +136,10 @@ function marked(w: World, id: ActorId): boolean {
 
 /** Метка чтения: пунктирная рамка цвета пода вокруг прочитанных заказов и места, куда лёг бы новый. */
 function drawMarks(pen: Pen, w: World): void {
-  const visibleTo = (id: ActorId) => w.orders.filter((o) => o.at !== null || o.by === id).length;
   ACTORS.forEach((id, n) => {
     if (!marked(w, id)) return;
     const pad = 4 + n * 8;
-    const rows = Math.max(visibleTo(id), w.orders.length) + (w.orders.length < 4 ? 1 : 0);
+    const rows = w.orders.length + (w.orders.length <= CAP ? 1 : 0);
     const h = rows * (TABLE.rowH + TABLE.gap) - TABLE.gap;
     const color = ACTOR[id].color;
     pen.group(`mark:${id}`, 0, 0, () => {
@@ -154,7 +152,7 @@ function drawMarks(pen: Pen, w: World): void {
     }, { ...fade(w, "marks", id), ...(happened(w, "mark", id) ? { class: "fx-fade" } : {}) });
   });
   // Место под новый заказ — только пока метки на экране: туда целится предикат.
-  if (ACTORS.some((id) => marked(w, id)) && w.orders.length < 4 && !ghostOf(w)) {
+  if (ACTORS.some((id) => marked(w, id)) && w.orders.length <= CAP && !ghostOf(w)) {
     pen.rect("mark:slot", {
       x: TABLE.x, y: rowY(w.orders.length), width: TABLE.w, height: TABLE.rowH, rx: 6,
       fill: "none", stroke: COLOR.faint, "stroke-width": 1.5, "stroke-dasharray": "3 5", ...fade(w, "marks"),
@@ -379,10 +377,6 @@ function courier(pen: Pen, w: World, x: number, y: number, mood: CourierMood, al
       pen.path(`${k}:arm`, { d: "M 40 30 Q 47 18 44 6", ...arm });
     }
   }, fx, { scale: s, origin: [0, 0] });
-}
-
-function firstOnly(b: Board): Board {
-  return { ...b, criteria: [b.criteria[0], ""], attempts: b.attempts.map((a) => ({ ...a, lamps: a.lamps && [a.lamps[0], null] })) };
 }
 
 function drawHeader(pen: Pen, w: World): void {

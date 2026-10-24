@@ -1,6 +1,6 @@
 import type { Sound, Voice } from "../../engine/contract";
 import type { Lamp } from "../../kit/director";
-import { type EventKind, overloaded, type SimEvent, type World } from "./sim";
+import type { EventKind, SimEvent, World } from "./sim";
 
 // Озвучка эпизода словарём 05 (docs/reviews/05-sound-design.md): громкая беда (40001) — «бзз» на square, самый
 // громкий звук; тихая беда (у курьера коробок больше, чем мест) — неверный аккорд, как «продано больше» в 05; отказы
@@ -166,5 +166,5 @@ export function sound(out: Sound, w: World, replay = false): void {
   const k = last > EVENT_WINDOW - 0.05 ? (EVENT_WINDOW - 0.05) / last : 1;
   const opts = { replay };
   events.forEach((e, i) => RECIPES[e.kind]!(s, starts[i] * k, e, opts));
-  if (speakable(w.db)) s.babble({ ...DB_VOICE, gain: overloaded(w) && w.events.some((e) => e.kind === "overload") ? 0.06 : DB_VOICE.gain }, w.db, BABBLE_AT);
+  if (speakable(w.db)) s.babble({ ...DB_VOICE, gain: w.events.some((e) => e.kind === "overload") ? 0.06 : DB_VOICE.gain }, w.db, BABBLE_AT);
 }
