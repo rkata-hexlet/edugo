@@ -8,7 +8,7 @@ import { board, bubble, iconText, once, panel, pill, plate, podSql, sqlWindow, s
 import { drawCode, render as render05 } from "../05-isolation/view";
 import { recallWorld } from "./script";
 import {
-  ACTORS, CAP, boxes, overloaded, sees, slotTop,
+  ACTORS, CAP, boxes, overloaded, slotTop,
   type Act, type Actor, type ActorId, type Focus, type Order, type SimEvent, type World,
 } from "./sim";
 
@@ -78,19 +78,16 @@ function drawSlot(pen: Pen, w: World): void {
   });
 }
 
-/** Заказы слота 7; не видные снимку пода `horizon` — бледные; метки чтения и дуги зависимостей SERIALIZABLE. */
+/** Заказы слота 7; метки чтения и дуги зависимостей SERIALIZABLE. */
 function drawOrders(pen: Pen, w: World): void {
   pen.text("ord:hdr", { x: TABLE.x + 12, y: ORDERS.y - 18, ...MONO, fill: COLOR.muted, ...fade(w, "orders") }, "orders · slot_id 7");
-  const id = w.horizon;
-  if (id) pill(pen, `ord:eye:${id}`, `снимок ${id}`, { x: 330, y: ORDERS.y - 40, fill: COLOR.bg, color: ACTOR[id].color, stroke: ACTOR[id].color, attrs: { class: "fx-fade" } });
   let n = 0;
   w.orders.forEach((o, i) => {
     if (o.at !== null) n++;
     const extra = o.at !== null && n > CAP;
-    const hidden = id !== null && w.actors[id].tx !== null && !sees(w, id, o);
     const fresh = happened(w, "insert", o.by ?? undefined) && o.by !== null && o.at === null;
     const [k, fx] = once(`ord:${i}`, w.frame, fresh ? "fx-slide" : extra && happened(w, "commit", o.by ?? undefined) ? "fx-shake" : null);
-    pen.group(k, TABLE.x, rowY(i), () => drawOrder(pen, k, o, extra), { ...fade(w, "orders"), ...(hidden ? { opacity: 0.22 } : {}), ...fx });
+    pen.group(k, TABLE.x, rowY(i), () => drawOrder(pen, k, o, extra), { ...fade(w, "orders"), ...fx });
   });
   drawMarks(pen, w);
   drawDeps(pen, w);
@@ -248,8 +245,9 @@ function drawPodArrows(pen: Pen, w: World): void {
         pen.line(key, { ...base, x2: slotRow.x + 6, y2: slotRow.y + 14, stroke: color, "stroke-width": 2.5, "stroke-dasharray": "7 6", class: "fx-march" });
       } else if (x.kind === "zero") {
         pen.line(key, { ...base, x2: slotRow.x, y2: slotRow.y + 8, stroke: COLOR.muted, "stroke-width": 2.5, ...DRAW });
-        const lx = from.x + (slotRow.x - from.x) * 0.7;
-        const ly = from.y + (slotRow.y - from.y) * 0.7;
+        // Подпись у конца стрелки, у строки слота: середину пересекает стрелка соседа.
+        const lx = from.x + (slotRow.x - from.x) * 0.86;
+        const ly = from.y + (slotRow.y - from.y) * 0.86;
         pen.text(`${key}:t`, { x: lx + 14, y: ly + 6, ...SANS, fill: COLOR.muted, "font-weight": 700, opacity: op, ...HALO }, "0 строк");
       } else if (x.kind === "fail") {
         const ty = ORDERS.y + 60;

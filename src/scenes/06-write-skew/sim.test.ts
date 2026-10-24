@@ -144,7 +144,7 @@ describe("счётчик в строке слота (2.3)", () => {
 });
 
 import { speechParts } from "../../engine/narrator";
-import { ACT, PRONOUNCE, RECALL_STEP, buildSteps } from "./script";
+import { ACT, PRONOUNCE, RECALL, buildSteps } from "./script";
 import type { EventKind } from "./sim";
 
 const steps = buildSteps();
@@ -156,10 +156,11 @@ describe("сценарий не врёт", () => {
     expect(JSON.stringify(buildSteps())).toBe(JSON.stringify(steps));
   });
 
-  it("открывается кадром 40001 эпизода 05", () => {
-    expect(RECALL_STEP).toBeGreaterThanOrEqual(0);
-    expect(steps[0].state.flashback).toBe(RECALL_STEP);
-    expect(steps.filter((s) => s.state.flashback !== null)).toHaveLength(1);
+  it("открывается кадром 40001 эпизода 05; 2.3 — кадром его атомарного UPDATE", () => {
+    expect(RECALL.rr).toBeGreaterThanOrEqual(0);
+    expect(RECALL.atomic).toBeGreaterThanOrEqual(0);
+    expect(steps[0].state.flashback).toBe(RECALL.rr);
+    expect(steps.filter((s) => s.state.flashback !== null).map((s) => [s.act, s.state.flashback])).toEqual([[ACT.recall, RECALL.rr], [ACT.counter, RECALL.atomic]]);
   });
 
   it("хук на REPEATABLE READ: никто не ждал и не упал, оба получили подтверждение, коробок четыре", () => {

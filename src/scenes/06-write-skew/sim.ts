@@ -119,8 +119,6 @@ export interface World {
   reason: Partial<Record<ActorId, FailReason>>;
   /** Курьер говорит о слоте (знакомство) — лимит крупно. */
   courierTalk: boolean;
-  /** Чьи снимки рисуем: заказы, которых транзакция не видит, — бледным под её цветом. */
-  horizon: ActorId | null;
   /** Второй критерий табло («без повтора») — с кадра, где голос называет цену. */
   costShown: boolean;
   /** Вставка эпизода 05 целиком: номер его кадра (рисует view.ts его же отрисовкой). */
@@ -162,7 +160,6 @@ export function world(): World {
     check: null,
     reason: {},
     courierTalk: false,
-    horizon: null,
     costShown: false,
     flashback: null,
     sql: [],
