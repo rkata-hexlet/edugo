@@ -1,13 +1,13 @@
 import { STAGE, type Attrs, type Pen, type Span } from "../../engine/contract";
-import { BOB, bob, elephant, type Look, type Mood } from "../../kit/characters";
+import { BOB, bob, elephant, type Hands, type Look, type Mood } from "../../kit/characters";
 import { icon } from "../../kit/icons";
 import { ACTOR, COLOR, DIM, FONT, SAFE_BOTTOM, SIZE } from "../../kit/theme";
-import { lock, person, PERSON, type PersonMood } from "../../kit/props";
+import { buyButton, lock, person, PERSON, type PersonMood } from "../../kit/props";
 import { board, bubble, iconText, once, panel, pill, plate, podSql, sqlWindow, stamp } from "../../kit/widgets";
 import { drawCode, render as render05 } from "../05-isolation/view";
 import { CODE_ROWS, recallWorld } from "./script";
 import {
-  ACTORS, deadlocked, holder, product,
+  ACTORS, deadlocked, held, holder, product,
   type Actor, type ActorId, type Aside, type Focus, type Product, type SimEvent, type World,
 } from "./sim";
 
@@ -17,7 +17,7 @@ import {
 // Замок на строке — цвета пода, держится до COMMIT; ожидание — сплошная стрелка пода к чужому замку.
 
 const POD_Y: Record<ActorId, number> = { A: 150, B: 330 };
-const POD = { x: 596 };
+const POD = { x: 556 };
 const POD_SCALE = 1.4;
 const PB = { w: BOB.w * POD_SCALE, h: BOB.h * POD_SCALE };
 const TABLE = { x: 40, y: 124, w: 400, rowH: 44, gap: 6 };
@@ -29,6 +29,11 @@ const OVERLAY = { y: 124 };
 const BOTTOM = 650;
 const DB = { x: 100, w: 130 };
 const WATCH = { x: 300, y: 78 };
+/** Значок кейса и ярлык акта — в правой колонке над магазином: в шапке им тесно с репликой Postgres. */
+export const CHAPTER = { x: 1150, y: 22 };
+const TERM = { x: 996, y: 76 };
+/** Правый край шапки для реплики Postgres и штампа перемотки. */
+export const HEADER_RIGHT = CHAPTER.x - 12;
 
 const MONO = { "font-family": FONT.mono, "font-size": SIZE.body };
 const SANS = { "font-family": FONT.sans, "font-size": SIZE.body };
@@ -51,12 +56,17 @@ function drawProducts(pen: Pen, w: World): void {
 function drawProduct(pen: Pen, w: World, p: Product, i: number): void {
   const by = p.draft?.by ?? null;
   const fresh = !!by && w.actors[by].acts.some((a) => a.kind === "write" && a.id === p.id);
+  const ring = deadlocked(w);
   const [k, fx] = once(`prod:${p.id}`, w.frame, fresh ? "fx-pop" : null);
   pen.group(k, TABLE.x, rowY(i), () => {
     pen.rect(`${k}:bg`, {
       width: TABLE.w, height: TABLE.rowH, rx: 6, fill: by ? COLOR.draftBg : COLOR.surface,
-      stroke: by ? ACTOR[by].color : COLOR.line, "stroke-width": by ? 2 : 1.5,
+      stroke: ring ? COLOR.error : by ? ACTOR[by].color : COLOR.line, "stroke-width": by ? 2 : 1.5,
+      ...(ring ? { "stroke-dasharray": "7 5", class: "fx-march" } : {}),
     });
+    if (ring && happened(w, "ring")) {
+      pen.rect(`${k}:halo:${w.frame}`, { x: TABLE.w - 43, y: 3, width: 36, height: 36, rx: 18, fill: COLOR.error, opacity: 0.25, class: "fx-pulse" });
+    }
     pen.text(`${k}:t`, { x: 14, y: 28, ...MONO, fill: COLOR.ink }, [
       { text: `id ${p.id} · `, attrs: { fill: COLOR.muted } },
       { text: p.name },
@@ -67,6 +77,14 @@ function drawProduct(pen: Pen, w: World, p: Product, i: number): void {
     if (by) {
       const [lk, sh] = once(`${k}:lock`, w.frame, fresh ? "fx-lock" : null);
       lock(pen, lk, { x: TABLE.w - 36, y: 9, color: ACTOR[by].color, shackle: sh });
+    }
+    // Откат: списание пода, которого прервали, вернулось на склад — пунктирный чип его цвета уходит от строки.
+    const undone = ACTORS.find((id) => w.actors[id].acts.some((a) => a.kind === "fail" && a.undone.includes(p.id)));
+    if (undone) {
+      pen.group(`${k}:undo:${w.frame}`, TABLE.w + 14, 6, () => {
+        pen.rect(`${k}:undo:bg`, { width: 92, height: 32, rx: 16, fill: COLOR.bg, stroke: ACTOR[undone].color, "stroke-width": 2, "stroke-dasharray": "5 4" });
+        pen.text(`${k}:undo:t`, { x: 46, y: 22, ...SANS, "font-weight": 700, fill: ACTOR[undone].color, "text-anchor": "middle" }, "откат");
+      }, { class: "fx-rise d1" });
     }
   }, { ...fade(w, "products"), ...fx });
 }
@@ -110,15 +128,23 @@ function drawArrows(pen: Pen, w: World): void {
       const r = rowOf(w, waiting);
       pen.line(`wait:${id}`, {
         x1: from.x, y1: from.y + 10, x2: TABLE.x + TABLE.w - 12, y2: rowY(r) + TABLE.rowH / 2 + 8,
-        stroke: color, "stroke-width": 3, "stroke-linecap": "round", marker: "arrow", opacity: op,
+        stroke: color, "stroke-width": 4, "stroke-linecap": "round", marker: "arrow", opacity: op,
         ...(happened(w, "wait", id) ? DRAW : {}),
       });
     }
   }
   if (deadlocked(w)) {
+    // Кольцо между подами: A ждёт B и B ждёт A — две красные дуги навстречу.
+    const cx = POD.x + PB.w / 2;
+    const top = POD_Y.A + PB.h + 4;
+    const bottom = POD_Y.B - 22;
+    const drawn = happened(w, "ring") ? DRAW : {};
+    const arc = { fill: "none", stroke: COLOR.error, "stroke-width": 4, "stroke-linecap": "round", marker: "arrow", ...fade(w, "A", "B") };
+    pen.path("ring:down", { d: `M ${cx - 22} ${top} Q ${cx - 70} ${(top + bottom) / 2} ${cx - 22} ${bottom}`, ...arc, ...drawn });
+    pen.path("ring:up", { d: `M ${cx + 22} ${bottom} Q ${cx + 70} ${(top + bottom) / 2} ${cx + 22} ${top}`, ...arc, ...drawn });
     pill(pen, "ring", "цикл", {
-      x: 478, y: 250, fill: COLOR.bg, color: COLOR.error, stroke: COLOR.error,
-      attrs: { ...(happened(w, "ring") ? { class: "fx-pop d1" } : {}), ...fade(w, "A", "B", "products") },
+      x: cx - 32, y: (top + bottom) / 2 - 16, fill: COLOR.bg, color: COLOR.error, stroke: COLOR.error,
+      attrs: { ...(happened(w, "ring") ? { class: "fx-pop d1" } : {}), ...fade(w, "A", "B") },
     });
   }
 }
@@ -135,6 +161,12 @@ function podLook(w: World, a: Actor): Look {
   if (happened(w, "ok", a.id)) return { x: 1, y: 0 };
   if (a.acts.length || a.tx) return { x: -1, y: -0.2 };
   return { x: 0, y: 0 };
+}
+
+/** Руки пода, пока идёт транзакция: замки, которые он держит; в кольце — скрещены. Пустые руки ждущего — «держать нечего». */
+function podHands(w: World, a: Actor): Hands | undefined {
+  if (!a.tx) return undefined;
+  return { pose: deadlocked(w) ? "crossed" : "open", locks: held(w, a.id).length, lockColor: ACTOR[a.id].color };
 }
 
 /** Порядок обхода корзины: строки под замком пода — его цветом, ждёт — жёлтым, остальное — серым. */
@@ -157,9 +189,9 @@ function drawPod(pen: Pen, w: World, a: Actor): void {
   pen.group(`pod:${a.id}`, POD.x, POD_Y[a.id], () => {
     const [fxKey, fxOnce] = once(`pod:${a.id}:fx`, w.frame, failedNow ? "fx-jolt" : null);
     pen.group(fxKey, 0, 0, () =>
-      bob(pen, `pod:${a.id}:bob`, { x: 0, y: 0, color, tint, letter: a.id, mood, look: podLook(w, a), dashed: mood === "wait" }),
+      bob(pen, `pod:${a.id}:bob`, { x: 0, y: 0, color, tint, letter: a.id, mood, look: podLook(w, a), dashed: mood === "wait", hands: podHands(w, a) }),
     failedNow ? fxOnce : mood === "wait" ? { class: "fx-breathe" } : {}, { scale: POD_SCALE });
-    const nx = PB.w + 14;
+    const nx = PB.w + 36;
     pen.text(`pod:${a.id}:label`, { x: nx, y: 20, ...SANS, "font-size": SIZE.say, "font-weight": 700, fill: color }, a.label);
     pen.text(`pod:${a.id}:plan`, { x: nx, y: 48, ...SANS }, planSpans(w, a));
     if (a.failed) {
@@ -186,7 +218,7 @@ function drawCheck(pen: Pen, w: World): void {
   if (!c) return;
   const color = c.ok ? COLOR.ok : COLOR.error;
   const width = pen.measure(c.text, MONO).width + 52;
-  pen.group("check", POD.x - 10, POD_Y.B + PB.h + 70, () => {
+  pen.group("check", POD.x - 10, POD_Y.B + PB.h + 50, () => {
     pen.rect("check:bg", { x: 0, y: 0, width, height: 34, rx: 8, fill: c.ok ? COLOR.doneBg : COLOR.alarmBg, stroke: color, "stroke-width": 1.5 });
     pen.text("check:t", { x: 10, y: 23, ...MONO, fill: COLOR.ink }, c.text);
     icon(pen, "check:i", c.ok ? "check" : "cross", width - 30, 6, 22, color);
@@ -206,16 +238,19 @@ function drawShop(pen: Pen, w: World): void {
       const changed = happened(w, c.status === "ok" ? "ok" : c.status === "fail" ? "refused" : "press", c.pod);
       const [k, fx] = once(`shop:${c.pod}`, w.frame, changed ? "fx-pop" : null);
       const tx = x + 16 + PERSON.w + 12;
-      person(pen, `shop:${c.pod}:who`, {
+      // Принят, пока соседу отказали, — плечи вздрагивают: «а у меня всё хорошо».
+      const shrug = happened(w, "ok", c.pod) && happened(w, "refused");
+      const [pk, pfx] = once(`shop:${c.pod}:who`, w.frame, shrug ? "fx-jolt d3" : null);
+      person(pen, pk, {
         x: x + 16, y: top, shirt: ACTOR[c.pod].color, mood: MOOD[c.status],
-        look: c.status === "idle" ? { x: 0, y: -1 } : { x: -1, y: 0 },
+        look: c.status === "idle" ? { x: 0, y: -1 } : { x: -1, y: 0 }, attrs: pfx,
       });
       pen.text(`shop:${c.pod}:n`, { x: tx, y: top + 18, ...SANS, "font-size": SIZE.say, "font-weight": 700, fill: COLOR.ink }, c.name);
       pen.text(`shop:${c.pod}:cart`, { x: tx, y: top + 44, ...SANS, fill: COLOR.muted }, c.cart.map((id) => product(w, id).name).join(", "));
       pen.group(k, 0, 0, () => {
         const sx = x + 16;
         const sy = top + 80;
-        if (c.status === "press") pill(pen, `${k}:buy`, "Оформить", { x: sx, y: sy - 22, fill: COLOR.awning2, color: COLOR.bg });
+        if (c.status === "press") buyButton(pen, `${k}:buy`, { x: sx, y: sy - 24, pressed: true, label: "Оформить", w: 116 });
         if (c.status === "wait") iconText(pen, `${k}:s`, "hourglass", sx, sy, "ждёт…", COLOR.warn, { ...SANS, "font-weight": 600 });
         if (c.status === "ok") iconText(pen, `${k}:s`, "check", sx, sy, "Заказ принят", COLOR.ok, { ...SANS, "font-weight": 600 });
         if (c.status === "fail") {
@@ -233,39 +268,48 @@ function drawWatch(pen: Pen, w: World): void {
   if (s === null) return;
   const [k, fx] = once("watch", w.frame, happened(w, "tick") ? "fx-pop" : null);
   pen.group(k, WATCH.x, WATCH.y, () => {
-    icon(pen, `${k}:i`, "clock", 0, 0, 26, COLOR.warn);
+    pen.group(`${k}:ic`, 0, 0, () => icon(pen, `${k}:i`, "clock", 0, 0, 26, COLOR.warn), happened(w, "tick") ? { class: "fx-pulse" } : {});
     pen.text(`${k}:t`, { x: 32, y: 22, "font-family": FONT.mono, "font-size": SIZE.clock, "font-weight": 700, fill: COLOR.warn }, `${s.toFixed(1).replace(".", ",")} с`);
   }, { ...fade(w, "db"), ...fx });
 }
 
 function drawHeader(pen: Pen, w: World): void {
   const bad = happened(w, "detect") || happened(w, "fail");
-  const [dbKey, dbFx] = once("db:nod", w.frame, bad ? "fx-nod" : null);
+  // Секунда deadlock_timeout: слон кивает в такт часам.
+  const [dbKey, dbFx] = once("db:nod", w.frame, bad || happened(w, "tick") ? "fx-nod" : null);
   const busy = ["write", "wait", "commit"].some((k) => happened(w, k as SimEvent["kind"]));
   const look = w.db ? { x: 1, y: 0.2 } : busy ? { x: 0.3, y: 1 } : { x: 0, y: 0 };
   pen.group(dbKey, 0, 0, () => elephant(pen, "db:face", { x: TABLE.x + 4, y: 8, talking: !!w.db, scale: 1.08, look, frown: bad }), dbFx);
   panel(pen, "db", { x: DB.x, y: 20, w: DB.w, h: 46, rx: 14, fill: COLOR.surface2, stroke: COLOR.postgres });
   pen.text("db:name", { x: DB.x + 16, y: 50, ...SANS, "font-size": SIZE.say, "font-weight": 700, fill: COLOR.ink }, "Postgres");
-  if (w.chapter) pill(pen, "chapter", "КЕЙС", { x: POD.x, y: 22, fill: "none", color: COLOR.ink, stroke: COLOR.ink });
+  if (w.chapter) pill(pen, "chapter", "КЕЙС", { x: CHAPTER.x, y: CHAPTER.y, fill: "none", color: COLOR.ink, stroke: COLOR.ink });
 }
 
 /** Мини-пара подов в кольце: два боба и встречные стрелки, под ними — секунда ожидания. */
-function ringPair(pen: Pen, k: string, x: number, y: number, ids: [keyof typeof ACTOR, keyof typeof ACTOR]): void {
+function ringPair(pen: Pen, k: string, x: number, y: number, ids: [keyof typeof ACTOR, keyof typeof ACTOR], o: { clock?: boolean; delay?: string } = {}): void {
   pen.group(k, x, y, () => {
     ids.forEach((id, i) => bob(pen, `${k}:b${i}`, { x: i * 150, y: 0, color: ACTOR[id].color, tint: ACTOR[id].tint, letter: id, mood: "wait", look: { x: i ? -1 : 1, y: 0 } }));
     pen.path(`${k}:top`, { d: "M 70 14 Q 107 -16 144 14", fill: "none", stroke: ACTOR[ids[0]].color, "stroke-width": 3, marker: "arrow" });
     pen.path(`${k}:bot`, { d: "M 144 48 Q 107 78 70 48", fill: "none", stroke: ACTOR[ids[1]].color, "stroke-width": 3, marker: "arrow" });
+    if (o.clock === false) return;
     icon(pen, `${k}:clock`, "clock", 70, 92, 26, COLOR.warn);
     pen.text(`${k}:t`, { x: 102, y: 114, "font-family": FONT.mono, "font-size": SIZE.clock, "font-weight": 700, fill: COLOR.warn }, "1 с");
-  }, { class: "fx-pop" });
+  }, { class: `fx-pop ${o.delay ?? ""}`.trim() });
 }
 
 /** Вставки «когда что» поверх сцены. */
 function drawAside(pen: Pen, a: Aside | null): void {
   if (!a) return;
-  pen.rect("scrim", { x: 0, y: OVERLAY.y - 8, width: STAGE.w, height: SAFE_BOTTOM - OVERLAY.y + 8, fill: COLOR.bg, opacity: 0.94, class: "fx-fade" });
+  if (a !== "any") pen.rect("scrim", { x: 0, y: OVERLAY.y - 8, width: STAGE.w, height: SAFE_BOTTOM - OVERLAY.y + 8, fill: COLOR.bg, opacity: 0.94, class: "fx-fade" });
   if (a === "sale") {
-    ([["A", "B"], ["C", "A"], ["B", "C"]] as const).forEach((ids, i) => ringPair(pen, `sale:${i}`, 180 + i * 330, 250 + (i % 2) * 70, [ids[0], ids[1]]));
+    ([["A", "B"], ["C", "A"], ["B", "C"]] as const).forEach((ids, i) =>
+      ringPair(pen, `sale:${i}`, 180 + i * 330, 250 + (i % 2) * 70, [ids[0], ids[1]], { delay: `d${i + 1}` }));
+    return;
+  }
+  if (a === "any") {
+    // Одним запросом: порядок замков решает план — кольцо под вопросом.
+    ringPair(pen, "any:ring", 530, 420, ["A", "B"], { clock: false });
+    pen.text("any:q", { x: 640, y: 470, "font-family": FONT.sans, "font-size": SIZE.plate, "font-weight": 800, fill: COLOR.warn, "text-anchor": "middle", class: "fx-pop d2" }, "?");
     return;
   }
   if (a === "paths") {
@@ -304,7 +348,7 @@ export function render(pen: Pen, w: World): void {
   if (w.flashback !== null) {
     render05(pen, recallWorld(w.flashback));
     pen.layer("top", () => {
-      if (w.stamp) stamp(pen, w.stamp, { left: DB.x + DB.w + 12, right: POD.x - 12 });
+      if (w.stamp) stamp(pen, w.stamp, { left: DB.x + DB.w + 12, right: HEADER_RIGHT });
     });
     return;
   }
@@ -313,8 +357,8 @@ export function render(pen: Pen, w: World): void {
   drawWatch(pen, w);
   drawProducts(pen, w);
   drawOrders(pen, w);
-  if (w.term) pill(pen, "term", w.term, { x: POD.x, y: 76, fill: COLOR.surface2, color: COLOR.ink, stroke: COLOR.ink, mono: true, attrs: { class: "fx-slide" } });
-  if (w.board) board(pen, w.board, { ...BOARD, lampX: [290, 420], attrs: fade(w, "board") });
+  if (w.term) pill(pen, "term", w.term, { x: TERM.x, y: TERM.y, fill: COLOR.surface2, color: COLOR.ink, stroke: COLOR.ink, mono: true, attrs: { class: "fx-slide" } });
+  if (w.board && lit(w, "board")) board(pen, w.board, { ...BOARD, lampX: [290, 420], attrs: fade(w, "board") });
   if (w.sql.length) sqlWindow(pen, "sql", podSql(w.sql), { x: TABLE.x, bottom: BOTTOM, attrs: fade(w, "sql") });
   drawArrows(pen, w);
   drawShop(pen, w);
@@ -322,13 +366,13 @@ export function render(pen: Pen, w: World): void {
   for (const id of ACTORS) drawPod(pen, w, w.actors[id]);
   pen.layer("top", () => {
     if (w.code) pen.rect("scrim", { x: 0, y: OVERLAY.y - 8, width: STAGE.w, height: SAFE_BOTTOM - OVERLAY.y + 8, fill: COLOR.bg, opacity: 0.92, class: "fx-fade" });
-    drawCode(pen, w.code, CODE_ROWS);
+    drawCode(pen, w.code, w.code && w.code.lines.length <= 5 ? w.code.lines.length : CODE_ROWS);
     drawAside(pen, w.aside);
     if (w.plate) {
       const [head, ...rest] = w.plate.split("\n");
       plate(pen, "plate", head, rest.join("\n"), STAGE);
     }
-    if (w.stamp) stamp(pen, w.stamp, { left: DB.x + DB.w + 12, right: POD.x - 12 });
+    if (w.stamp) stamp(pen, w.stamp, { left: DB.x + DB.w + 12, right: HEADER_RIGHT });
     if (w.db) bubble(pen, "db:say", w.db, { x: DB.x + DB.w + 10, y: 43, tail: "left", attrs: { class: "fx-pop" } });
   });
 }

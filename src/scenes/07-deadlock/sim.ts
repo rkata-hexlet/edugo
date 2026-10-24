@@ -35,13 +35,13 @@ export interface Order {
 
 export interface Tx {
   level: Level;
-  snapshot: number; // SERIALIZABLE: коммиты позже снимка — чужие изменения
+  snapshot: number; // SERIALIZABLE: коммиты позже снимка — чужие изменения (в Postgres снимок — на первом запросе; здесь на BEGIN, разницы в кадре нет)
   waiting: number | null; // id строки, чьего замка ждёт UPDATE
   since: number | null; // когда начал ждать — детектор срабатывает у того, кто ждёт дольше
 }
 
 /** Что под сделал в кадре — стрелки кадра. */
-export type Act = { kind: "write"; id: number } | { kind: "commit" } | { kind: "fail" };
+export type Act = { kind: "write"; id: number } | { kind: "commit" } | { kind: "fail"; undone: number[] };
 
 export interface Actor {
   id: ActorId;
@@ -74,8 +74,8 @@ export interface Code {
   mark: { line: number; tone: "warn" | "ok"; note?: string }[];
 }
 
-/** Вставки «когда что» поверх сцены: распродажа, пути с замками, 40P01 против 40001. */
-export type Aside = "sale" | "paths" | "codes";
+/** Вставки поверх сцены: распродажа, кольцо под вопросом (одним запросом), пути с замками, 40P01 против 40001. */
+export type Aside = "sale" | "paths" | "codes" | "any";
 
 export type FailReason = "deadlock" | "serialize"; // 40P01 / 40001
 
@@ -290,10 +290,11 @@ export function rollback(w: World, who: ActorId): void {
 }
 
 function fail(w: World, who: ActorId, reason: FailReason): void {
+  const undone = held(w, who);
   rollback(w, who);
   w.reason[who] = reason;
   w.actors[who].failed = true;
-  w.actors[who].acts.push({ kind: "fail" });
+  w.actors[who].acts.push({ kind: "fail", undone });
   w.events.push({ kind: "fail", by: who });
 }
 

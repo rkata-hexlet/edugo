@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Attrs, Pen, TextContent } from "../../engine/contract";
 import { SAFE_BOTTOM, SIZE } from "../../kit/theme";
 import { buildSteps } from "./script";
-import { render } from "./view";
+import { HEADER_RIGHT, render } from "./view";
 
 /** Фейковый Pen: копит текст и прямоугольники в координатах сцены (сдвиги групп складываются). */
 class RecordingPen implements Pen {
@@ -85,12 +85,12 @@ describe("отрисовка эпизода 07 (все кадры)", () => {
     expect(both).toEqual([]);
   });
 
-  it("штамп перемотки помещается в просвет шапки между Postgres и пилюлями кейса", () => {
+  it("штамп перемотки помещается в просвет шапки между Postgres и значком кейса", () => {
     const wide = frames.flatMap(({ n, pen }) => {
       const t = pen.texts.find((x) => x.key === "stamp:t");
       if (!t) return [];
       const right = t.x + pen.measure(t.content, { "font-size": t.size }).width + 16;
-      return right > 640 - 12 ? [`кадр ${n}: правый край ${Math.round(right)}`] : [];
+      return right > HEADER_RIGHT ? [`кадр ${n}: правый край ${Math.round(right)}`] : [];
     });
     expect(wide).toEqual([]);
   });
@@ -106,7 +106,7 @@ describe("отрисовка эпизода 07 (все кадры)", () => {
       const t = pen.texts.find((x) => x.key === "db:say:t");
       if (!t || !pen.texts.some((x) => x.key === "chapter:t")) return [];
       const right = t.x + pen.measure(t.content, { "font-size": t.size }).width + 16;
-      return right > 640 - 8 ? [`кадр ${n}: правый край ${Math.round(right)}`] : [];
+      return right > HEADER_RIGHT ? [`кадр ${n}: правый край ${Math.round(right)}`] : [];
     });
     expect(over).toEqual([]);
   });
