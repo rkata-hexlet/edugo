@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Attrs, Pen, TextContent } from "../../engine/contract";
 import { SAFE_BOTTOM, SIZE } from "../../kit/theme";
 import { buildSteps } from "./script";
-import { HEADER_RIGHT, render } from "./view";
+import { HEADER_RIGHT, PG, render } from "./view";
 
 /** Фейковый Pen: копит текст и прямоугольники в координатах сцены (сдвиги групп складываются). */
 class RecordingPen implements Pen {
@@ -101,12 +101,12 @@ describe("отрисовка эпизода 08 (все кадры)", () => {
       pen.texts.filter((t) => t.x > 1280).map((t) => `кадр ${n}: ${t.key} x=${t.x}`));
     expect(wide).toEqual([]);
   });
-  it("пузырь реплики Postgres не наезжает на значок кейса", () => {
+  it("реплика Postgres — у слона в рамке базы и не выходит за её правый край", () => {
     const over = frames.flatMap(({ n, pen }) => {
       const t = pen.texts.find((x) => x.key === "db:say:t");
-      if (!t || !pen.texts.some((x) => x.key === "chapter:t")) return [];
+      if (!t) return [];
       const right = t.x + pen.measure(t.content, { "font-size": t.size }).width + 16;
-      return right > HEADER_RIGHT ? [`кадр ${n}: правый край ${Math.round(right)}`] : [];
+      return right > PG.x + PG.w || t.y < PG.y ? [`кадр ${n}: правый край ${Math.round(right)}`] : [];
     });
     expect(over).toEqual([]);
   });

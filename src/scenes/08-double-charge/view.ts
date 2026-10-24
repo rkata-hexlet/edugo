@@ -10,29 +10,30 @@ import { recallWorld } from "./script";
 import { ACTORS, AMOUNT, ORDER, type Actor, type ActorId, type Focus, type KeyRow, type SimEvent, type World } from "./sim";
 
 // Поды стоят на месте; что они делают, говорят стрелки — только из состояния кадра.
-// Сетка (1280×720): шапка (слон, ярлык, кейс); слева телефон Иры; в центре поды; справа сверху банк с журналом
-// списаний (внешний мир — таблица его не видит), под ним payments и idempotency_keys; внизу справа табло, внизу в
-// центре SQL. Ниже SAFE_BOTTOM — пусто.
+// Сетка (1280×720): шапка (ярлык, кейс, штамп); слева телефон Иры; в центре поды; справа сверху банк — внешний
+// сервис (пунктир; таблица его не видит), под ним наш Postgres — рамка со слоном вокруг payments и idempotency_keys,
+// стрелки подов входят в неё; внизу справа табло, внизу слева SQL. Ниже SAFE_BOTTOM — пусто.
 
 const PHONE = { x: 40, y: 120, w: 220, h: 330 };
 const POD = { x: 360 };
 const POD_Y: Record<ActorId, number> = { A: 150, B: 340 };
 const POD_SCALE = 1.2;
 const PB = { w: BOB.w * POD_SCALE, h: BOB.h * POD_SCALE };
-const BANK = { x: 750, y: 112, w: 490, h: 150 };
-const TABLE = { x: 750, w: 490, rowH: 40, gap: 6 };
-const PAY_Y = 314;
-const KEYS_Y = 470;
+const BANK = { x: 750, y: 104, w: 490, h: 128 };
+/** Наш Postgres: рамка вокруг таблиц, слон — в её шапке. */
+export const PG = { x: 750, y: 246, w: 490, h: 260 };
+const TABLE = { x: 758, w: 474, rowH: 38, gap: 4 };
+const PAY_Y = 330;
+const KEYS_Y = 462;
 const BOARD = { x: 750, y: 516, w: 490, rowH: 26 };
 const BOTTOM = 650;
-const DB = { x: 100, w: 130 };
 /** Значок кейса и ярлык акта: в шапке им тесно с репликой Postgres. */
 export const CHAPTER = { x: 1150, y: 22 };
-const TERM = { x: 750, y: 70 };
+const TERM = { x: 750, y: 62 };
 /** Правый край шапки для реплики Postgres и штампа перемотки. */
 export const HEADER_RIGHT = CHAPTER.x - 12;
 /** Колонки idempotency_keys. */
-const COL = { key: 12, status: 92, response: 206, lease: 368 };
+const COL = { key: 10, status: 86, response: 196, lease: 352 };
 
 const MONO = { "font-family": FONT.mono, "font-size": SIZE.body };
 const SANS = { "font-family": FONT.sans, "font-size": SIZE.body };
@@ -165,40 +166,52 @@ function drawBank(pen: Pen, w: World): void {
   const { x, y, w: bw, h } = BANK;
   const alarm = happened(w, "double");
   pen.group("bank", 0, 0, () => {
-    panel(pen, "bank:box", { x, y, w: bw, h, stroke: alarm ? COLOR.error : COLOR.mail });
-    mailFace(pen, "bank:face", { x: x + 26, y: y + 30, mood: alarm ? "alarm" : happened(w, "replayed") ? "relieved" : w.ledger.length ? "calm" : "asleep" });
-    pen.text("bank:title", { x: x + 76, y: y + 36, ...SANS, "font-size": SIZE.say, "font-weight": 700, fill: COLOR.mail }, "Банк");
+    panel(pen, "bank:box", { x, y, w: bw, h, stroke: alarm ? COLOR.error : COLOR.mail, attrs: { "stroke-dasharray": "8 6" } });
+    mailFace(pen, "bank:face", { x: x + 26, y: y + 26, mood: alarm ? "alarm" : happened(w, "replayed") ? "relieved" : w.ledger.length ? "calm" : "asleep" });
+    pen.text("bank:title", { x: x + 76, y: y + 32, ...SANS, "font-size": SIZE.say, "font-weight": 700, fill: COLOR.mail }, "Банк");
+    pen.text("bank:ext", { x: x + bw - 4, y: y - 12, ...SANS, fill: COLOR.muted, "text-anchor": "end" }, "внешний сервис");
     w.ledger.forEach((c, i) => {
       // Второе списание за те же кроссовки — красным, даже если сервер считал его новой попыткой.
       const dup = i > 0;
       const fresh = happened(w, i === w.ledger.length - 1 ? (dup ? "double" : "charge") : "page");
       const [k, fx] = once(`bank:row${i}`, w.frame, fresh ? "fx-slide" : null);
-      pen.group(k, x + 16, y + 56 + i * 44, () => {
-        pen.rect(`${k}:bg`, { width: bw - 32, height: 38, rx: 6, fill: dup ? COLOR.alarmBg : COLOR.surface2, stroke: dup ? COLOR.error : COLOR.line, "stroke-width": 1.5 });
-        pen.text(`${k}:t`, { x: 12, y: 26, ...MONO, fill: dup ? COLOR.error : COLOR.ink, "font-weight": 700 }, `−${rub(c.amount)} · заказ ${c.order}`);
-        if (c.key) iconText(pen, `${k}:key`, "key", bw - 32 - 110, 26, c.key, COLOR.warn, MONO);
+      pen.group(k, x + 16, y + 46 + i * 38, () => {
+        pen.rect(`${k}:bg`, { width: bw - 32, height: 34, rx: 6, fill: dup ? COLOR.alarmBg : COLOR.surface2, stroke: dup ? COLOR.error : COLOR.line, "stroke-width": 1.5 });
+        pen.text(`${k}:t`, { x: 12, y: 23, ...MONO, fill: dup ? COLOR.error : COLOR.ink, "font-weight": 700 }, `−${rub(c.amount)} · заказ ${c.order}`);
+        if (c.key) iconText(pen, `${k}:key`, "key", bw - 32 - 110, 23, c.key, COLOR.warn, MONO);
       }, fx);
     });
   }, fade(w, "bank"));
-  if (w.bank) bubble(pen, "bank:say", w.bank, { x: x + 140, y: y + 30, tail: "left", attrs: { class: "fx-pop" } });
+  if (w.bank) bubble(pen, "bank:say", w.bank, { x: x + 130, y: y + 26, tail: "left", attrs: { class: "fx-pop" } });
 }
 
-/** payments и idempotency_keys (колонки — по `keyCols`); часы БД — только в кейсе 2. */
+/** Наш Postgres: рамка со слоном и таблицами payments и idempotency_keys (колонки — по `keyCols`); часы БД — только в кейсе 2. */
 function drawTables(pen: Pen, w: World): void {
-  pen.text("pay:hdr", { x: TABLE.x + 12, y: PAY_Y - 12, ...MONO, fill: COLOR.muted, ...fade(w, "payments") }, "payments");
+  const rows = w.keys.length;
+  const h = Math.max(PG.h, KEYS_Y + rows * (TABLE.rowH + TABLE.gap) + 2 - PG.y);
+  panel(pen, "pg:box", { x: PG.x, y: PG.y, w: PG.w, h, fill: COLOR.bg2, stroke: COLOR.postgres, attrs: fade(w, "payments", "keys", "db") });
+  const bad = happened(w, "conflict");
+  const [dbKey, dbFx] = once("db:nod", w.frame, bad ? "fx-nod" : null);
+  const busy = ["insert", "done", "takeover"].some((k) => happened(w, k as SimEvent["kind"]));
+  const look = w.db ? { x: 1, y: 0.2 } : busy ? { x: 0.3, y: 1 } : { x: 0, y: 0 };
+  pen.group("pg:head", 0, 0, () => {
+    pen.group(dbKey, 0, 0, () => elephant(pen, "db:face", { x: PG.x + 22, y: PG.y + 6, talking: !!w.db, scale: 0.8, look, frown: bad }), dbFx);
+    pen.text("db:name", { x: PG.x + 70, y: PG.y + 32, ...SANS, "font-size": SIZE.say, "font-weight": 700, fill: COLOR.ink }, "Postgres");
+  }, fade(w, "payments", "keys", "db"));
+  pen.text("pay:hdr", { x: TABLE.x + 10, y: PAY_Y - 10, ...MONO, fill: COLOR.muted, ...fade(w, "payments") }, "payments");
   w.payments.forEach((p, i) => {
     const k = `pay:${i}`;
     const [gk, fx] = once(k, w.frame, happened(w, "insert", p.by) && i === w.payments.length - 1 ? "fx-pop" : null);
     pen.group(gk, TABLE.x, PAY_Y + i * (TABLE.rowH + TABLE.gap), () => {
       pen.rect(`${k}:bg`, { width: TABLE.w, height: TABLE.rowH, rx: 6, fill: COLOR.surface, stroke: i > 0 ? COLOR.error : COLOR.line, "stroke-width": 1.5 });
       pen.rect(`${k}:dot`, { x: 12, y: 14, width: 12, height: 12, rx: 6, fill: ACTOR[p.by].color });
-      pen.text(`${k}:t`, { x: 36, y: 26, ...MONO, fill: COLOR.ink }, `order_id ${p.order} · ${p.amount}`);
+      pen.text(`${k}:t`, { x: 36, y: 25, ...MONO, fill: COLOR.ink }, `order_id ${p.order} · ${p.amount}`);
     }, { ...fade(w, "payments"), ...fx });
   });
   if (!w.keyCols) return;
   const cols = w.keyCols;
   pen.group("keys:hdr", 0, 0, () => {
-    pen.text("keys:name", { x: TABLE.x + 12, y: KEYS_Y - 36, ...MONO, fill: COLOR.muted }, "idempotency_keys");
+    pen.text("keys:name", { x: TABLE.x + 10, y: KEYS_Y - 34, ...MONO, fill: COLOR.muted }, "idempotency_keys");
     const names: [keyof typeof COL, string][] = [["key", "key"], ["status", "status"], ["response", "response"], ["lease", "locked_until"]];
     names.filter(([c]) => c === "key" || (c === "lease" ? cols.includes("lease") : cols.includes("status")))
       .forEach(([c, label]) => pen.text(`keys:h:${c}`, { x: TABLE.x + COL[c], y: KEYS_Y - 10, ...MONO, fill: COLOR.faint }, label));
@@ -206,8 +219,8 @@ function drawTables(pen: Pen, w: World): void {
   w.keys.forEach((r, i) => drawKey(pen, w, r, i));
   if (w.clockShown) {
     pen.group("clock", 0, 0, () => {
-      icon(pen, "clock:i", "clock", TABLE.x + TABLE.w - 130, KEYS_Y - 58, 22, COLOR.muted);
-      pen.text("clock:t", { x: TABLE.x + TABLE.w, y: KEYS_Y - 40, "font-family": FONT.mono, "font-size": SIZE.body, "font-weight": 700, fill: COLOR.ink, "text-anchor": "end" }, time(w.clock));
+      icon(pen, "clock:i", "clock", TABLE.x + TABLE.w - 130, KEYS_Y - 52, 22, COLOR.muted);
+      pen.text("clock:t", { x: TABLE.x + TABLE.w, y: KEYS_Y - 34, "font-family": FONT.mono, "font-size": SIZE.body, "font-weight": 700, fill: COLOR.ink, "text-anchor": "end" }, time(w.clock));
     }, { ...fade(w, "keys"), ...(happened(w, "tick") ? { class: "fx-pulse" } : {}) });
   }
 }
@@ -224,26 +237,19 @@ function drawKey(pen: Pen, w: World, r: KeyRow, i: number): void {
       width: TABLE.w, height: TABLE.rowH, rx: 6, fill: done ? COLOR.doneBg : COLOR.surface,
       stroke: owner.dead && !done ? COLOR.faint : ACTOR[r.by].color, "stroke-width": 2, ...(owner.dead && !done ? { "stroke-dasharray": "6 4" } : {}),
     });
-    pen.text(`${k}:key`, { x: COL.key, y: 26, ...MONO, fill: COLOR.warn, "font-weight": 700 }, r.key);
+    pen.text(`${k}:key`, { x: COL.key, y: 25, ...MONO, fill: COLOR.warn, "font-weight": 700 }, r.key);
     if (cols.includes("status")) {
-      pen.text(`${k}:st`, { x: COL.status, y: 26, ...MONO, fill: done ? COLOR.ok : COLOR.warn }, r.status);
-      pen.text(`${k}:resp`, { x: COL.response, y: 26, ...MONO, fill: r.response ? COLOR.ink : COLOR.faint }, r.response ?? "—");
+      pen.text(`${k}:st`, { x: COL.status, y: 25, ...MONO, fill: done ? COLOR.ok : COLOR.warn }, r.status);
+      pen.text(`${k}:resp`, { x: COL.response, y: 25, ...MONO, fill: r.response ? COLOR.ink : COLOR.faint }, r.response ?? "—");
     }
     if (cols.includes("lease")) {
       const expired = r.lockedUntil !== null && r.lockedUntil < w.clock;
-      pen.text(`${k}:lease`, { x: COL.lease, y: 26, ...MONO, fill: expired ? COLOR.error : COLOR.muted }, r.lockedUntil === null ? "—" : time(r.lockedUntil));
+      pen.text(`${k}:lease`, { x: COL.lease, y: 25, ...MONO, fill: expired ? COLOR.error : COLOR.muted }, r.lockedUntil === null ? "—" : time(r.lockedUntil));
     }
   }, { ...fade(w, "keys"), ...fx });
 }
 
 function drawHeader(pen: Pen, w: World): void {
-  const bad = happened(w, "conflict");
-  const [dbKey, dbFx] = once("db:nod", w.frame, bad ? "fx-nod" : null);
-  const busy = ["insert", "done", "takeover"].some((k) => happened(w, k as SimEvent["kind"]));
-  const look = w.db ? { x: 1, y: 0.2 } : busy ? { x: 0.3, y: 1 } : { x: 0, y: 0 };
-  pen.group(dbKey, 0, 0, () => elephant(pen, "db:face", { x: 44, y: 8, talking: !!w.db, scale: 1.08, look, frown: bad }), dbFx);
-  panel(pen, "db", { x: DB.x, y: 20, w: DB.w, h: 46, rx: 14, fill: COLOR.surface2, stroke: COLOR.postgres });
-  pen.text("db:name", { x: DB.x + 16, y: 50, ...SANS, "font-size": SIZE.say, "font-weight": 700, fill: COLOR.ink }, "Postgres");
   if (w.chapter) pill(pen, "chapter", `КЕЙС ${w.chapter}`, { x: CHAPTER.x - 20, y: CHAPTER.y, fill: "none", color: COLOR.ink, stroke: COLOR.ink });
 }
 
@@ -267,7 +273,7 @@ export function render(pen: Pen, w: World): void {
   if (w.flashback !== null) {
     render01(pen, recallWorld(w.flashback));
     pen.layer("top", () => {
-      if (w.stamp) stamp(pen, w.stamp, { left: DB.x + DB.w + 12, right: HEADER_RIGHT });
+      if (w.stamp) stamp(pen, w.stamp, { left: PHONE.x, right: HEADER_RIGHT });
     });
     return;
   }
@@ -289,7 +295,7 @@ export function render(pen: Pen, w: World): void {
       const [head, ...rest] = w.plate.split("\n");
       plate(pen, "plate", head, rest.join("\n"), STAGE);
     }
-    if (w.stamp) stamp(pen, w.stamp, { left: DB.x + DB.w + 12, right: HEADER_RIGHT });
-    if (w.db) bubble(pen, "db:say", w.db, { x: DB.x + DB.w + 10, y: 43, tail: "left", attrs: { class: "fx-pop" } });
+    if (w.stamp) stamp(pen, w.stamp, { left: PHONE.x, right: HEADER_RIGHT });
+    if (w.db) bubble(pen, "db:say", w.db, { x: PG.x + 172, y: PG.y + 25, tail: "left", attrs: { class: "fx-pop" } });
   });
 }
