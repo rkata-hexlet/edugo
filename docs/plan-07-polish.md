@@ -18,7 +18,7 @@ motion-designer, звук — по карте sound-designer; итоговая �
 |---|---|---|---|
 | 0 | Стиль (tech-writer) ✅ 8e3ab46 | закадр, реплики, подписи кода по чек-листу `06-recurring-mistakes.md` | эпизод |
 | 1 | Смысл (tech-expert) ✅ 04382e4 | модель, SQL/Go в кадре, закадр после стиля | эпизод |
-| 2 | Восприятие (learning-designer) | по контактным листам и закадру | эпизод |
+| 2 | Восприятие (learning-designer) ✅ 171010a | по контактным листам и закадру | эпизод |
 | 3 | Отрисовка (motion-designer) ✅ 04382e4, kit f5bf09b | разбор по листам → правки `view.ts` | эпизод |
 | 4 | Звук (sound-designer) ✅ ed2ab6d | карта `07-sound-design.md` → `sound.ts` | эпизод |
-| 5 | Итог | tech-expert по готовому, /code-review, `npm run narration` | эпизод |
+| 5 | Итог: tech-expert ✅ 4ea904d, narration ✅; /code-review — у пользователя | tech-expert по готовому, /code-review, `npm run narration` | эпизод |
