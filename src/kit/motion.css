@@ -205,3 +205,8 @@
     animation: none !important;
   }
 }
+
+/* Очерёдность внутри окна 0,45 с: взгляд идёт по цепочке событий (штамп → предмет → реакция персонажа). */
+.stage .d1 { animation-delay: 0.12s; }
+.stage .d2 { animation-delay: 0.22s; }
+.stage .d3 { animation-delay: 0.3s; }
