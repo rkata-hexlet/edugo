@@ -3,6 +3,7 @@ import type { Board } from "../../kit/director";
 import { BOB, bob, elephant, type Look, type Mood } from "../../kit/characters";
 import { icon } from "../../kit/icons";
 import { ACTOR, COLOR, DIM, FONT, SAFE_BOTTOM, SIZE, SQL_COLOR } from "../../kit/theme";
+import { awning, buyButton, lock, MUG, mug, person, PERSON, type PersonMood } from "../../kit/props";
 import { highlightSql } from "../../kit/sql";
 import { board, bubble, iconText, once, panel, pill, plate, podSql, sqlWindow, stamp } from "../../kit/widgets";
 import { clock } from "./script";
@@ -20,8 +21,10 @@ const POD_SCALE = 1.4;
 const PB = { w: BOB.w * POD_SCALE, h: BOB.h * POD_SCALE };
 const TABLE = { x: 40, y: 124, w: 400, rowH: 38, gap: 5 };
 const ORDERS = { y: 312 };
-const SHOP = { x: 984, y: 130, w: 256, h: 326 };
-const CARD_Y: Record<ActorId, number> = { A: 236, B: 366 };
+/** Витрина: навес, вывеска, полка (пока о ней говорят) и карточки покупателей напротив своих подов. */
+const SHOP = { x: 996, y: 118, w: 248, h: 350 };
+const CARD_TOP: Record<ActorId, number> = { A: 250, B: 360 };
+const CARD_Y: Record<ActorId, number> = { A: CARD_TOP.A + 30, B: CARD_TOP.B + 30 };
 const BOARD = { x: 750, y: 486, w: 490, rowH: 26 };
 /** Оверлеи (код, вставка 01, лесенка): под ярлыком акта, на скриме поверх сцены. */
 const OVERLAY = { y: 124 };
@@ -75,12 +78,18 @@ function drawRow(pen: Pen, w: World): void {
           { text: "stock ", attrs: { fill: COLOR.muted } },
           { text: value, attrs: { "font-weight": 700 } },
         ]);
+        // Полоска слева — цвет автора версии (цвет = кто).
+        if (v.by) pen.rect(`${k}:who`, { x: 0, y: 0, width: 6, height: TABLE.rowH, rx: 3, fill: ACTOR[v.by].color });
         if (draft) {
-          icon(pen, `${k}:lock`, "lock", TABLE.w - 34, 7, 24, ACTOR[v.by!].color);
+          // Замок своей отрисовкой: дужка защёлкивается в кадре записи.
+          const [lockKey, shFx] = once(`${k}:lock`, w.frame, happened(w, "write", v.by!) ? "fx-lock" : null);
+          lock(pen, lockKey, { x: TABLE.w - 32, y: 6, color: ACTOR[v.by!].color, shackle: shFx });
           if (w.stack) pen.text(`${k}:note`, { x: TABLE.w - 44, y: 25, ...SANS, fill: COLOR.warn, "text-anchor": "end" }, "не закоммичено");
         } else if (w.stack && v.by) {
-          const when = w.clockShown ? ` · ${clock(v.at!)}` : "";
-          pen.text(`${k}:note`, { x: TABLE.w - 14, y: 25, ...SANS, fill: ACTOR[v.by].color, "text-anchor": "end" }, `от пода ${v.by}${when}`);
+          // Автор — значком пода, время коммита — рядом, если часы на экране.
+          pen.rect(`${k}:badge`, { x: TABLE.w - 36, y: 6, width: 26, height: 26, rx: 13, fill: ACTOR[v.by].color });
+          pen.text(`${k}:badge:t`, { x: TABLE.w - 23, y: 25, ...SANS, "font-weight": 700, fill: COLOR.bg, "text-anchor": "middle" }, v.by);
+          if (w.clockShown) pen.text(`${k}:note`, { x: TABLE.w - 46, y: 25, ...SANS, fill: COLOR.muted, "text-anchor": "end" }, clock(v.at!));
         } else if (w.stack && w.clockShown) {
           pen.text(`${k}:note`, { x: TABLE.w - 14, y: 25, ...SANS, fill: COLOR.muted, "text-anchor": "end" }, clock(v.at!));
         }
@@ -142,8 +151,15 @@ function drawOrders(pen: Pen, w: World): void {
         width: TABLE.w, height: TABLE.rowH, rx: 6, fill: extra ? COLOR.alarmBg : o.committed ? COLOR.surface : COLOR.draftBg,
         stroke: extra ? COLOR.error : o.committed ? COLOR.line : COLOR.warn, "stroke-width": 1.5, ...(o.committed ? {} : { "stroke-dasharray": "6 4" }),
       });
-      pen.text(`${k}:t`, { x: 14, y: 25, ...MONO, fill: COLOR.ink }, `заказ ${i + 1} · кружка · ${name(w, o.by)}`);
-      if (extra) pen.text(`${k}:x`, { x: TABLE.w - 14, y: 25, ...SANS, "font-weight": 700, fill: COLOR.error, "text-anchor": "end" }, "лишний");
+      // Билетик: кружок цвета пода, вставившего заказ, и перфорация.
+      pen.rect(`${k}:dot`, { x: 12, y: 13, width: 12, height: 12, rx: 6, fill: ACTOR[o.by].color });
+      pen.line(`${k}:perf`, { x1: 34, y1: 4, x2: 34, y2: TABLE.rowH - 4, stroke: COLOR.line, "stroke-width": 2, "stroke-dasharray": "3 4" });
+      pen.text(`${k}:t`, { x: 46, y: 25, ...MONO, fill: COLOR.ink }, `заказ ${i + 1} · ${name(w, o.by)}`);
+      // «Лишний» — красный штамп наискось.
+      if (extra) pen.group(`${k}:x`, TABLE.w - 96, 4, () => {
+        pen.rect(`${k}:x:bg`, { x: 0, y: 0, width: 84, height: 30, rx: 5, fill: COLOR.alarmBg, stroke: COLOR.error, "stroke-width": 2 });
+        pen.text(`${k}:x:t`, { x: 42, y: 21, ...SANS, "font-weight": 800, fill: COLOR.error, "text-anchor": "middle" }, "ЛИШНИЙ");
+      }, happened(w, "commit", o.by) ? { class: "fx-stamp" } : {}, { rotate: -6, origin: [42, 15] });
     }, { ...fade(w, "orders"), ...fx });
   });
 }
@@ -237,34 +253,51 @@ function drawPodArrows(pen: Pen, w: World): void {
   }
 }
 
-const STATUS: Record<string, { icon: "check" | "hourglass" | "cross" | null; text: string; color: string }> = {
-  idle: { icon: null, text: "смотрит на кружку", color: COLOR.muted },
-  press: { icon: null, text: "жмёт «Купить»", color: COLOR.ink },
-  wait: { icon: "hourglass", text: "ждёт…", color: COLOR.warn },
-  ok: { icon: "check", text: "Заказ принят", color: COLOR.ok },
-  none: { icon: "cross", text: "Нет в наличии", color: COLOR.muted },
-};
+/** Чей заказ лишний: закоммичен сверх того, что было на складе. */
+function extraBy(w: World): ActorId | null {
+  const committed = w.orders.filter((o) => o.committed);
+  return committed.length > STOCK ? committed[STOCK].by : null;
+}
 
-/** Магазин: витрина (пока о ней говорят) и покупатели, каждый — напротив своего пода. */
+const MOOD: Record<string, PersonMood> = { idle: "idle", press: "idle", wait: "idle", ok: "happy", none: "sad" };
+
+/** Магазин: витрина с навесом; покупатель — аватар в цвете своего пода, кнопка «Купить», кружка у того, кому её продали. */
 function drawShop(pen: Pen, w: World): void {
-  panel(pen, "shop:box", { x: SHOP.x, y: SHOP.y, w: SHOP.w, h: SHOP.h, stroke: COLOR.browser, attrs: fade(w, "shop") });
+  const x = SHOP.x;
+  panel(pen, "shop:box", { x, y: SHOP.y, w: SHOP.w, h: SHOP.h, stroke: COLOR.browser, attrs: fade(w, "shop") });
   pen.group("shop", 0, 0, () => {
-    iconText(pen, "shop:title", "browser", SHOP.x + 16, SHOP.y + 36, "Магазин", COLOR.browser, { ...SANS, "font-size": SIZE.say, "font-weight": 700 });
+    awning(pen, "shop:awning", { x, y: SHOP.y, w: SHOP.w });
+    pen.text("shop:title", { x: x + 16, y: SHOP.y + 58, ...SANS, "font-size": SIZE.say, "font-weight": 700, fill: COLOR.browser }, "Магазин");
     if (w.showcase) {
-      const left = w.versions[latest(w)].stock;
-      pen.text("shop:mug", { x: SHOP.x + 16, y: SHOP.y + 70, ...SANS, fill: COLOR.warn, "font-weight": 700, class: "fx-pop" }, `Кружка · осталось ${left}`);
+      // Полка: последняя кружка — только в кадре, где о ней говорят.
+      mug(pen, "shop:shelf:mug", { x: x + 18, y: SHOP.y + 84, attrs: { class: "fx-pop" } });
+      pen.rect("shop:shelf", { x: x + 10, y: SHOP.y + 122, width: SHOP.w - 20, height: 4, rx: 2, fill: COLOR.line });
+      pill(pen, "shop:left", `осталось ${w.versions[latest(w)].stock}`, { x: x + 88, y: SHOP.y + 88, fill: COLOR.bg, color: COLOR.warn, stroke: COLOR.warn });
     }
+    const extra = extraBy(w);
     for (const c of w.customers) {
-      const st = STATUS[c.status];
-      const y = CARD_Y[c.pod];
+      const top = CARD_TOP[c.pod];
       const changed = happened(w, c.status === "ok" ? "ok" : c.status === "none" ? "none" : "press", c.pod);
       const [k, fx] = once(`shop:${c.pod}`, w.frame, changed ? "fx-pop" : null);
+      const tx = x + 16 + PERSON.w + 12;
+      person(pen, `shop:${c.pod}:who`, {
+        x: x + 16, y: top + 8, shirt: ACTOR[c.pod].color, mood: MOOD[c.status],
+        look: c.status === "idle" ? { x: 0, y: -1 } : c.status === "ok" || c.status === "none" ? { x: 1, y: 0 } : { x: -1, y: 0 },
+      });
+      pen.text(`shop:${c.pod}:n`, { x: tx, y: top + 26, ...SANS, "font-size": SIZE.say, "font-weight": 700, fill: COLOR.ink }, c.name);
       pen.group(k, 0, 0, () => {
-        pen.text(`${k}:n`, { x: SHOP.x + 16, y, ...SANS, "font-size": SIZE.say, "font-weight": 700, fill: COLOR.ink }, c.name);
-        if (st.icon) iconText(pen, `${k}:s`, st.icon, SHOP.x + 16, y + 32, st.text, st.color, { ...SANS, "font-weight": 600 });
-        else pen.text(`${k}:s:t`, { x: SHOP.x + 16, y: y + 32, ...SANS, fill: st.color }, st.text);
-        // Сквозной гэг: Борису «нет в наличии» — и стикер «скоро завезём».
-        if (c.status === "none") pill(pen, `${k}:sticker`, "скоро завезём", { x: SHOP.x + 40, y: y + 48, fill: COLOR.warn, color: COLOR.bg, attrs: { class: "fx-stamp" } });
+        if (c.status === "press") buyButton(pen, `${k}:buy`, { x: tx, y: top + 38, pressed: true });
+        if (c.status === "wait") iconText(pen, `${k}:s`, "hourglass", tx, top + 60, "ждёт…", COLOR.warn, { ...SANS, "font-weight": 600 });
+        if (c.status === "ok") {
+          iconText(pen, `${k}:s`, "check", tx, top + 60, "Заказ принят", COLOR.ok, { ...SANS, "font-weight": 600 });
+          // Кружка у покупателя; у лишнего заказа — только контур: подтверждение есть, кружки нет (рифма с хуком).
+          mug(pen, `${k}:mug`, { x: x + SHOP.w - MUG.w - 14, y: top + 4, ghost: extra === c.pod });
+        }
+        if (c.status === "none") {
+          iconText(pen, `${k}:s`, "cross", tx, top + 60, "Нет в наличии", COLOR.muted, { ...SANS, "font-weight": 600 });
+          // Сквозной гэг: Борису «нет в наличии» — и стикер «скоро завезём».
+          pill(pen, `${k}:sticker`, "скоро завезём", { x: tx, y: top + 72, fill: COLOR.warn, color: COLOR.bg, attrs: { class: "fx-stamp" } });
+        }
       }, fx);
     }
   }, fade(w, "shop"));
@@ -391,7 +424,11 @@ function firstOnly(b: Board): Board {
 
 function drawHeader(pen: Pen, w: World): void {
   const [dbKey, dbFx] = once("db:nod", w.frame, happened(w, "fail") || happened(w, "zero") ? "fx-nod" : null);
-  pen.group(dbKey, 0, 0, () => elephant(pen, "db:face", { x: TABLE.x + 4, y: 8, talking: !!w.db, scale: 1.08 }), dbFx);
+  // Слон смотрит туда, где событие: на таблицу под ним, когда пишут; на поды, когда отвечает. Отказ — хмурится.
+  const busy = ["write", "commit", "zero", "fail"].some((k) => happened(w, k as SimEvent["kind"]));
+  const look = w.db ? { x: 1, y: 0.2 } : busy ? { x: 0.3, y: 1 } : { x: 0, y: 0 };
+  const frown = happened(w, "fail") || happened(w, "zero");
+  pen.group(dbKey, 0, 0, () => elephant(pen, "db:face", { x: TABLE.x + 4, y: 8, talking: !!w.db, scale: 1.08, look, frown }), dbFx);
   panel(pen, "db", { x: DB.x, y: 20, w: DB.w, h: 46, rx: 14, fill: COLOR.surface2, stroke: COLOR.postgres });
   pen.text("db:name", { x: DB.x + 16, y: 50, ...SANS, "font-size": SIZE.say, "font-weight": 700, fill: COLOR.ink }, "Postgres");
   if (w.chapter) pill(pen, "chapter", "КЕЙС", { x: POD.x, y: 22, fill: "none", color: COLOR.ink, stroke: COLOR.ink });
