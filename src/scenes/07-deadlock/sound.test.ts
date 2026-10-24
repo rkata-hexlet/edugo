@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Sound, Voice } from "../../engine/contract";
 import { ACT, buildSteps } from "./script";
-import { BABBLE_AT, EVENT_WINDOW, MAX_SOUNDS, score, sound } from "./sound";
+import { BABBLE_AT, EVENT_WINDOW, MAX_SOUNDS, schedule, score, sound } from "./sound";
 
 function recorder() {
   const calls: { kind: "tone" | "noise" | "babble"; at: number; gain: number; wave?: string }[] = [];
@@ -58,5 +58,32 @@ describe("озвучка эпизода 07", () => {
     const { s, calls } = recorder();
     sound(s, steps[i].state);
     expect(calls.some((c) => c.wave === "square" && c.gain >= 0.13)).toBe(true);
+  });
+
+  it("рифма развязок: хвост «бзз, отказ, динь» в хуке и в попытке SERIALIZABLE звучит в те же моменты", () => {
+    const tail = (i: number) => {
+      const w = steps[i].state;
+      const ev = score(w);
+      const at = schedule(w, ev);
+      return Object.fromEntries(ev.map((e, j) => [e.kind, at[j]]).filter(([k]) => ["fail", "refused", "ok"].includes(k as string)));
+    };
+    const hook = tail(at(ACT.hook, "fail"));
+    expect(Object.keys(hook)).toEqual(["fail", "refused", "ok"]);
+    expect(tail(at(ACT.ser, "fail"))).toEqual(hook);
+    expect(kindsOf(at(ACT.ser, "fail"))).toEqual(["ring", "detect", "fail", "refused", "ok"]);
+  });
+
+  it("очередь звучит спокойнее кольца: в кадре сортировки нет лязга, тики ожидания тише", () => {
+    const i = at(ACT.sort, "wait");
+    expect(kindsOf(i)).not.toContain("ring");
+    const { s, calls } = recorder();
+    sound(s, { ...steps[i].state, events: steps[i].state.events.filter((e) => e.kind === "wait") });
+    expect(calls.every((c) => c.gain <= 0.03)).toBe(true);
+  });
+
+  it("кольцо замкнулось — слон молчит до голоса", () => {
+    const { s, calls } = recorder();
+    sound(s, steps[at(ACT.hook, "ring")].state);
+    expect(calls.some((c) => c.kind === "babble")).toBe(false);
   });
 });
