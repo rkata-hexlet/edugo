@@ -13,8 +13,11 @@ import { ACTORS, STOCK, latest, type Act, type Actor, type ActorId, type Focus, 
 // в центре поды; справа магазин с покупателями и табло. Ниже SAFE_BOTTOM — пусто.
 // Снимок REPEATABLE READ — пунктирная линия цвета пода над версиями, которых транзакция не видит.
 
-const POD_Y: Record<ActorId, number> = { A: 150, B: 300 };
-const POD = { x: 640 };
+const POD_Y: Record<ActorId, number> = { A: 150, B: 310 };
+const POD = { x: 620 };
+/** Поды крупнее «боба» серии: середина кадра не пустует (motion-designer). */
+const POD_SCALE = 1.4;
+const PB = { w: BOB.w * POD_SCALE, h: BOB.h * POD_SCALE };
 const TABLE = { x: 40, y: 124, w: 400, rowH: 38, gap: 5 };
 const ORDERS = { y: 312 };
 const SHOP = { x: 984, y: 130, w: 256, h: 326 };
@@ -33,7 +36,7 @@ const HALO = { "paint-order": "stroke", stroke: COLOR.bg, "stroke-width": 6, "st
 
 const rowY = (p: number) => TABLE.y + p * (TABLE.rowH + TABLE.gap);
 const orderY = (i: number) => ORDERS.y + i * (TABLE.rowH + TABLE.gap);
-const podMid = (id: ActorId) => POD_Y[id] + BOB.h / 2;
+const podMid = (id: ActorId) => POD_Y[id] + PB.h / 2;
 const lit = (w: World, ...ids: Focus[]) => !w.focus || ids.some((id) => w.focus!.includes(id));
 const fade = (w: World, ...ids: Focus[]) => ({ opacity: lit(w, ...ids) ? 1 : DIM });
 const happened = (w: World, kind: SimEvent["kind"], by?: ActorId) => w.events.some((e) => e.kind === kind && (by === undefined || e.by === by));
@@ -95,7 +98,7 @@ function drawCheck(pen: Pen, w: World): void {
   const color = c.ok ? COLOR.ok : COLOR.error;
   // Под подом B, а не на стрелках: это его условие перепроверила база (motion-designer).
   const width = pen.measure(c.text, MONO).width + 52;
-  pen.group("check", POD.x - 10, POD_Y.B + BOB.h + 22, () => {
+  pen.group("check", POD.x - 10, POD_Y.B + PB.h + 22, () => {
     pen.rect("check:bg", { x: 0, y: 0, width, height: 34, rx: 8, fill: c.ok ? COLOR.doneBg : COLOR.alarmBg, stroke: color, "stroke-width": 1.5 });
     pen.text("check:t", { x: 10, y: 23, ...MONO, fill: COLOR.ink }, c.text);
     icon(pen, "check:i", c.ok ? "check" : "cross", width - 30, 6, 22, color);
@@ -166,8 +169,8 @@ function drawPod(pen: Pen, w: World, a: Actor): void {
   pen.group(`pod:${a.id}`, POD.x, POD_Y[a.id], () => {
     const [fxKey, fxAttrs] = once(`pod:${a.id}:fx`, w.frame, failedNow ? "fx-jolt" : null);
     pen.group(fxKey, 0, 0, () =>
-      bob(pen, `pod:${a.id}:bob`, { x: 0, y: 0, color, tint, letter: a.id, mood, look: podLook(w, a), dashed: mood === "wait" }), fxAttrs);
-    const nx = BOB.w + 14;
+      bob(pen, `pod:${a.id}:bob`, { x: 0, y: 0, color, tint, letter: a.id, mood, look: podLook(w, a), dashed: mood === "wait" }), fxAttrs, { scale: POD_SCALE });
+    const nx = PB.w + 14;
     pen.text(`pod:${a.id}:label`, { x: nx, y: 20, ...SANS, "font-size": SIZE.say, "font-weight": 700, fill: color }, a.label);
     if (a.failed) {
       pill(pen, `pod:${a.id}:err`, "40001 · откат", { x: nx, y: 34, fill: COLOR.alarmBg, color: COLOR.error, stroke: COLOR.error, attrs: failedNow ? { class: "fx-pop" } : {} });
@@ -227,7 +230,7 @@ function drawPodArrows(pen: Pen, w: World): void {
     if (happened(w, "ok", id) || happened(w, "none", id)) {
       const ok = happened(w, "ok", id);
       pen.line(`arr:${id}:shop`, {
-        x1: POD.x + BOB.w + 160, y1: podMid(id) + 20, x2: SHOP.x - 8, y2: CARD_Y[id] + 10,
+        x1: POD.x + PB.w + 150, y1: podMid(id) + 20, x2: SHOP.x - 8, y2: CARD_Y[id] + 10,
         stroke: ok ? color : COLOR.muted, "stroke-width": 3, "stroke-linecap": "round", marker: "arrow", ...DRAW, ...fade(w, "shop", id),
       });
     }
