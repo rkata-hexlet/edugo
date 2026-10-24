@@ -1,6 +1,6 @@
 import type { Sound, Voice } from "../../engine/contract";
 import type { Lamp } from "../../kit/director";
-import { type EventKind, type SimEvent, type World } from "./sim";
+import { type EventKind, oversold, type SimEvent, type World } from "./sim";
 
 // Озвучка эпизода по карте sound-designer (docs/reviews/05-sound-design.md): громкая беда (40001) — «бзз»
 // на square, самый громкий звук; тихая беда (перезапись чужого числа) — вялое «ап-ап» вниз и неверный аккорд;
@@ -31,8 +31,9 @@ const RECIPES: Partial<Record<EventKind, Recipe>> = {
   },
   rewind: (s, at) => {
     s.tone({ freq: 800, to: 200, dur: 0.15, wave: "sawtooth", gain: 0.08, at });
-    s.noise({ dur: 0.05, freq: 250, q: 1, gain: 0.14, at: at + 0.15 });
-    s.tone({ freq: 110, to: 60, dur: 0.1, gain: 0.14, at: at + 0.15 });
+    // Стук перемотки тише и короче COMMIT: не путать с событием модели.
+    s.noise({ dur: 0.05, freq: 250, q: 1, gain: 0.07, at: at + 0.15 });
+    s.tone({ freq: 90, to: 50, dur: 0.08, gain: 0.07, at: at + 0.15 });
   },
   card: (s, at) => s.noise({ dur: 0.25, freq: 600, q: 0.8, gain: 0.04, at }),
   // Лесенка уровней — один мягкий подъём, не ступеньки по нотам.
@@ -52,10 +53,10 @@ const RECIPES: Partial<Record<EventKind, Recipe>> = {
     s.tone({ freq: 2000, dur: 0.015, wave: "square", gain: 0.03, at: at + 0.1 });
   },
   commit: (s, at) => {
-    s.noise({ dur: 0.06, freq: 200, q: 1, gain: 0.14, at });
-    s.tone({ freq: 120, to: 60, dur: 0.1, gain: 0.14, at });
+    s.noise({ dur: 0.06, freq: 200, q: 1, gain: 0.11, at });
+    s.tone({ freq: 120, to: 60, dur: 0.1, gain: 0.11, at });
   },
-  ok: (s, at) => s.tone({ freq: 1047, to: 1319, dur: 0.08, gain: 0.08, at }),
+  ok: (s, at) => s.tone({ freq: 1047, to: 1319, dur: 0.09, gain: 0.1, at }),
   // «Нет в наличии» — вежливое «ну вот…», без тревоги: это нормальный ответ.
   none: (s, at) => {
     s.tone({ freq: 523, dur: 0.09, gain: 0.06, at });
@@ -63,8 +64,8 @@ const RECIPES: Partial<Record<EventKind, Recipe>> = {
   },
   // 0 строк — сухой «тук»: условие не прошло, ничего не записано.
   zero: (s, at) => {
-    s.noise({ dur: 0.08, freq: 1200, q: 1, gain: 0.035, at });
-    s.tone({ freq: 400, dur: 0.03, gain: 0.03, at: at + 0.1 });
+    s.noise({ dur: 0.08, freq: 1200, q: 1, gain: 0.05, at });
+    s.tone({ freq: 400, dur: 0.03, gain: 0.045, at: at + 0.1 });
   },
   // Перезапись чужого числа — тихая беда: вялое «ап-ап» вниз, без square и шума.
   clobber: (s, at) => {
@@ -76,16 +77,19 @@ const RECIPES: Partial<Record<EventKind, Recipe>> = {
     s.tone({ freq: 233, dur: 0.22, gain: 0.05, at });
     s.tone({ freq: 247, dur: 0.22, gain: 0.05, at });
     s.tone({ freq: 117, dur: 0.22, gain: 0.04, at });
+    // Октавой выше — чтобы биение было слышно и на динамиках ноутбука.
+    s.tone({ freq: 466, dur: 0.22, wave: "triangle", gain: 0.02, at });
+    s.tone({ freq: 494, dur: 0.22, wave: "triangle", gain: 0.02, at });
   },
   // 40001 — громкая беда, один раз за ролик: пауза, «бзз-бзз» и стон вниз; в итоге — один «бзз».
   fail: (s, at, _e, o) => {
-    s.tone({ freq: 200, dur: 0.1, wave: "square", gain: 0.13, at: at + 0.12 });
+    s.tone({ freq: 200, dur: 0.1, wave: "square", gain: 0.17, at: at + 0.12 });
     if (o.replay) return;
-    s.tone({ freq: 200, dur: 0.1, wave: "square", gain: 0.13, at: at + 0.25 });
-    s.tone({ freq: 170, to: 100, dur: 0.12, wave: "sawtooth", gain: 0.09, at: at + 0.37 });
+    s.tone({ freq: 200, dur: 0.1, wave: "square", gain: 0.17, at: at + 0.25 });
+    s.tone({ freq: 170, to: 100, dur: 0.12, wave: "sawtooth", gain: 0.11, at: at + 0.37 });
   },
   retry: (s, at) => s.tone({ freq: 400, to: 800, dur: 0.12, wave: "triangle", gain: 0.07, at }),
-  // Лампы табло; при «продано больше» красную уже сказал неверный аккорд, зелёная — тише.
+  // Лампы табло; если продано больше, красную уже сказал неверный аккорд (в этом или прошлом кадре), зелёная — тише.
   verdict: (s, at, e, o) => e.lamps?.forEach((lamp, i) => {
     if (!lamp || (o.quietGreen && lamp === "red")) return;
     lampTone(s, at + 0.08 * i, lamp, o.quietGreen ? 0.6 : 1);
@@ -100,7 +104,7 @@ const RANK: Partial<Record<EventKind, number>> = { rewind: 0, page: 0, card: 0, 
 
 /** Сколько длится звук до следующего, с: по этой сумме встают звуки кадра. */
 const SPAN: Partial<Record<EventKind, number>> = {
-  rewind: 0.3, page: 0.1, card: 0.1, ladder: 0.1, read: 0.1, write: 0.1, wait: 0.22, retry: 0.12,
+  rewind: 0.25, page: 0.1, card: 0.1, ladder: 0.1, read: 0.1, write: 0.1, wait: 0.22, retry: 0.12,
   clobber: 0.2, zero: 0.12, fail: 0.1, commit: 0.1, ok: 0.1, none: 0.15, oversold: 0.14, verdict: 0.1,
 };
 
@@ -158,7 +162,7 @@ export function sound(out: Sound, w: World, replay = false): void {
   }
   const last = starts.at(-1) ?? 0;
   const k = last > EVENT_WINDOW - 0.05 ? (EVENT_WINDOW - 0.05) / last : 1;
-  const opts = { replay, quietGreen: events.some((e) => e.kind === "oversold") };
+  const opts = { replay, quietGreen: oversold(w) };
   events.forEach((e, i) => RECIPES[e.kind]!(s, starts[i] * k, e, opts));
   if (speakable(w.db)) s.babble({ ...DB_VOICE, gain: dbGain(w) }, w.db, BABBLE_AT);
 }

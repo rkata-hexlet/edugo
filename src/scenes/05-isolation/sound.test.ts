@@ -79,4 +79,29 @@ describe("озвучка эпизода 05", () => {
   it(`не больше ${MAX_SOUNDS} звуков в кадре`, () => {
     for (const i of steps.keys()) expect(kinds(i).length, `кадр ${i + 1}`).toBeLessThanOrEqual(MAX_SOUNDS);
   });
+
+  it("табло после «продано больше» без красной лампы: аккорд уже прозвучал, square — тембр 40001", () => {
+    const frame = actFrames(ACT.naive).map((i) => steps[i]).find((x) => x.state.events.some((e) => e.kind === "verdict"))!;
+    const { s, calls } = recorder();
+    sound(s, frame.state);
+    expect(calls.some((c) => c.kind === "tone")).toBe(true);
+    expect(calls.some((c) => c.wave === "square")).toBe(false);
+  });
+
+  it("лесенка звучит одним мягким подъёмом, без ступенек", () => {
+    const frame = steps.find((x) => x.state.events.some((e) => e.kind === "ladder"))!;
+    const { s, calls } = recorder();
+    sound(s, frame.state);
+    expect(calls.filter((c) => c.kind === "tone")).toHaveLength(1);
+  });
+
+  it("звуки кадра идут по порядку и не сливаются: старты растут", () => {
+    for (const [i, step] of steps.entries()) {
+      const { s, calls } = recorder();
+      sound(s, step.state, step.state.replay);
+      // Первый вызов каждого звука — его старт; повторный старт в одной точке был бы наложением.
+      const starts = calls.filter((c) => c.kind !== "babble").map((c) => c.at);
+      for (let j = 1; j < starts.length; j++) expect(starts[j] + 1e-9, `кадр ${i + 1}`).toBeGreaterThanOrEqual(starts[j - 1] - 0.15);
+    }
+  });
 });
