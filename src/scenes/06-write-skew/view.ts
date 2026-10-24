@@ -89,8 +89,29 @@ function drawOrders(pen: Pen, w: World): void {
     const [k, fx] = once(`ord:${i}`, w.frame, fresh ? "fx-slide" : extra && happened(w, "commit", o.by ?? undefined) ? "fx-shake" : null);
     pen.group(k, TABLE.x, rowY(i), () => drawOrder(pen, k, o, extra), { ...fade(w, "orders"), ...fx });
   });
+  drawGhost(pen, w);
   drawMarks(pen, w);
   drawDeps(pen, w);
+}
+
+/** Откат на 40001: строка пода не исчезает молча — в кадре ошибки она зачёркнута на своём месте и бледнеет. */
+function ghostOf(w: World): ActorId | null {
+  const e = w.events.find((x) => x.kind === "fail");
+  return e?.by && w.reason[e.by] === "deps" && !w.orders.some((o) => o.by === e.by) ? e.by : null;
+}
+
+function drawGhost(pen: Pen, w: World): void {
+  const id = ghostOf(w);
+  if (!id) return;
+  const k = `ord:ghost:${w.frame}`;
+  const name = w.customers.find((c) => c.pod === id)!.name;
+  pen.group(k, TABLE.x, rowY(w.orders.length), () => {
+    pen.rect(`${k}:bg`, { width: TABLE.w, height: TABLE.rowH, rx: 6, fill: "none", stroke: COLOR.error, "stroke-width": 1.5, "stroke-dasharray": "6 4" });
+    pen.rect(`${k}:dot`, { x: 12, y: 13, width: 12, height: 12, rx: 6, fill: ACTOR[id].color });
+    pen.text(`${k}:t`, { x: 46, y: 25, ...MONO, fill: COLOR.muted }, `заказ · ${name}`);
+    pen.line(`${k}:x`, { x1: 40, y1: 20, x2: 210, y2: 20, stroke: COLOR.error, "stroke-width": 2.5, ...DRAW });
+    pen.text(`${k}:r`, { x: TABLE.w - 14, y: 25, ...SANS, "font-weight": 700, fill: COLOR.error, "text-anchor": "end" }, "откат");
+  }, { opacity: lit(w, "orders") ? 0.75 : DIM });
 }
 
 function drawOrder(pen: Pen, k: string, o: Order, extra: boolean): void {
@@ -119,20 +140,21 @@ function drawMarks(pen: Pen, w: World): void {
   const visibleTo = (id: ActorId) => w.orders.filter((o) => o.at !== null || o.by === id).length;
   ACTORS.forEach((id, n) => {
     if (!marked(w, id)) return;
-    const pad = 4 + n * 6;
+    const pad = 4 + n * 8;
     const rows = Math.max(visibleTo(id), w.orders.length) + (w.orders.length < 4 ? 1 : 0);
     const h = rows * (TABLE.rowH + TABLE.gap) - TABLE.gap;
     const color = ACTOR[id].color;
     pen.group(`mark:${id}`, 0, 0, () => {
       pen.rect(`mark:${id}:r`, {
         x: TABLE.x - pad, y: ORDERS.y - pad, width: TABLE.w + 2 * pad, height: h + 2 * pad, rx: 10,
-        fill: "none", stroke: color, "stroke-width": 2.5, "stroke-dasharray": "4 6",
+        fill: "none", stroke: color, "stroke-width": 2.5, "stroke-dasharray": "4 6", "stroke-dashoffset": n * 5,
       });
-      pill(pen, `mark:${id}:chip`, `прочитал ${id}`, { x: TABLE.x + 8 + n * 150, y: ORDERS.y + h + pad - 2, fill: COLOR.bg, color, stroke: color });
+      pill(pen, `mark:${id}:chip`, `прочитал ${id}`, { x: TABLE.x + 8 + n * 170, y: ORDERS.y + h + 4 + 8 * (ACTORS.length - 1) + 6, fill: COLOR.bg, color, stroke: color });
+      // Чипы — под внешней рамкой: на линии внутренней их перечёркивал бы пунктир соседа.
     }, { ...fade(w, "marks", id), ...(happened(w, "mark", id) ? { class: "fx-fade" } : {}) });
   });
   // Место под новый заказ — только пока метки на экране: туда целится предикат.
-  if (ACTORS.some((id) => marked(w, id)) && w.orders.length < 4) {
+  if (ACTORS.some((id) => marked(w, id)) && w.orders.length < 4 && !ghostOf(w)) {
     pen.rect("mark:slot", {
       x: TABLE.x, y: rowY(w.orders.length), width: TABLE.w, height: TABLE.rowH, rx: 6,
       fill: "none", stroke: COLOR.faint, "stroke-width": 1.5, "stroke-dasharray": "3 5", ...fade(w, "marks"),
@@ -143,7 +165,7 @@ function drawMarks(pen: Pen, w: World): void {
 /** Зависимость SSI: дуга от чужой вставки к строке читателя внутри таблицы; две встречные дуги — кольцо. */
 function drawDeps(pen: Pen, w: World): void {
   const row = (by: ActorId) => w.orders.findIndex((o) => o.by === by);
-  const cx = TABLE.x + TABLE.w - 70;
+  const cx = TABLE.x + TABLE.w - 76;
   for (const d of w.deps) {
     const i = row(d.writer);
     const j = row(d.reader);
@@ -153,13 +175,13 @@ function drawDeps(pen: Pen, w: World): void {
     const r = Math.abs(y2 - y1) / 2;
     // По часовой: сверху вниз — правая половина, снизу вверх — левая; две встречные дуги — круг.
     pen.path(`dep:${d.writer}`, {
-      d: `M ${cx} ${y1} A 34 ${r} 0 0 1 ${cx} ${y2}`,
-      fill: "none", stroke: ACTOR[d.reader].color, "stroke-width": 3.5, marker: "arrow", ...DRAW, ...fade(w, "marks", "orders"),
+      d: `M ${cx} ${y1} A 40 ${r} 0 0 1 ${cx} ${y2}`,
+      fill: "none", stroke: ACTOR[d.reader].color, "stroke-width": 4, marker: "arrow", ...DRAW, ...fade(w, "marks", "orders"),
     });
   }
   if (w.deps.length === 2 && ACTORS.every((id) => row(id) >= 0)) {
     const cy = (rowY(row("A")) + rowY(row("B"))) / 2 + TABLE.rowH / 2;
-    pill(pen, "dep:ring", "цикл", { x: cx - 140, y: cy - 15, fill: COLOR.bg, color: COLOR.warn, stroke: COLOR.warn, attrs: { class: "fx-pop", ...fade(w, "marks", "orders") } });
+    pill(pen, "dep:ring", "цикл", { x: cx - 108, y: cy - 15, fill: COLOR.bg, color: COLOR.warn, stroke: COLOR.warn, attrs: { class: happened(w, "ring") ? "fx-pop d1" : "", ...fade(w, "marks", "orders") } });
   }
 }
 
@@ -173,7 +195,7 @@ function drawCheck(pen: Pen, w: World): void {
     pen.rect("check:bg", { x: 0, y: 0, width, height: 34, rx: 8, fill: c.ok ? COLOR.doneBg : COLOR.alarmBg, stroke: color, "stroke-width": 1.5 });
     pen.text("check:t", { x: 10, y: 23, ...MONO, fill: COLOR.ink }, c.text);
     icon(pen, "check:i", c.ok ? "check" : "cross", width - 30, 6, 22, color);
-  }, { class: c.ok ? "fx-pop" : "fx-shake", ...fade(w, "B") });
+  }, { class: c.ok ? "fx-pop d2" : "fx-shake d2", ...fade(w, "B") });
 }
 
 function podMood(w: World, a: Actor): Mood {
@@ -297,43 +319,66 @@ function drawShop(pen: Pen, w: World): void {
   }, fade(w, "shop"));
 }
 
-/** Фургон курьера: коробки в кузове по закоммиченным заказам слота; четвёртая — на крыше, кузов просел. */
+/** Фургон курьера: коробка = закоммиченный заказ слота, лента — цвета покупателя; четвёртая — на крыше, кузов просел.
+ *  Перегруз — по очереди внутри окна событий: штамп «ЛИШНИЙ» у строки, коробка на крышу (.d1), паника курьера (.d2). */
 function drawVan(pen: Pen, w: World): void {
   const n = boxes(w);
   const over = overloaded(w);
+  const loaded = w.orders.filter((o) => o.at !== null);
   const x = VAN.x;
   const y = VAN.y;
   const bodyY = y + 40;
   const sag = over ? 6 : 0;
-  const [k, fx] = once("van", w.frame, happened(w, "overload") ? "fx-shake" : null);
+  const alarm = happened(w, "overload");
+  const box = (k: string, o: Order | undefined, bx: number, by: number, extra = false) => pen.group(k, bx, by, () => {
+    pen.rect(`${k}:b`, { width: BOX.w, height: BOX.h, rx: 3, fill: COLOR.mugRim, stroke: extra ? COLOR.error : COLOR.mug, "stroke-width": extra ? 2.5 : 1.5 });
+    pen.rect(`${k}:tape`, { x: (BOX.w - 8) / 2, width: 8, height: BOX.h, fill: o?.by ? ACTOR[o.by].color : COLOR.faint });
+  }, extra ? { class: alarm ? "fx-hop d1" : "" } : {}, extra ? { rotate: -10, origin: [BOX.w / 2, BOX.h / 2] } : {});
+  const [k, fx] = once("van", w.frame, alarm ? "fx-shake" : null);
   pen.group(k, 0, 0, () => {
     pill(pen, "van:count", `${n} из ${CAP}`, over
       ? { x, y, fill: COLOR.alarmBg, color: COLOR.error, stroke: COLOR.error }
       : { x, y, fill: COLOR.bg, color: COLOR.muted, stroke: COLOR.line });
     // Нить-вопрос: пока исход открыт (транзакции идут, курьер ещё не перегружен) — «?» над фургоном.
     if (!over && (w.courierTalk || ACTORS.some((id) => w.actors[id].tx))) icon(pen, "van:doubt", "question", x + 150, y + 2, 26, COLOR.warn, { class: "fx-pulse" });
+    pen.line("van:ground", { x1: x - 8, y1: bodyY + 67, x2: x + VAN.w + 14, y2: bodyY + 67, stroke: COLOR.line, "stroke-width": 2 });
     pen.group("van:body", 0, sag, () => {
-      pen.rect("van:cargo", { x, y: bodyY, width: 150, height: 52, rx: 6, fill: COLOR.surface2, stroke: over ? COLOR.error : COLOR.line, "stroke-width": 2 });
-      pen.rect("van:cab", { x: x + 152, y: bodyY + 12, width: 44, height: 40, rx: 8, fill: COLOR.surface2, stroke: COLOR.line, "stroke-width": 2 });
-      pen.rect("van:win", { x: x + 164, y: bodyY + 18, width: 24, height: 14, rx: 3, fill: COLOR.bg2 });
+      pen.rect("van:cargo", { x, y: bodyY, width: 158, height: 54, rx: 6, fill: COLOR.surface2, stroke: over ? COLOR.error : COLOR.line, "stroke-width": 2 });
+      pen.rect("van:cab", { x: x + 160, y: bodyY + 12, width: 44, height: 42, rx: 8, fill: COLOR.surface2, stroke: COLOR.line, "stroke-width": 2 });
+      pen.rect("van:win", { x: x + 172, y: bodyY + 18, width: 24, height: 14, rx: 3, fill: COLOR.bg2 });
       for (let i = 0; i < CAP; i++) {
-        const filled = i < Math.min(n, CAP);
-        pen.rect(`van:slot${i}`, {
-          x: x + 12 + i * 46, y: bodyY + 14, width: BOX.w, height: BOX.h, rx: 3,
-          fill: filled ? COLOR.mugRim : "none", stroke: filled ? COLOR.mug : COLOR.faint, "stroke-width": 1.5,
-          ...(filled ? {} : { "stroke-dasharray": "3 4" }),
-        });
+        if (i < Math.min(n, CAP)) box(`van:box${i}`, loaded[i], x + 10 + i * 50, bodyY + 12);
+        else pen.rect(`van:slot${i}`, { x: x + 10 + i * 50, y: bodyY + 12, width: BOX.w, height: BOX.h, rx: 3, fill: "none", stroke: COLOR.faint, "stroke-width": 1.5, "stroke-dasharray": "3 4" });
       }
-      // Лишняя коробка — на крыше, с красным контуром: в кузов не влезла.
-      if (over) pen.group("van:extra", x + 100, bodyY - BOX.h - 2, () =>
-        pen.rect("van:extra:b", { width: BOX.w, height: BOX.h, rx: 3, fill: COLOR.mugRim, stroke: COLOR.error, "stroke-width": 2.5 }),
-      { class: "fx-hop" }, { rotate: -10, origin: [15, 13] });
+      // Лишняя коробка — на крыше у кабины, с красным контуром: в кузов не влезла.
+      if (over) box("van:extra", loaded[CAP], x + 110, bodyY - BOX.h - 2, true);
     });
-    [x + 34, x + 166].forEach((cx, i) => pen.rect(`van:wheel${i}`, { x: cx - 13, y: bodyY + 40, width: 26, height: 26, rx: 13, fill: COLOR.bg, stroke: COLOR.muted, "stroke-width": 3 }));
-    // Курьер у кабины: растерян при перегрузе, доволен, когда слот закрыт честно.
-    const mood: PersonMood = over ? "sad" : n === CAP && !ACTORS.some((id) => w.actors[id].tx) ? "happy" : "idle";
-    person(pen, "van:courier", { x: x + 204, y: bodyY + 4, shirt: COLOR.warn, mood, look: over ? { x: -1, y: -1 } : { x: -1, y: 0 } });
+    [x + 36, x + 172].forEach((cx, i) => pen.rect(`van:wheel${i}`, { x: cx - 13, y: bodyY + 41, width: 26, height: 26, rx: 13, fill: COLOR.bg, stroke: COLOR.muted, "stroke-width": 3 }));
+    const done = n === CAP && !over && !ACTORS.some((id) => w.actors[id].tx);
+    courier(pen, w, x + 204, bodyY - 20, over ? "panic" : done ? "happy" : "idle", alarm);
   }, { ...fade(w, "courier"), ...fx });
+}
+
+type CourierMood = "idle" | "happy" | "panic";
+
+/** Курьер: покупатель серии в кепке и жилете, крупнее. Перегруз — руки на голове и капля; слот честно закрыт — рука вверх. */
+function courier(pen: Pen, w: World, x: number, y: number, mood: CourierMood, alarm: boolean): void {
+  const s = 1.5;
+  const [k, fx] = once("van:courier", w.frame, alarm ? "fx-jolt d2" : null);
+  pen.group(k, x, y, () => {
+    person(pen, `${k}:p`, { x: 0, y: 0, shirt: COLOR.warn, mood: mood === "panic" ? "sad" : mood, look: mood === "panic" ? { x: 0, y: -1 } : { x: -1, y: 0.5 } });
+    pen.rect(`${k}:vest`, { x: 4, y: 36, width: 36, height: 3, fill: COLOR.ink, opacity: 0.8 });
+    pen.rect(`${k}:cap`, { x: 7, y: -4, width: 30, height: 9, rx: 4.5, fill: COLOR.warn });
+    pen.rect(`${k}:visor`, { x: 24, y: 3, width: 16, height: 4, rx: 2, fill: COLOR.warn });
+    const arm = { fill: "none", stroke: COLOR.warn, "stroke-width": 5, "stroke-linecap": "round" };
+    if (mood === "panic") {
+      pen.path(`${k}:armL`, { d: "M 4 30 Q -4 14 10 6", ...arm });
+      pen.path(`${k}:armR`, { d: "M 40 30 Q 48 14 34 6", ...arm });
+      pen.path(`${k}:drop`, { d: "M 40 0 q 3 5 0 8 q -3 -3 0 -8", fill: "#7fd0ff", ...(alarm ? { class: "fx-pop d3" } : {}) });
+    } else if (mood === "happy") {
+      pen.path(`${k}:arm`, { d: "M 40 30 Q 47 18 44 6", ...arm });
+    }
+  }, fx, { scale: s, origin: [0, 0] });
 }
 
 function firstOnly(b: Board): Board {
