@@ -80,7 +80,7 @@ function drawSlot(pen: Pen, w: World): void {
 
 /** Заказы слота 7; не видные снимку пода `horizon` — бледные; метки чтения и дуги зависимостей SERIALIZABLE. */
 function drawOrders(pen: Pen, w: World): void {
-  pen.text("ord:hdr", { x: TABLE.x + 12, y: ORDERS.y - 12, ...MONO, fill: COLOR.muted, ...fade(w, "orders") }, "orders · slot_id 7");
+  pen.text("ord:hdr", { x: TABLE.x + 12, y: ORDERS.y - 18, ...MONO, fill: COLOR.muted, ...fade(w, "orders") }, "orders · slot_id 7");
   const id = w.horizon;
   if (id) pill(pen, `ord:eye:${id}`, `снимок ${id}`, { x: 330, y: ORDERS.y - 40, fill: COLOR.bg, color: ACTOR[id].color, stroke: ACTOR[id].color, attrs: { class: "fx-fade" } });
   let n = 0;
@@ -122,7 +122,7 @@ function drawMarks(pen: Pen, w: World): void {
   const visibleTo = (id: ActorId) => w.orders.filter((o) => o.at !== null || o.by === id).length;
   ACTORS.forEach((id, n) => {
     if (!marked(w, id)) return;
-    const pad = 6 + n * 7;
+    const pad = 4 + n * 6;
     const rows = Math.max(visibleTo(id), w.orders.length) + (w.orders.length < 4 ? 1 : 0);
     const h = rows * (TABLE.rowH + TABLE.gap) - TABLE.gap;
     const color = ACTOR[id].color;
@@ -131,7 +131,7 @@ function drawMarks(pen: Pen, w: World): void {
         x: TABLE.x - pad, y: ORDERS.y - pad, width: TABLE.w + 2 * pad, height: h + 2 * pad, rx: 10,
         fill: "none", stroke: color, "stroke-width": 2.5, "stroke-dasharray": "4 6",
       });
-      pill(pen, `mark:${id}:chip`, `прочитал ${id}`, { x: TABLE.x + 8 + n * 130, y: ORDERS.y + h + pad - 2, fill: COLOR.bg, color, stroke: color });
+      pill(pen, `mark:${id}:chip`, `прочитал ${id}`, { x: TABLE.x + 8 + n * 150, y: ORDERS.y + h + pad - 2, fill: COLOR.bg, color, stroke: color });
     }, { ...fade(w, "marks", id), ...(happened(w, "mark", id) ? { class: "fx-fade" } : {}) });
   });
   // Место под новый заказ — только пока метки на экране: туда целится предикат.
@@ -154,16 +154,15 @@ function drawDeps(pen: Pen, w: World): void {
     const y1 = rowY(i) + TABLE.rowH / 2;
     const y2 = rowY(j) + TABLE.rowH / 2;
     const r = Math.abs(y2 - y1) / 2;
-    // Вставка A уходит к читателю B по правой дуге, вставка B к читателю A — по левой: вместе — круг.
-    const sweep = y2 > y1 ? 1 : 0;
+    // По часовой: сверху вниз — правая половина, снизу вверх — левая; две встречные дуги — круг.
     pen.path(`dep:${d.writer}`, {
-      d: `M ${cx} ${y1} A ${r + 8} ${r} 0 0 ${sweep} ${cx} ${y2}`,
+      d: `M ${cx} ${y1} A 34 ${r} 0 0 1 ${cx} ${y2}`,
       fill: "none", stroke: ACTOR[d.reader].color, "stroke-width": 3.5, marker: "arrow", ...DRAW, ...fade(w, "marks", "orders"),
     });
   }
   if (w.deps.length === 2 && ACTORS.every((id) => row(id) >= 0)) {
     const cy = (rowY(row("A")) + rowY(row("B"))) / 2 + TABLE.rowH / 2;
-    pill(pen, "dep:ring", "кольцо", { x: cx - 130, y: cy - 15, fill: COLOR.bg, color: COLOR.warn, stroke: COLOR.warn, attrs: { class: "fx-pop", ...fade(w, "marks", "orders") } });
+    pill(pen, "dep:ring", "кольцо", { x: cx - 140, y: cy - 15, fill: COLOR.bg, color: COLOR.warn, stroke: COLOR.warn, attrs: { class: "fx-pop", ...fade(w, "marks", "orders") } });
   }
 }
 
