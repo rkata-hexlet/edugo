@@ -62,15 +62,16 @@ export function awning(pen: Pen, key: string, o: { x: number; y: number; w: numb
   });
 }
 
-/** Кнопка «Купить»: нажатая — темнее и ниже на 2 px. */
-export function buyButton(pen: Pen, key: string, o: { x: number; y: number; pressed: boolean; attrs?: Attrs }): void {
+/** Кнопка покупки («Купить» по умолчанию; `label`, `w` — своя надпись и ширина): нажатая — темнее и ниже на 2 px. */
+export function buyButton(pen: Pen, key: string, o: { x: number; y: number; pressed: boolean; label?: string; w?: number; attrs?: Attrs }): void {
   const dy = o.pressed ? 2 : 0;
+  const w = o.w ?? 96;
   pen.group(key, o.x, o.y, () => {
-    if (!o.pressed) pen.rect(`${key}:sh`, { x: 0, y: 3, width: 96, height: 32, rx: 9, fill: COLOR.shadow });
-    pen.rect(`${key}:bg`, { x: 0, y: dy, width: 96, height: 32, rx: 9, fill: o.pressed ? COLOR.awning2 : COLOR.browser });
+    if (!o.pressed) pen.rect(`${key}:sh`, { x: 0, y: 3, width: w, height: 32, rx: 9, fill: COLOR.shadow });
+    pen.rect(`${key}:bg`, { x: 0, y: dy, width: w, height: 32, rx: 9, fill: o.pressed ? COLOR.awning2 : COLOR.browser });
     pen.text(`${key}:t`, {
-      x: 48, y: dy + 22, "font-family": FONT.sans, "font-size": SIZE.body, "font-weight": 700, fill: COLOR.bg, "text-anchor": "middle",
-    }, "Купить");
+      x: w / 2, y: dy + 22, "font-family": FONT.sans, "font-size": SIZE.body, "font-weight": 700, fill: COLOR.bg, "text-anchor": "middle",
+    }, o.label ?? "Купить");
   }, o.attrs);
 }
 

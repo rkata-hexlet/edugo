@@ -1,5 +1,6 @@
 import type { Pen } from "../engine/contract";
 import { icon } from "./icons";
+import { lock } from "./props";
 import { COLOR, FONT } from "./theme";
 
 // Персонажи серии в примитивах Pen (прямоугольники со скруглением, пути). Эмоцию и взгляд выбирает
@@ -10,6 +11,12 @@ export type Mood = "idle" | "work" | "wait" | "won" | "lost" | "frozen" | "talk"
 /** Куда смотрят зрачки: −1…1 по каждой оси (влево/вверх — минус). */
 export type Look = { x: number; y: number };
 
+/**
+ * Руки пода: `crossed` — скрещены на брюшке («ждём друг друга»), `open` — ладони по бокам. `locks` — сколько замков
+ * держит под (висят у боков, справа первый; цвет — `lockColor`): «замок в руках» до COMMIT; 0 при `open` — пустые руки.
+ */
+export type Hands = { pose: "crossed" | "open"; locks: number; lockColor: string };
+
 /** Размер «боба» без антенны: тело + ножки. */
 export const BOB = { w: 64, h: 64 };
 
@@ -19,7 +26,7 @@ export const BOB = { w: 64, h: 64 };
  */
 export function bob(
   pen: Pen, key: string,
-  o: { x: number; y: number; color: string; tint: string; letter: string; mood: Mood; look: Look; ghost?: boolean; dashed?: boolean },
+  o: { x: number; y: number; color: string; tint: string; letter: string; mood: Mood; look: Look; ghost?: boolean; dashed?: boolean; hands?: Hands },
 ): void {
   const { color, tint, mood } = o;
   const frozen = mood === "frozen";
@@ -51,6 +58,24 @@ export function bob(
     pen.text(`${key}:letter`, {
       x: 32, y: 54, "text-anchor": "middle", "font-family": FONT.sans, "font-size": 18, "font-weight": 800, fill: frozen ? COLOR.muted : COLOR.bg,
     }, o.letter);
+    if (o.hands) hands(pen, `${key}:hands`, body, o.hands);
+  });
+}
+
+/** Руки и замки в них: поверх тела; замки висят снаружи, у боков. */
+function hands(pen: Pen, key: string, body: string, h: Hands): void {
+  const arm = { fill: "none", stroke: mix(body, "#ffffff", 0.18), "stroke-width": 6, "stroke-linecap": "round" };
+  pen.group(key, 0, 0, () => {
+    if (h.pose === "crossed") {
+      pen.path(`${key}:l`, { d: "M 2 34 Q 24 46 46 36", ...arm });
+      pen.path(`${key}:r`, { d: "M 62 34 Q 40 46 18 36", ...arm });
+    } else {
+      pen.path(`${key}:l`, { d: "M 3 30 Q -6 36 -6 44", ...arm });
+      pen.path(`${key}:r`, { d: "M 61 30 Q 70 36 70 44", ...arm });
+    }
+    // Замки: справа, затем слева — у кисти открытой руки или у локтя скрещённой.
+    [[64, 38], [-18, 38]].slice(0, h.locks).forEach(([lx, ly], i) =>
+      lock(pen, `${key}:lock${i}`, { x: lx, y: ly, color: h.lockColor }));
   });
 }
 
