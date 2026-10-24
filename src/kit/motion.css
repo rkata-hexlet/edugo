@@ -210,3 +210,8 @@
 .stage .d1 { animation-delay: 0.12s; }
 .stage .d2 { animation-delay: 0.22s; }
 .stage .d3 { animation-delay: 0.3s; }
+
+/* Код и SQL в кадре — как написаны: без лигатур JetBrains Mono (`!=` не превращается в `≠`, `>=` — в `≥`). */
+.stage text {
+  font-variant-ligatures: none;
+}
