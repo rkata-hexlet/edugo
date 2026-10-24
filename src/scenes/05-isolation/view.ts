@@ -93,9 +93,9 @@ function drawCheck(pen: Pen, w: World): void {
   const c = w.check;
   if (!c) return;
   const color = c.ok ? COLOR.ok : COLOR.error;
-  // У пода B, а не на его стрелке: это его условие перепроверила база (motion-designer).
+  // Под подом B, а не на стрелках: это его условие перепроверила база (motion-designer).
   const width = pen.measure(c.text, MONO).width + 52;
-  pen.group("check", POD.x + BOB.w + 14, POD_Y.B + 34, () => {
+  pen.group("check", POD.x - 10, POD_Y.B + BOB.h + 22, () => {
     pen.rect("check:bg", { x: 0, y: 0, width, height: 34, rx: 8, fill: c.ok ? COLOR.doneBg : COLOR.alarmBg, stroke: color, "stroke-width": 1.5 });
     pen.text("check:t", { x: 10, y: 23, ...MONO, fill: COLOR.ink }, c.text);
     icon(pen, "check:i", c.ok ? "check" : "cross", width - 30, 6, 22, color);

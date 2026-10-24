@@ -443,6 +443,7 @@ export function buildSteps(): Step<World>[] {
   d.shot("", (w) => {
     w.ladder = true;
     w.clockShown = false;
+    w.horizon = null;
   }, {
     focus: ["ladder"],
     voice: "Оглянемся на все уровни изоляции Postgres: их четыре, из которых мы разобрали два: READ COMMITTED и REPEATABLE READ. А самый строгий, SERIALIZABLE, гарантирует результат, как если бы транзакции шли по очереди, но берёт за это более частыми повторами.",
