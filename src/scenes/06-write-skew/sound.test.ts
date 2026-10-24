@@ -59,4 +59,44 @@ describe("озвучка эпизода 06", () => {
   it(`не больше ${MAX_SOUNDS} звуков в кадре`, () => {
     for (const step of steps) expect(score(step.state, step.state.replay).length).toBeLessThanOrEqual(MAX_SOUNDS);
   });
+
+  const kindsOf = (i: number) => score(steps[i].state, steps[i].state.replay).map((e) => e.kind);
+  const at = (act: string, kind: string) => steps.findIndex((x) => x.act === act && x.state.events.some((e) => e.kind === kind));
+
+  it("2.1 рифмуется с хуком: тот же «пум, динь, динь, аккорд»", () => {
+    expect(kindsOf(at(ACT.rr, "overload"))).toEqual(kindsOf(at(ACT.hook, "overload")));
+    expect(kindsOf(at(ACT.hook, "overload"))).toEqual(["commit", "ok", "ok", "overload"]);
+  });
+
+  it("цикл замкнулся — звучит ring вместо dep; метки и цикл тихие и без square", () => {
+    const i = at(ACT.ser, "ring");
+    expect(kindsOf(i)).toContain("ring");
+    expect(kindsOf(i)).not.toContain("dep");
+    for (const k of ["mark", "dep", "ring"]) {
+      const j = steps.findIndex((x) => x.state.events.some((e) => e.kind === k));
+      const { s, calls } = recorder();
+      sound(s, { ...steps[j].state, events: steps[j].state.events.filter((e) => e.kind === k) });
+      expect(calls.every((c) => c.gain <= 0.05 && c.wave !== "square"), k).toBe(true);
+    }
+  });
+
+  it("пустой коммит не звучит: в кадре отказа нет «пум»", () => {
+    for (const [i, step] of steps.entries()) {
+      if (step.state.replay) continue;
+      const picked = score(step.state);
+      const refused = new Set(picked.filter((e) => e.kind === "busy" || e.kind === "zero").map((e) => e.by));
+      expect(picked.filter((e) => e.kind === "commit" && refused.has(e.by)), `кадр ${i + 1}`).toEqual([]);
+    }
+  });
+
+  it("«бзз» 40001 — три разных момента; красная лампа — без square", () => {
+    const { s, calls } = recorder();
+    sound(s, steps[at(ACT.ser, "fail")].state);
+    expect(new Set(calls.filter((c) => c.wave === "square" || c.wave === "sawtooth").map((c) => c.at)).size).toBe(3);
+    const red = steps.find((x) => x.state.events.some((e) => e.kind === "verdict" && e.lamps?.[0] === "red"))!;
+    const r = recorder();
+    sound(r.s, { ...red.state, events: red.state.events.filter((e) => e.kind === "verdict") });
+    expect(r.calls.length).toBeGreaterThan(0);
+    expect(r.calls.some((c) => c.wave === "square")).toBe(false);
+  });
 });

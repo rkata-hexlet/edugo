@@ -91,8 +91,8 @@ export type FailReason = "update" | "deps"; // 40001: concurrent update (стр�
 export type EventKind =
   | "press" | "count" | "insert" | "write" | "wait" | "zero" | "commit" | "fail" | "retry" | "ok" | "busy"
   // mark — метка чтения SSI; dep — чужая вставка попала под метку; doom — кольцо замкнулось, соседу ошибка впереди;
-  // overload — у курьера коробок больше, чем он увезёт (тихая беда, как oversold в 05).
-  | "mark" | "dep" | "doom" | "overload"
+  // ring — вставка замкнула цикл зависимостей с живым соседом; overload — у курьера коробок больше, чем он увезёт (тихая беда, как oversold в 05).
+  | "mark" | "dep" | "ring" | "doom" | "overload"
   | "card" | "page" | "rewind" | "verdict";
 
 export interface SimEvent {
@@ -255,11 +255,13 @@ export function insert(w: World, who: ActorId): boolean {
     w.deps.push({ reader: o, writer: who });
     w.events.push({ kind: "dep", by: who });
   }
-  // Сосед уже закоммичен, а кольцо замкнулось — ошибка при записи (first committer wins).
-  if (ring(w, who, o) && !w.actors[o].tx) {
+  if (!ring(w, who, o)) return true;
+  // Сосед уже закоммичен, а цикл замкнулся — ошибка при записи (first committer wins).
+  if (!w.actors[o].tx) {
     fail(w, who, "deps");
     return false;
   }
+  w.events.push({ kind: "ring", by: who });
   return true;
 }
 
