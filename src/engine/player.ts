@@ -221,7 +221,11 @@ function exposeRender<S>(
       if (t < COVER_S || t >= tl.end) return;
       const i = frameAt(tl.starts, t);
       if (i !== current) {
-        for (const a of fresh) a.finish(); // эффекты прошлого кадра — в конечное состояние
+        // Эффекты прошлого кадра — в конечное состояние; у цикла («ждёт») конца нет — его просто снимаем.
+        for (const a of fresh) {
+          if (a.effect?.getComputedTiming().endTime === Infinity) a.cancel();
+          else a.finish();
+        }
         show(i);
         getComputedStyle(document.body).opacity; // применить стили: новые анимации и переходы созданы
         fresh = document.getAnimations().filter((a) => a.playState !== "finished");
