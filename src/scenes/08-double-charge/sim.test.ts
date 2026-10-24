@@ -35,8 +35,10 @@ describe("модель оплаты", () => {
     charge(w, "B");
     expect(duplicated(w)).toBe(true);
     const k = world();
-    charge(k, "A", KEY.first);
-    charge(k, "A", KEY.second);
+    k.phone.key = KEY.first;
+    charge(k, "A");
+    k.phone.key = KEY.second;
+    charge(k, "A");
     expect(duplicated(k)).toBe(false); // новая попытка — новый ключ: сервер не задвоил
   });
 
@@ -129,6 +131,12 @@ describe("сценарий эпизода 08", () => {
       }
     }
     expect(checked).toBe(6);
+  });
+
+  it("1.2: новая оплата с новым ключом — второе списание, но не дубль попытки: лампа «одно списание» верна до конца акта", () => {
+    const end = steps.filter((s) => s.act === ACT.claim).at(-1)!.state;
+    expect(end.ledger).toHaveLength(2);
+    expect(duplicated(end)).toBe(false);
   });
 
   it("409 «ещё в работе» — жёлтый, «ключ уже использован» — красный", () => {

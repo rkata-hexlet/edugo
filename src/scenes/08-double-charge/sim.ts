@@ -34,11 +34,12 @@ export interface KeyRow {
   by: ActorId;
 }
 
-/** Списание в журнале банка. attempt — ключ попытки, без ключа — номер заказа: так тест считает дубли. */
+/** Списание в журнале банка. key — ключ, переданный банку; attempt — ключ попытки в приложении (по нему тест считает дубли). */
 export interface Charge {
   order: number;
   amount: number;
   key: string | null;
+  attempt: string | null;
   by: ActorId;
 }
 
@@ -184,7 +185,7 @@ export function charge(w: World, who: ActorId, key: string | null = null): boole
     return false;
   }
   const dup = w.ledger.length > 0;
-  w.ledger.push({ order: ORDER, amount: AMOUNT, key, by: who });
+  w.ledger.push({ order: ORDER, amount: AMOUNT, key, attempt: w.phone.key, by: who });
   if (key !== null) w.bankKeys[key] = w.ledger.length - 1;
   w.phone.balance -= AMOUNT;
   a.acts.push({ kind: "bank", key, replayed: false });
@@ -241,8 +242,8 @@ export function finishKey(w: World, who: ActorId, key: string, response: string)
 }
 
 /**
- * UPDATE … SET locked_until = now() + срок, owner = мы WHERE key = $1 AND status = 'processing' AND locked_until < now():
- * брошенный ключ переходит к повтору. false — срок ещё не вышел.
+ * UPDATE … SET locked_until = now() + срок WHERE key = $1 AND status = 'processing' AND locked_until < now():
+ * брошенный ключ переходит к повтору (в модели — и владелец строки). false — срок ещё не вышел.
  */
 export function takeOver(w: World, who: ActorId, key: string): boolean {
   alive(w, who).acts.push({ kind: "db", table: "keys" });
@@ -277,11 +278,11 @@ export function advance(w: World, seconds: number): void {
   w.events.push({ kind: "tick" });
 }
 
-/** Попытки с двумя списаниями: ключ попытки, без ключа — номер заказа. */
+/** Попытки с двумя списаниями: по ключу попытки, без ключа — по номеру заказа. */
 export function duplicated(w: World): boolean {
   const n = new Map<string, number>();
   for (const c of w.ledger) {
-    const id = c.key ?? `order:${c.order}`;
+    const id = c.attempt ?? `order:${c.order}`;
     n.set(id, (n.get(id) ?? 0) + 1);
   }
   return [...n.values()].some((x) => x > 1);
