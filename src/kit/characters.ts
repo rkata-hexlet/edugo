@@ -55,10 +55,11 @@ export function bob(
     pen.rect(`${key}:face`, { x: 7, y: 5, width: 50, height: 34, rx: 15, fill: tint });
     eyes(pen, key, mood, o.look);
     mouth(pen, key, mood);
+    // Руки — под буквой: скрещённые на брюшке не должны закрывать, кто это.
+    if (o.hands) hands(pen, `${key}:hands`, body, o.hands);
     pen.text(`${key}:letter`, {
       x: 32, y: 54, "text-anchor": "middle", "font-family": FONT.sans, "font-size": 18, "font-weight": 800, fill: frozen ? COLOR.muted : COLOR.bg,
     }, o.letter);
-    if (o.hands) hands(pen, `${key}:hands`, body, o.hands);
   });
 }
 
