@@ -110,4 +110,23 @@ describe("отрисовка эпизода 08 (все кадры)", () => {
     });
     expect(over).toEqual([]);
   });
+
+  it("рамка Postgres не заходит на табло в кадрах, где оно видно", () => {
+    const over = frames.flatMap(({ n, pen }) => {
+      const pg = pen.rects.find((r) => r.key === "pg:box");
+      const board = pen.texts.some((t) => t.key.startsWith("board"));
+      return pg && board && pg.bottom > 516 ? [`кадр ${n}: низ базы ${pg.bottom}`] : [];
+    });
+    expect(over).toEqual([]);
+  });
+
+  it("заголовок locked_until помещается в рамку Postgres", () => {
+    const over = frames.flatMap(({ n, pen }) => {
+      const t = pen.texts.find((x) => x.key === "keys:h:lease");
+      if (!t) return [];
+      const right = t.x + pen.measure(t.content, { "font-size": t.size, "font-family": "mono" }).width;
+      return right > PG.x + PG.w - 8 ? [`кадр ${n}: правый край ${Math.round(right)}`] : [];
+    });
+    expect(over).toEqual([]);
+  });
 });

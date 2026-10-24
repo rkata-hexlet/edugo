@@ -32,12 +32,20 @@ export const CHAPTER = { x: 1150, y: 22 };
 const TERM = { x: 750, y: 62 };
 /** Правый край шапки для реплики Postgres и штампа перемотки. */
 export const HEADER_RIGHT = CHAPTER.x - 12;
-/** Колонки idempotency_keys. */
-const COL = { key: 10, status: 86, response: 196, lease: 352 };
+/** Колонки idempotency_keys; с locked_until ответ сжат до кода — текст ответа виден на телефоне. */
+const COL = { key: 10, status: 84, response: 214, lease: 0 };
+const COL_LEASE = { key: 10, status: 84, response: 206, lease: 330 };
+/** Строка payments ниже строки ключа: две строки платежей не упираются в заголовок idempotency_keys. */
+const PAY_ROW = 32;
+/** Балансировщик: узел между телефоном и подами — только в кадрах, где о нём говорит голос. */
+const LB = { x: 312, y: 290, r: 16 };
 
 const MONO = { "font-family": FONT.mono, "font-size": SIZE.body };
 const SANS = { "font-family": FONT.sans, "font-size": SIZE.body };
 const DRAW = { pathLength: 1, class: "fx-draw" };
+/** Стрелки пода — по порядку действий: запрос, банк, база, ответ. */
+const drawIn = (n: number) => ({ pathLength: 1, class: `fx-draw${n ? ` d${Math.min(n, 3)}` : ""}` });
+const cols = (w: World) => (w.keyCols?.includes("lease") ? COL_LEASE : COL);
 
 const podMid = (id: ActorId) => POD_Y[id] + PB.h / 2;
 const lit = (w: World, ...ids: Focus[]) => !w.focus || ids.some((id) => w.focus!.includes(id));
@@ -100,34 +108,36 @@ function drawArrows(pen: Pen, w: World): void {
   for (const id of ACTORS) {
     const a = w.actors[id];
     const color = ACTOR[id].color;
-    const op = fade(w, id).opacity;
     const left = POD.x - 8;
     const right = POD.x + PB.w + 8;
     const mid = podMid(id);
+    // Стрелки упавшего пода — следы уже случившегося: бледнее и без ключа.
+    const op = fade(w, id).opacity * (a.dead ? 0.35 : 1);
     a.acts.forEach((x, n) => {
       const k = `arr:${id}:${n}`;
+      const draw = drawIn(n);
       if (x.kind === "req") {
-        pen.line(k, { x1: phoneEdge, y1: mid - 14, x2: left, y2: mid - 14, stroke: color, "stroke-width": 3, marker: "arrow", opacity: op, ...DRAW });
-        if (x.key) icon(pen, `${k}:key`, "key", (phoneEdge + left) / 2 - 11, mid - 44, 22, COLOR.warn, { opacity: op });
+        pen.line(k, { x1: phoneEdge, y1: mid - 14, x2: left, y2: mid - 14, stroke: color, "stroke-width": 3, marker: "arrow", opacity: op, ...draw });
+        if (x.key && !a.dead) icon(pen, `${k}:key`, "key", (phoneEdge + left) / 2 - 13, mid - 46, 26, COLOR.warn, { opacity: op });
       }
       if (x.kind === "reply") {
         const tone = x.tone === "ok" ? COLOR.ok : x.tone === "warn" ? COLOR.warn : COLOR.error;
         const x2 = x.lost ? (phoneEdge + left) / 2 + 4 : phoneEdge;
-        pen.line(k, { x1: left, y1: mid + 14, x2, y2: mid + 14, stroke: tone, "stroke-width": 3, opacity: op, ...(x.lost ? { "stroke-dasharray": "6 5" } : { marker: "arrow" }), ...DRAW });
-        if (x.lost) icon(pen, `${k}:x`, "cross", x2 - 26, mid + 3, 22, COLOR.error, { opacity: op, class: "fx-pop d2" });
+        pen.line(k, { x1: left, y1: mid + 14, x2, y2: mid + 14, stroke: tone, "stroke-width": 3, opacity: op, ...(x.lost ? { "stroke-dasharray": "6 5" } : { marker: "arrow" }), ...draw });
+        if (x.lost) icon(pen, `${k}:x`, "cross", x2 - 26, mid + 3, 22, COLOR.error, { opacity: op, class: "fx-pop d3" });
       }
       if (x.kind === "bank") {
-        const y2 = BANK.y + 40 + (id === "A" ? 0 : 30);
-        pen.line(k, { x1: right, y1: mid - 6, x2: BANK.x - 8, y2, stroke: x.replayed ? COLOR.ok : color, "stroke-width": 4, marker: "arrow", opacity: op, ...DRAW });
-        if (x.key) icon(pen, `${k}:key`, "key", (right + BANK.x) / 2 - 11, (mid + y2) / 2 - 30, 22, COLOR.warn, { opacity: op });
+        const y2 = BANK.y + 50 + (id === "A" ? 0 : 30);
+        pen.line(k, { x1: right, y1: mid - 6, x2: BANK.x - 8, y2, stroke: x.replayed ? COLOR.ok : color, "stroke-width": 4, marker: "arrow", opacity: op, ...draw });
+        if (x.key && !a.dead) icon(pen, `${k}:key`, "key", (right + BANK.x) / 2 - 13, (mid + y2) / 2 - 32, 26, COLOR.warn, { opacity: op });
       }
       if (x.kind === "db") {
-        const y2 = (x.table === "payments" ? PAY_Y : KEYS_Y) + TABLE.rowH / 2;
-        pen.line(k, { x1: right, y1: mid + 10, x2: TABLE.x - 8, y2, stroke: color, "stroke-width": 2, "stroke-dasharray": "4 4", marker: "arrow", opacity: op, ...DRAW });
+        const y2 = x.table === "payments" ? PAY_Y + PAY_ROW / 2 : KEYS_Y + TABLE.rowH / 2;
+        pen.line(k, { x1: right, y1: mid + 10, x2: TABLE.x - 8, y2, stroke: color, "stroke-width": 2, "stroke-dasharray": "4 4", marker: "arrow", opacity: op, ...draw });
       }
     });
     if (a.atBank) {
-      pen.line(`wait:${id}`, { x1: right, y1: mid - 6, x2: BANK.x - 8, y2: BANK.y + 40, stroke: color, "stroke-width": 3, "stroke-dasharray": "7 6", opacity: op });
+      pen.line(`wait:${id}`, { x1: right, y1: mid - 6, x2: BANK.x - 8, y2: BANK.y + 50, stroke: color, "stroke-width": 3, "stroke-dasharray": "7 6", opacity: op });
     }
   }
 }
@@ -149,9 +159,12 @@ function drawPod(pen: Pen, w: World, a: Actor): void {
       bob(pen, `pod:${a.id}:bob`, { x: 0, y: 0, color, tint, letter: a.id, mood, look, ghost: a.dead, dashed: mood === "wait" }),
     a.dead ? fxOnce : mood === "wait" ? { class: "fx-breathe" } : {}, { scale: POD_SCALE });
     const nx = PB.w + 16;
-    pen.text(`pod:${a.id}:label`, { x: nx, y: 20, ...SANS, "font-size": SIZE.say, "font-weight": 700, fill: a.dead ? COLOR.faint : color }, a.label);
-    if (a.dead) pill(pen, `pod:${a.id}:dead`, "OOM Killer", { x: nx, y: 32, fill: COLOR.alarmBg, color: COLOR.error, stroke: COLOR.error, attrs: happened(w, "crash", a.id) ? { class: "fx-pop" } : {} });
-    else if (a.atBank) iconText(pen, `pod:${a.id}:bank`, "hourglass", nx, 50, "ждёт банк", COLOR.warn, { ...SANS, "font-weight": 600 });
+    // Подпись и «OOM Killer» — под телом пода: справа идут стрелки в банк и базу.
+    pen.text(`pod:${a.id}:label`, { x: PB.w / 2, y: PB.h + 22, ...SANS, "font-size": SIZE.say, "font-weight": 700, fill: a.dead ? COLOR.faint : color, "text-anchor": "middle" }, a.label);
+    if (a.dead) {
+      const [dk, dfx] = once(`pod:${a.id}:dead`, w.frame, happened(w, "crash", a.id) ? "fx-pop" : null);
+      pen.group(dk, PB.w / 2 - 56, PB.h + 32, () => pill(pen, `${dk}:p`, "OOM Killer", { x: 0, y: 0, fill: COLOR.alarmBg, color: COLOR.error, stroke: COLOR.error }), dfx);
+    } else if (a.atBank) iconText(pen, `pod:${a.id}:bank`, "hourglass", nx, 20, "ждёт банк", COLOR.warn, { ...SANS, "font-weight": 600 });
     if (a.thought) bubble(pen, `pod:${a.id}:think`, a.thought, { x: nx - 4, y: 64, tail: "left", thought: true });
     if (a.crossed) {
       const ty = 64;
@@ -161,28 +174,46 @@ function drawPod(pen: Pen, w: World, a: Actor): void {
   }, fade(w, a.id));
 }
 
+/** Балансировщик: узел с вилкой, ветки к подам; в кадре повтора — только ветка на под запроса. */
+function drawBalancer(pen: Pen, w: World): void {
+  if (!w.focus?.includes("lb")) return;
+  const to = ACTORS.filter((id) => !w.actors[id].acts.length || w.actors[id].acts.some((x) => x.kind === "req"));
+  const all = to.length === ACTORS.length;
+  pen.group("lb", 0, 0, () => {
+    pen.line("lb:in", { x1: PHONE.x + PHONE.w + 6, y1: LB.y, x2: LB.x - LB.r - 4, y2: LB.y, stroke: COLOR.muted, "stroke-width": 2, marker: "arrow", ...drawIn(0) });
+    to.forEach((id) => pen.line(`lb:to${id}`, {
+      x1: LB.x + LB.r, y1: LB.y, x2: POD.x - 10, y2: podMid(id), stroke: ACTOR[id].color, "stroke-width": 2,
+      ...(all ? { "stroke-dasharray": "4 4", opacity: 0.6 } : {}), marker: "arrow", ...drawIn(1),
+    }));
+    pen.rect("lb:node", { x: LB.x - LB.r, y: LB.y - LB.r, width: LB.r * 2, height: LB.r * 2, rx: LB.r, fill: COLOR.bg2, stroke: COLOR.muted, "stroke-width": 2, class: "fx-pop" });
+    pen.path("lb:fork", { d: `M${LB.x - 8} ${LB.y}H${LB.x}M${LB.x} ${LB.y}L${LB.x + 7} ${LB.y - 7}M${LB.x} ${LB.y}L${LB.x + 7} ${LB.y + 7}`, stroke: COLOR.muted, "stroke-width": 2, fill: "none" });
+    // Подпись — в просвете между подами, правее веток: слева телефон.
+    pen.text("lb:name", { x: POD.x - 4, y: LB.y + 6, ...SANS, fill: COLOR.muted }, "балансировщик");
+  }, fade(w, "lb"));
+}
+
 /** Банк: окошко и журнал списаний с карты; второе списание той же попытки — красным. */
 function drawBank(pen: Pen, w: World): void {
   const { x, y, w: bw, h } = BANK;
   const alarm = happened(w, "double");
   pen.group("bank", 0, 0, () => {
     panel(pen, "bank:box", { x, y, w: bw, h, stroke: alarm ? COLOR.error : COLOR.mail, attrs: { "stroke-dasharray": "8 6" } });
-    mailFace(pen, "bank:face", { x: x + 26, y: y + 26, mood: alarm ? "alarm" : happened(w, "replayed") ? "relieved" : w.ledger.length ? "calm" : "asleep" });
-    pen.text("bank:title", { x: x + 76, y: y + 32, ...SANS, "font-size": SIZE.say, "font-weight": 700, fill: COLOR.mail }, "Банк");
+    mailFace(pen, "bank:face", { x: x + 26, y: y + 12, mood: alarm ? "alarm" : happened(w, "replayed") ? "relieved" : w.ledger.length ? "calm" : "asleep" });
+    pen.text("bank:title", { x: x + 76, y: y + 26, ...SANS, "font-size": SIZE.say, "font-weight": 700, fill: COLOR.mail }, "Банк");
     pen.text("bank:ext", { x: x + bw - 4, y: y - 12, ...SANS, fill: COLOR.muted, "text-anchor": "end" }, "внешний сервис");
     w.ledger.forEach((c, i) => {
       // Второе списание за те же кроссовки — красным, даже если сервер считал его новой попыткой.
       const dup = i > 0;
       const fresh = happened(w, i === w.ledger.length - 1 ? (dup ? "double" : "charge") : "page");
       const [k, fx] = once(`bank:row${i}`, w.frame, fresh ? "fx-slide" : null);
-      pen.group(k, x + 16, y + 46 + i * 38, () => {
-        pen.rect(`${k}:bg`, { width: bw - 32, height: 34, rx: 6, fill: dup ? COLOR.alarmBg : COLOR.surface2, stroke: dup ? COLOR.error : COLOR.line, "stroke-width": 1.5 });
-        pen.text(`${k}:t`, { x: 12, y: 23, ...MONO, fill: dup ? COLOR.error : COLOR.ink, "font-weight": 700 }, `−${rub(c.amount)} · заказ ${c.order}`);
-        if (c.key) iconText(pen, `${k}:key`, "key", bw - 32 - 110, 23, c.key, COLOR.warn, MONO);
+      pen.group(k, x + 16, y + 52 + i * 36, () => {
+        pen.rect(`${k}:bg`, { width: bw - 32, height: 32, rx: 6, fill: dup ? COLOR.alarmBg : COLOR.surface2, stroke: dup ? COLOR.error : COLOR.line, "stroke-width": 1.5 });
+        pen.text(`${k}:t`, { x: 12, y: 22, ...MONO, fill: dup ? COLOR.error : COLOR.ink, "font-weight": 700 }, `−${rub(c.amount)} · заказ ${c.order}`);
+        if (c.key) iconText(pen, `${k}:key`, "key", bw - 32 - 110, 22, c.key, COLOR.warn, MONO);
       }, fx);
     });
   }, fade(w, "bank"));
-  if (w.bank) bubble(pen, "bank:say", w.bank, { x: x + 130, y: y + 26, tail: "left", attrs: { class: "fx-pop" } });
+  if (w.bank) bubble(pen, "bank:say", w.bank, { x: x + 130, y: y + 20, tail: "left", attrs: { class: "fx-pop" } });
 }
 
 /** Наш Postgres: рамка со слоном и таблицами payments и idempotency_keys (колонки — по `keyCols`); часы БД — только в кейсе 2. */
@@ -190,7 +221,9 @@ function drawTables(pen: Pen, w: World): void {
   const rows = w.keys.length;
   const h = Math.max(PG.h, KEYS_Y + rows * (TABLE.rowH + TABLE.gap) + 2 - PG.y);
   panel(pen, "pg:box", { x: PG.x, y: PG.y, w: PG.w, h, fill: COLOR.bg2, stroke: COLOR.postgres, attrs: fade(w, "payments", "keys", "db") });
-  const bad = happened(w, "conflict");
+  // Хмурится только на отказ вставки, когда повтор ещё не получил ответа; сохранённый ответ и 409 — не беда.
+  const answered = ACTORS.some((id) => w.actors[id].acts.some((x) => x.kind === "reply" && x.tone !== "error"));
+  const bad = happened(w, "conflict") && !answered;
   const [dbKey, dbFx] = once("db:nod", w.frame, bad ? "fx-nod" : null);
   const busy = ["insert", "done", "takeover"].some((k) => happened(w, k as SimEvent["kind"]));
   const look = w.db ? { x: 1, y: 0.2 } : busy ? { x: 0.3, y: 1 } : { x: 0, y: 0 };
@@ -202,31 +235,39 @@ function drawTables(pen: Pen, w: World): void {
   w.payments.forEach((p, i) => {
     const k = `pay:${i}`;
     const [gk, fx] = once(k, w.frame, happened(w, "insert", p.by) && i === w.payments.length - 1 ? "fx-pop" : null);
-    pen.group(gk, TABLE.x, PAY_Y + i * (TABLE.rowH + TABLE.gap), () => {
-      pen.rect(`${k}:bg`, { width: TABLE.w, height: TABLE.rowH, rx: 6, fill: COLOR.surface, stroke: i > 0 ? COLOR.error : COLOR.line, "stroke-width": 1.5 });
-      pen.rect(`${k}:dot`, { x: 12, y: 14, width: 12, height: 12, rx: 6, fill: ACTOR[p.by].color });
-      pen.text(`${k}:t`, { x: 36, y: 25, ...MONO, fill: COLOR.ink }, `order_id ${p.order} · ${p.amount}`);
+    pen.group(gk, TABLE.x, PAY_Y + i * (PAY_ROW + TABLE.gap), () => {
+      pen.rect(`${k}:bg`, { width: TABLE.w, height: PAY_ROW, rx: 6, fill: COLOR.surface, stroke: i > 0 ? COLOR.error : COLOR.line, "stroke-width": 1.5 });
+      pen.rect(`${k}:dot`, { x: 12, y: 10, width: 12, height: 12, rx: 6, fill: ACTOR[p.by].color });
+      pen.text(`${k}:t`, { x: 36, y: 22, ...MONO, fill: COLOR.ink }, `order_id ${p.order} · ${p.amount}`);
     }, { ...fade(w, "payments"), ...fx });
   });
   if (!w.keyCols) return;
-  const cols = w.keyCols;
+  const shown = w.keyCols;
+  const col = cols(w);
+  const leased = leaseSet(w);
   pen.group("keys:hdr", 0, 0, () => {
     pen.text("keys:name", { x: TABLE.x + 10, y: KEYS_Y - 34, ...MONO, fill: COLOR.muted }, "idempotency_keys");
     const names: [keyof typeof COL, string][] = [["key", "key"], ["status", "status"], ["response", "response"], ["lease", "locked_until"]];
-    names.filter(([c]) => c === "key" || (c === "lease" ? cols.includes("lease") : cols.includes("status")))
-      .forEach(([c, label]) => pen.text(`keys:h:${c}`, { x: TABLE.x + COL[c], y: KEYS_Y - 10, ...MONO, fill: COLOR.faint }, label));
+    names.filter(([c]) => c === "key" || (c === "lease" ? shown.includes("lease") : shown.includes("status")))
+      .forEach(([c, label]) => pen.text(`keys:h:${c}`, { x: TABLE.x + col[c], y: KEYS_Y - 10, ...MONO, fill: c === "lease" && leased ? COLOR.warn : COLOR.faint }, label));
   }, fade(w, "keys"));
   w.keys.forEach((r, i) => drawKey(pen, w, r, i));
   if (w.clockShown) {
     pen.group("clock", 0, 0, () => {
       icon(pen, "clock:i", "clock", TABLE.x + TABLE.w - 130, KEYS_Y - 52, 22, COLOR.muted);
       pen.text("clock:t", { x: TABLE.x + TABLE.w, y: KEYS_Y - 34, "font-family": FONT.mono, "font-size": SIZE.body, "font-weight": 700, fill: COLOR.ink, "text-anchor": "end" }, time(w.clock));
-    }, { ...fade(w, "keys"), ...(happened(w, "tick") ? { class: "fx-pulse" } : {}) });
+    }, { ...fade(w, "keys"), ...(happened(w, "tick") || leased ? { class: "fx-pulse" } : {}) });
   }
 }
 
+/** Ключ только что занят со сроком: срок получает при захвате — подсветить заголовок и ячейку. */
+function leaseSet(w: World): boolean {
+  return !!w.keyCols?.includes("lease") && w.keys.some((r) => r.lockedUntil !== null && happened(w, "insert", r.by));
+}
+
 function drawKey(pen: Pen, w: World, r: KeyRow, i: number): void {
-  const cols = w.keyCols!;
+  const shown = w.keyCols!;
+  const col = cols(w);
   const k = `keys:${i}`;
   const owner = w.actors[r.by];
   const done = r.status === "done";
@@ -237,14 +278,18 @@ function drawKey(pen: Pen, w: World, r: KeyRow, i: number): void {
       width: TABLE.w, height: TABLE.rowH, rx: 6, fill: done ? COLOR.doneBg : COLOR.surface,
       stroke: owner.dead && !done ? COLOR.faint : ACTOR[r.by].color, "stroke-width": 2, ...(owner.dead && !done ? { "stroke-dasharray": "6 4" } : {}),
     });
-    pen.text(`${k}:key`, { x: COL.key, y: 25, ...MONO, fill: COLOR.warn, "font-weight": 700 }, r.key);
-    if (cols.includes("status")) {
-      pen.text(`${k}:st`, { x: COL.status, y: 25, ...MONO, fill: done ? COLOR.ok : COLOR.warn }, r.status);
-      pen.text(`${k}:resp`, { x: COL.response, y: 25, ...MONO, fill: r.response ? COLOR.ink : COLOR.faint }, r.response ?? "—");
+    pen.text(`${k}:key`, { x: col.key, y: 25, ...MONO, fill: COLOR.warn, "font-weight": 700 }, r.key);
+    if (shown.includes("status")) {
+      pen.text(`${k}:st`, { x: col.status, y: 25, ...MONO, fill: done ? COLOR.ok : COLOR.warn }, r.status);
+      const resp = r.response && shown.includes("lease") ? r.response.split(" ")[0] : r.response;
+      pen.text(`${k}:resp`, { x: col.response, y: 25, ...MONO, fill: r.response ? COLOR.ink : COLOR.faint }, resp ?? "—");
     }
-    if (cols.includes("lease")) {
+    if (shown.includes("lease")) {
       const expired = r.lockedUntil !== null && r.lockedUntil < w.clock;
-      pen.text(`${k}:lease`, { x: COL.lease, y: 25, ...MONO, fill: expired ? COLOR.error : COLOR.muted }, r.lockedUntil === null ? "—" : time(r.lockedUntil));
+      if (leaseSet(w) && r.lockedUntil !== null) {
+        pen.rect(`${k}:leasebg`, { x: col.lease - 8, y: 6, width: 104, height: TABLE.rowH - 12, rx: 6, fill: COLOR.draftBg, stroke: COLOR.warn, "stroke-width": 1.5, class: "fx-pop" });
+      }
+      pen.text(`${k}:lease`, { x: col.lease, y: 25, ...MONO, fill: expired ? COLOR.error : leaseSet(w) ? COLOR.warn : COLOR.muted }, r.lockedUntil === null ? "—" : time(r.lockedUntil));
     }
   }, { ...fade(w, "keys"), ...fx });
 }
@@ -255,7 +300,7 @@ function drawHeader(pen: Pen, w: World): void {
 
 /** Почему ключ — не номер заказа: две законные попытки одного заказа. */
 function drawAttempts(pen: Pen): void {
-  pen.rect("scrim", { x: 0, y: 116, width: STAGE.w, height: SAFE_BOTTOM - 116, fill: COLOR.bg, opacity: 0.94, class: "fx-fade" });
+  pen.rect("scrim", { x: 0, y: 0, width: STAGE.w, height: SAFE_BOTTOM, fill: COLOR.bg, opacity: 0.94, class: "fx-fade" });
   panel(pen, "att:box", { x: 300, y: 200, w: 680, h: 230 });
   pen.text("att:title", { x: 336, y: 250, ...SANS, "font-size": SIZE.accent, "font-weight": 700, fill: COLOR.muted }, `Заказ ${ORDER} · ${rub(AMOUNT)}`);
   const rows: [string, string, boolean][] = [["карта ··1234", "банк отказал", false], ["карта ··5678", "оплачено", true]];
@@ -273,24 +318,29 @@ export function render(pen: Pen, w: World): void {
   if (w.flashback !== null) {
     render01(pen, recallWorld(w.flashback));
     pen.layer("top", () => {
+      // Говорим о Почте и ключе: таблица очереди, слон и часы БД — фоном.
+      pen.rect("recall:dim1", { x: 0, y: 0, width: 610, height: 400, fill: COLOR.bg, opacity: 0.6 });
+      pen.rect("recall:dim2", { x: 1050, y: 0, width: 230, height: 110, fill: COLOR.bg, opacity: 0.6 });
       if (w.stamp) stamp(pen, w.stamp, { left: PHONE.x, right: HEADER_RIGHT });
     });
     return;
   }
   pen.layer("back", () => pen.rect("bg", { x: 0, y: 0, width: STAGE.w, height: STAGE.h, fill: COLOR.bg }));
-  drawHeader(pen, w);
   if (w.term) pill(pen, "term", w.term, { x: TERM.x, y: TERM.y, fill: COLOR.surface2, color: COLOR.ink, stroke: COLOR.ink, mono: true, attrs: { class: "fx-slide" } });
   drawTables(pen, w);
   drawBank(pen, w);
   if (w.board && lit(w, "board")) board(pen, w.board, { ...BOARD, lampX: [262, 412], attrs: fade(w, "board") });
   if (w.sql.length) sqlWindow(pen, "sql", podSql(w.sql), { x: PHONE.x, bottom: BOTTOM, attrs: fade(w, "sql") });
   drawArrows(pen, w);
+  drawBalancer(pen, w);
   drawPhone(pen, w);
   for (const id of ACTORS) drawPod(pen, w, w.actors[id]);
   pen.layer("top", () => {
-    if (w.code) pen.rect("scrim", { x: 0, y: 116, width: STAGE.w, height: SAFE_BOTTOM - 116, fill: COLOR.bg, opacity: 0.92, class: "fx-fade" });
+    if (w.code) pen.rect("scrim", { x: 0, y: 0, width: STAGE.w, height: SAFE_BOTTOM, fill: COLOR.bg, opacity: 0.92, class: "fx-fade" });
     codeWindow(pen, w.code, { rows: w.code?.lines.length ?? 1 });
     if (w.aside === "attempts") drawAttempts(pen);
+    // Значок кейса — поверх затемнения кода и вставки, под плашкой кейса.
+    drawHeader(pen, w);
     if (w.plate) {
       const [head, ...rest] = w.plate.split("\n");
       plate(pen, "plate", head, rest.join("\n"), STAGE);

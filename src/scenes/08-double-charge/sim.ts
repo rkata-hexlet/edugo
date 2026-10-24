@@ -74,7 +74,7 @@ export interface Actor {
 /** Колонки idempotency_keys в кадре: появляются, когда о них говорит голос. */
 export type KeyCols = "key" | "status" | "lease";
 
-export type Focus = ActorId | "phone" | "bank" | "payments" | "keys" | "board" | "sql" | "code" | "db";
+export type Focus = ActorId | "phone" | "bank" | "payments" | "keys" | "board" | "sql" | "code" | "db" | "lb";
 
 /** Вставки поверх сцены: две попытки одного заказа (почему ключ не номер заказа). */
 export type Aside = "attempts";
