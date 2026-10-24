@@ -82,7 +82,7 @@ function drawRow(pen: Pen, w: World): void {
         if (v.by) pen.rect(`${k}:who`, { x: 0, y: 0, width: 6, height: TABLE.rowH, rx: 3, fill: ACTOR[v.by].color });
         if (draft) {
           // Замок своей отрисовкой: дужка защёлкивается в кадре записи.
-          const [lockKey, shFx] = once(`${k}:lock`, w.frame, happened(w, "write", v.by!) ? "fx-lock" : null);
+          const [lockKey, shFx] = once(`${k}:lock`, w.frame, happened(w, "write", v.by!) || happened(w, "clobber", v.by!) ? "fx-lock" : null);
           lock(pen, lockKey, { x: TABLE.w - 32, y: 6, color: ACTOR[v.by!].color, shackle: shFx });
           if (w.stack) pen.text(`${k}:note`, { x: TABLE.w - 44, y: 25, ...SANS, fill: COLOR.warn, "text-anchor": "end" }, "не закоммичено");
         } else if (w.stack && v.by) {
@@ -429,7 +429,7 @@ function firstOnly(b: Board): Board {
 function drawHeader(pen: Pen, w: World): void {
   const [dbKey, dbFx] = once("db:nod", w.frame, happened(w, "fail") || happened(w, "zero") ? "fx-nod" : null);
   // Слон смотрит туда, где событие: на таблицу под ним, когда пишут; на поды, когда отвечает. Отказ — хмурится.
-  const busy = ["write", "commit", "zero", "fail"].some((k) => happened(w, k as SimEvent["kind"]));
+  const busy = ["write", "clobber", "commit", "zero", "fail"].some((k) => happened(w, k as SimEvent["kind"]));
   const look = w.db ? { x: 1, y: 0.2 } : busy ? { x: 0.3, y: 1 } : { x: 0, y: 0 };
   const frown = happened(w, "fail") || happened(w, "zero");
   pen.group(dbKey, 0, 0, () => elephant(pen, "db:face", { x: TABLE.x + 4, y: 8, talking: !!w.db, scale: 1.08, look, frown }), dbFx);

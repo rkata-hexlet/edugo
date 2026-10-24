@@ -81,7 +81,9 @@ export interface Code {
 
 export type EventKind =
   | "press" | "read" | "write" | "wait" | "zero" | "insert" | "commit" | "fail" | "retry" | "ok" | "none"
-  | "card" | "page" | "rewind" | "verdict";
+  // clobber — запись числа, посчитанного из устаревшего чтения (lost update); oversold — продано больше, чем было.
+  | "clobber" | "oversold"
+  | "card" | "page" | "rewind" | "verdict" | "ladder";
 
 export interface SimEvent {
   kind: EventKind;
@@ -252,7 +254,9 @@ function apply(w: World, who: ActorId, op: Write): Outcome {
   else w.versions.push({ stock, by: who, at: null });
   w.lockedBy = who;
   w.actors[who].acts.push({ kind: "write", version: w.versions.length - 1 });
-  w.events.push({ kind: "write", by: who });
+  // Число посчитано из прочитанного, а строка с тех пор другая — тихая беда, звучит иначе, чем запись.
+  const stale = op.kind === "set" && t.read !== null && t.read !== current;
+  w.events.push({ kind: stale ? "clobber" : "write", by: who });
   return "write";
 }
 
@@ -270,10 +274,12 @@ export function commit(w: World, who: ActorId): void {
     w.versions[w.versions.length - 1].at = w.clock;
     w.lockedBy = null;
   }
+  const before = oversold(w);
   for (const o of w.orders) if (o.by === who) o.committed = true;
   w.actors[who].tx = null;
   w.actors[who].acts.push({ kind: "commit" });
   w.events.push({ kind: "commit", by: who });
+  if (!before && oversold(w)) w.events.push({ kind: "oversold", by: who });
 }
 
 /** Откат: своя незакоммиченная версия и заказы исчезают, замок снят. */

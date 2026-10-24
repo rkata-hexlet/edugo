@@ -442,6 +442,7 @@ export function buildSteps(): Step<World>[] {
   d.scene(ACT.levels, structuredClone(d.w), { replay: true });
   d.shot("", (w) => {
     w.ladder = true;
+    w.events.push({ kind: "ladder" });
     w.clockShown = false;
     w.horizon = null;
   }, {
