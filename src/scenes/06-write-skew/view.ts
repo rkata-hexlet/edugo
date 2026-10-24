@@ -6,7 +6,7 @@ import { ACTOR, COLOR, DIM, FONT, SAFE_BOTTOM, SIZE } from "../../kit/theme";
 import { awning, buyButton, lock, person, PERSON, type PersonMood } from "../../kit/props";
 import { board, bubble, iconText, once, panel, pill, plate, podSql, sqlWindow, stamp } from "../../kit/widgets";
 import { drawCode, render as render05 } from "../05-isolation/view";
-import { recallWorld } from "./script";
+import { CODE_ROWS, recallWorld } from "./script";
 import {
   ACTORS, CAP, boxes, overloaded, slotTop,
   type Act, type Actor, type ActorId, type Focus, type Order, type SimEvent, type World,
@@ -374,7 +374,7 @@ export function render(pen: Pen, w: World): void {
   for (const id of ACTORS) drawPod(pen, w, w.actors[id]);
   pen.layer("top", () => {
     if (w.code) pen.rect("scrim", { x: 0, y: OVERLAY.y - 8, width: STAGE.w, height: SAFE_BOTTOM - OVERLAY.y + 8, fill: COLOR.bg, opacity: 0.92, class: "fx-fade" });
-    drawCode(pen, w.code);
+    drawCode(pen, w.code, CODE_ROWS);
     if (w.plate) {
       const [head, ...rest] = w.plate.split("\n");
       plate(pen, "plate", head, rest.join("\n"), STAGE);

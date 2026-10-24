@@ -396,13 +396,13 @@ function highlightGo(lines: string[]): Span[][] {
 }
 
 /** Код пода на Go: окно поверх сцены, подсвеченные строки — где беда (жёлтым) или что поправили (зелёным). Эпизод 06 берёт его же. */
-export function drawCode(pen: Pen, c: Code | null): void {
+export function drawCode(pen: Pen, c: Code | null, rows = CODE_LINES): void {
   if (!c) return;
-  // Окно одного размера во всех кадрах кода: при смене кадра меняются только подсвеченные строки.
+  // Окно одного размера во всех кадрах кода эпизода (rows — его самый длинный код): меняются только подсвеченные строки.
   const lineH = 34;
   const x = 200;
   const y = OVERLAY.y;
-  const h = 76 + CODE_LINES * lineH + 8;
+  const h = 76 + rows * lineH + 8;
   pen.group("code", 0, 0, () => {
     panel(pen, "code:box", { x, y, w: 880, h, fill: "#11172e", stroke: COLOR.muted });
     pen.text("code:title", { x: x + 28, y: y + 40, ...SANS, "font-size": SIZE.accent, "font-weight": 700, fill: COLOR.muted }, c.title);
