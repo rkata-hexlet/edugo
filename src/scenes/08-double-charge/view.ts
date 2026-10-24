@@ -93,7 +93,10 @@ function drawPhone(pen: Pen, w: World): void {
         iconText(pen, `${k}:t`, "cross", sx + 14, by - 10, "Ключ уже", COLOR.error, bold);
         pen.text(`${k}:t2`, { x: sx + 39, y: by + 14, ...bold, fill: COLOR.error }, "использован");
       }
-      if (p.screen === "busy") iconText(pen, `${k}:t`, "hourglass", sx + 14, by, "Ещё в работе…", COLOR.warn, bold);
+      if (p.screen === "busy") {
+        iconText(pen, `${k}:t`, "hourglass", sx + 14, by - 10, "Ещё в работе…", COLOR.warn, bold);
+        pen.text(`${k}:code`, { x: sx + 39, y: by + 16, ...MONO, fill: COLOR.muted }, "409");
+      }
     }, fx);
     if (p.key) iconText(pen, "phone:key", "key", x + 16, y + 280, p.key, COLOR.warn, { ...MONO, "font-weight": 700 });
     pen.text("phone:bal", { x: x + 16, y: y + h - 22, ...SANS, fill: p.balance < 5000 - AMOUNT ? COLOR.error : COLOR.ink, "font-weight": 600 }, `Карта · ${rub(p.balance)}`);
