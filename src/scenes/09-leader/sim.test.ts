@@ -112,7 +112,7 @@ describe("сценарий эпизода 09", () => {
       checked++;
       const t = w.board!.attempts.at(-1)!;
       const [first, second] = t.lamps!;
-      const [once, done] = w.chapter === 1 ? [first, second] : [second, first];
+      const [once, done] = [first, second];
       if (once) expect(once === "green", `${t.name}: одно списание`).toBe(!duplicated(w));
       if (done) expect(done === "green", `${t.name}: доделают`).toBe(finished(w));
     }

@@ -58,6 +58,13 @@ function rowY(w: World, sub: number): number {
   return BANK.y + 52 + Math.max(i, 0) * 32 + 14;
 }
 
+/** Скачок часов в этом кадре, если он больше секунд «между делом»: «+1 мин», «+2 ч», «+20 с». */
+function jump(w: World): string | null {
+  const n = w.events.find((e) => e.kind === "tick")?.n ?? 0;
+  if (n < 20) return null;
+  return n >= 3600 ? `+${Math.round(n / 3600)} ч` : n >= 60 ? `+${Math.round(n / 60)} мин` : `+${n} с`;
+}
+
 /** Ира: время ночи, спит или нет, уведомления о списаниях, баланс карты. */
 function drawIra(pen: Pen, w: World): void {
   const { x, y, w: bw, h } = IRA_BOX;
@@ -67,16 +74,20 @@ function drawIra(pen: Pen, w: World): void {
     person(pen, "ira:p", { x: x + 16, y: y + 16, shirt: COLOR.browser, mood: ira.asleep ? "idle" : ira.notes > 1 ? "sad" : "happy" });
     pen.text("ira:name", { x: x + 72, y: y + 46, ...SANS, "font-size": SIZE.say, "font-weight": 700, fill: COLOR.ink }, "Ира");
     pen.text("ira:time", { x: x + bw - 16, y: y + 46, ...MONO, fill: COLOR.muted, "text-anchor": "end" }, hhmm(w.clock));
+    const j = w.shown.clock ? null : jump(w);
+    if (j) pill(pen, "ira:jump", j, { x: x + bw - 16 - 90, y: y - 34, fill: COLOR.surface2, color: COLOR.warn, stroke: COLOR.warn, mono: true, attrs: { class: "fx-pop" } });
     if (ira.asleep) icon(pen, "ira:zz", "sleep", x + 130, y + 60, 26, COLOR.muted);
     pen.text("ira:plan", { x: x + 16, y: y + 100, ...SANS, fill: COLOR.muted }, `Плюс · ${rub(AMOUNT)}/мес`);
+    // Лишнее уведомление красное, только если и денег ушло лишнее: при ключе у банка три письма — про одно списание.
+    const low = ira.balance < BALANCE - AMOUNT;
     for (let i = 0; i < Math.min(ira.notes, 3); i++) {
+      const bad = i > 0 && low;
       const [k, fx] = once(`ira:note${i}`, w.frame, happened(w, "note") ? `fx-slide d${Math.min(i + 1, 3)}` : null);
       pen.group(k, x + 16, y + 120 + i * 40, () => {
-        pen.rect(`${k}:bg`, { width: bw - 32, height: 32, rx: 8, fill: i > 0 ? COLOR.alarmBg : COLOR.surface2, stroke: i > 0 ? COLOR.error : COLOR.line, "stroke-width": 1.5 });
-        iconText(pen, `${k}:t`, "mail", 10, 22, `Списано ${rub(AMOUNT)}`, i > 0 ? COLOR.error : COLOR.ink, SANS);
+        pen.rect(`${k}:bg`, { width: bw - 32, height: 32, rx: 8, fill: bad ? COLOR.alarmBg : COLOR.surface2, stroke: bad ? COLOR.error : COLOR.line, "stroke-width": 1.5 });
+        iconText(pen, `${k}:t`, "mail", 10, 22, `Списано ${rub(AMOUNT)}`, bad ? COLOR.error : COLOR.ink, SANS);
       }, fx);
     }
-    const low = ira.balance < BALANCE - AMOUNT;
     pen.text("ira:bal", { x: x + 16, y: y + h - 22, ...SANS, fill: low ? COLOR.error : COLOR.ink, "font-weight": 600 }, `Карта · ${rub(ira.balance)}`);
   }, fade(w, "ira"));
 }
@@ -104,14 +115,16 @@ function drawConns(pen: Pen, w: World): void {
       ...(silent ? { "stroke-dasharray": "10 8" } : {}),
     });
     // Связь пропала у живого пода — разрыв на проводе.
-    if (silent && !a.dead) {
-      const [ck, cfx] = once(`conn:${id}:cut`, w.frame, happened(w, "cut", id) ? "fx-pop" : null);
+    if (silent) {
+      const [ck, cfx] = once(`conn:${id}:cut`, w.frame, happened(w, "cut", id) || happened(w, "silent", id) ? "fx-pop" : null);
       pen.group(ck, mx - 60, my - (my - y1) * 0.4, () => [0, 10].forEach((dx, i) =>
         pen.line(`${ck}:${i}`, { x1: dx, y1: -8, x2: dx + 6, y2: 8, stroke: COLOR.error, "stroke-width": 3, "stroke-linecap": "round" })), cfx);
     }
     if (w.lockBy === id) {
       const [lk] = once(`lock:${id}`, w.frame, happened(w, "lock", id) ? "fx-pop" : null);
       lockTag(pen, lk, mx, my, ACTOR[id].color, false, happened(w, "lock", id));
+      // Носитель «замок у соединения»: провод с замком назван в кейсе 1.
+      if (w.chapter === 1) pen.text(`lock:${id}:conn`, { x: mx + 6, y: my + 46, ...SANS, fill: COLOR.muted, "text-anchor": "middle" }, "соединение");
     }
   }
 }
@@ -271,6 +284,8 @@ function drawDb(pen: Pen, w: World): void {
     pen.group("clock", 0, 0, () => {
       icon(pen, "clock:i", "clock", PG.x + PG.w - 138, LEADER_Y - 28, 20, COLOR.muted);
       pen.text("clock:t", { x: PG.x + PG.w - 14, y: LEADER_Y - 10, ...MONO, "font-weight": 700, fill: COLOR.ink, "text-anchor": "end" }, hhmmss(w.clock));
+      const j = jump(w);
+      if (j) pill(pen, "clock:jump", j, { x: PG.x + PG.w - 230, y: LEADER_Y - 32, fill: COLOR.surface2, color: COLOR.warn, stroke: COLOR.warn, mono: true, attrs: { class: "fx-pop" } });
     }, { ...fade(w, "leader"), ...(happened(w, "tick") ? { class: "fx-pulse" } : {}) });
   }
   if (w.shown.subs) {
