@@ -16,7 +16,7 @@
   `episode/08-double-charge` (мир сервиса оплаты). Решения пользователя: 09 вместо outbox (outbox — в `ideas.md`),
   один ролик блокировка → лидер → развязка ключом из бизнес-факта (fencing — фразой), lease — строкой в Postgres. Разборы tech-expert и scriptwriter — `docs/reviews/09-*-arc.md`; **сценарий v0 — `docs/episodes/09-leader.md`, сюжет утверждён пользователем 25.10 («ок»).** **MVP готов**
   (`?scene=09`, 38 кадров, закадр синтезом, звук-черновик), закадр выгружен `docs/episodes/09-narration.md`.
-  **Ждёт пользователя:** просмотр MVP. Дальше по плану фазы 2 (как `plan-08-polish.md`): tech-writer → tech-expert
+  **MVP «зашёл» (пользователь 25.10).** Фаза 2 — `docs/plan-09-polish.md`. Дальше по плану фазы 2 (как `plan-08-polish.md`): tech-writer → tech-expert
   (смысл, «сцена не врёт») → learning-designer → motion-designer, sound-designer.
   Решения без пользователя (MVP): кадр «Я же проверил!» вырезан (B о дубле знать не может); табло — три последние
   попытки; вставка 08 — кадр 1.3 «Меня не беспокоили»; часы БД — над строкой leader.
