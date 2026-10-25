@@ -40,4 +40,22 @@ describe("озвучка эпизода 09", () => {
       expect(steps.some((s) => s.act === act && score(s.state).some((e) => e.kind === "double")), act).toBe(true);
     }
   });
+
+  it("три уведомления утром звучат трижды — рифма с тремя письмами; в финале — одно", () => {
+    const morning = steps.find((s) => s.act === ACT.hook && s.state.events.some((e) => e.kind === "note"))!;
+    expect(score(morning.state).filter((e) => e.kind === "note")).toHaveLength(3);
+    const last = steps.at(-1)!;
+    expect(score(last.state, true).filter((e) => e.kind === "note")).toHaveLength(1);
+  });
+
+  it("каждый кадр итога звучит своим образом", () => {
+    for (const s of steps.filter((x) => x.act === ACT.summary)) expect(score(s.state, true).length, s.narration).toBeGreaterThan(0);
+  });
+
+  it("при дубле обычная касса и фон молчат", () => {
+    for (const s of steps) {
+      const kinds = score(s.state, s.state.replay).map((e) => e.kind);
+      if (kinds.includes("double")) expect(kinds.filter((k) => ["charge", "tick", "insert", "renew"].includes(k)), s.narration).toEqual([]);
+    }
+  });
 });
