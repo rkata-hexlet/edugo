@@ -16,8 +16,11 @@
   `episode/08-double-charge` (мир сервиса оплаты). Решения пользователя: 09 вместо outbox (outbox — в `ideas.md`),
   один ролик блокировка → лидер → развязка ключом из бизнес-факта (fencing — фразой), lease — строкой в Postgres. Разборы tech-expert и scriptwriter — `docs/reviews/09-*-arc.md`; **сценарий v0 — `docs/episodes/09-leader.md`, сюжет утверждён пользователем 25.10 («ок»).** **MVP готов**
   (`?scene=09`, 38 кадров, закадр синтезом, звук-черновик), закадр выгружен `docs/episodes/09-narration.md`.
-  **MVP «зашёл» (пользователь 25.10).** Фаза 2 — `docs/plan-09-polish.md`. Дальше по плану фазы 2 (как `plan-08-polish.md`): tech-writer → tech-expert
-  (смысл, «сцена не врёт») → learning-designer → motion-designer, sound-designer.
+  **MVP «зашёл» (пользователь 25.10).** Фаза 2 — `docs/plan-09-polish.md`: этапы 0–4 пройдены (разборы
+  `docs/reviews/09-{tech-writer-mvp,tech-expert-mvp,learning-designer,motion-designer,sound-design}.md`), этап 5 пройден
+  (итоговая сверка tech-expert — `09-tech-expert-final.md`): **черновик готов к записи дублей пользователем**. Решения пользователя 25.10 по фазе 2: 2.3 — лидер продлевает аренду перед списанием,
+  банк отвечает 20 с; фраза «advisory lock тоже даёт двух лидеров» — в итог 37, а не в 30; fencing token (34) остаётся.
+  Не сделано: корона/провод/полоса аренды в `kit/` (ветка от master), прокрутка табло, повтор сцены 08 в кадре 7.
   Решения без пользователя (MVP): кадр «Я же проверил!» вырезан (B о дубле знать не может); табло — три последние
   попытки; вставка 08 — кадр 1.3 «Меня не беспокоили»; часы БД — над строкой leader.
   Дальше: чек-лист `06-recurring-mistakes.md` → tech-expert → scriptwriter → сценарий → пользователь утверждает сюжет → MVP.
