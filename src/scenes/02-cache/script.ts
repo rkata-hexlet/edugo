@@ -291,7 +291,9 @@ export function buildSteps(): Step<World>[] {
   d.term("Race condition");
   d.shot("", (w) => {
     // Окно гонки — порядок шагов разных подов одной панелью: зритель видит, куда вклинился B.
+    // Беда в чтении до COMMIT, а не в SET: без SELECT в панели зритель решил бы, что виноват SET (tech-expert).
     sql(w, "A", `${SQL.del}  -- 1`);
+    sql(w, "B", `${SQL.select}  -- '${OLD}'`);
     sql(w, "B", SQL.set(OLD, TTL));
     sql(w, "A", "COMMIT");
   }, {
