@@ -49,4 +49,17 @@ describe("озвучка эпизода 02", () => {
     sound(s, frame.state);
     expect(calls.some((c) => c.kind === "tone" && c.gain >= 0.13)).toBe(true);
   });
+
+  it("«сначала база, потом удаление» слышно: DEL звучит после COMMIT", () => {
+    const frame = steps.find((x) => x.act === ACT.dbFirst && ["commit", "del"].every((k) => x.state.events.some((e) => e.kind === k)))!;
+    const play = (...kinds: string[]) => {
+      const { s, calls } = recorder();
+      sound(s, { ...frame.state, events: frame.state.events.filter((e) => kinds.includes(e.kind)) });
+      return calls;
+    };
+    const commit = play("commit");
+    // Звуки DEL — то, что добавилось к COMMIT в том же кадре (раскладка зависит от соседей).
+    const del = play("commit", "del").filter((c) => !commit.some((o) => o.at === c.at && o.kind === c.kind && o.gain === c.gain));
+    expect(Math.min(...del.map((c) => c.at))).toBeGreaterThan(Math.min(...commit.map((c) => c.at)));
+  });
 });

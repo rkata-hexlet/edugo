@@ -22,6 +22,12 @@ const lampTone = (s: Sound, at: number, lamp: Lamp) => {
   else s.tone({ freq: 220, dur: 0.12, wave: "square", gain: 0.08, at });
 };
 
+/** Тонет узел Redis — «бульк» выше и короче гула базы, чтобы кластер не звучал как Postgres. */
+const drown: Recipe = (s, at) => {
+  [0.05, 0.17, 0.29].forEach((dt) => s.tone({ freq: 520, to: 260, dur: 0.08, gain: 0.07, at: at + dt }));
+  s.noise({ dur: 0.3, freq: 900, q: 2, gain: 0.03, at: at + 0.05 });
+};
+
 const RECIPES: Partial<Record<EventKind, Recipe>> = {
   page: (s, at) => {
     s.noise({ dur: 0.12, freq: 1800, q: 0.6, gain: 0.03, at: at + 0.05 });
@@ -119,7 +125,7 @@ const REPEAT: Partial<Record<EventKind, { max: number; step: number }>> = {
 
 /** Лесенка цепочки: промах → база → копия → ответ; смена сцены и перемотка — сразу. */
 const SLOT: Partial<Record<EventKind, number>> = {
-  select: 0.1, set: 0.2, ok: 0.1, drop: 0.15, verdict: 0.2, update: 0.05,
+  select: 0.1, ok: 0.1, drop: 0.15, verdict: 0.2, update: 0.05,
 };
 
 function clockTicks(s: Sound, dt: number): void {
@@ -151,22 +157,37 @@ export function sound(out: Sound, w: World, replay = false): void {
   const byKind = new Map<EventKind, SimEvent[]>();
   for (const e of w.events) byKind.set(e.kind, [...(byKind.get(e.kind) ?? []), e]);
   if (byKind.has("commit")) byKind.delete("update"); // правку с коммитом — одним «пум»
-  if (["stale", "rewind", "verdict"].some((k) => byKind.has(k as EventKind))) byKind.delete("clock");
+  const dt = (byKind.get("clock") ?? []).reduce((sum, e) => sum + (e.n ?? 0), 0);
+  // Скачок часов на минуты слышен и рядом с 404: сначала прошло время, потом провал (sound-designer, фаза 2).
+  const leap = dt >= 60 && !byKind.has("rewind");
+  if (!leap && ["stale", "rewind", "verdict"].some((k) => byKind.has(k as EventKind))) byKind.delete("clock");
+  if (byKind.has("rewind")) byKind.delete("page"); // перемотка уже звучит сменой сцены
   if (replay) for (const k of ["clock", "flood", "overload", "calm", "stale", "page"] as const) byKind.delete(k);
   const chain = byKind.has("miss") || byKind.has("select");
-  const okAt = chain ? 0.3 : 0.1;
+  // Копия в Redis раньше ответа посетителю: без промаха в кадре SET — сразу, ответ — за ним.
+  const setAt = chain ? 0.2 : 0;
+  const okAt = chain ? 0.3 : byKind.has("set") ? 0.15 : 0.1;
   // Верный и старый адрес в одном кадре: сначала «динь», потом «бзз», иначе провал заглушит «динь».
-  const staleAt = byKind.has("ok") ? 0.3 : byKind.has("hit") ? 0.1 : 0;
+  // COMMIT («пум» на 0.1) и скачок часов идут раньше провала и не слипаются с ним.
+  const staleAt = Math.max(
+    byKind.has("ok") ? 0.3 : byKind.has("hit") || byKind.has("l1hit") ? 0.1 : 0,
+    byKind.has("commit") ? 0.28 : 0,
+    byKind.has("set") ? 0.15 : 0,
+    leap ? 0.25 : 0,
+  );
+  // Порядок эпизода «сначала база, потом удаление» слышен: DEL после «пум» COMMIT.
+  const delAt = byKind.has("commit") ? 0.25 : 0;
+  const drowning = !!w.redis && w.redis.nodes > 1;
 
   for (const [kind, events] of byKind) {
     if (kind === "clock") {
       clockTicks(s, events.reduce((sum, e) => sum + (e.n ?? 0), 0));
       continue;
     }
-    const recipe = RECIPES[kind];
+    const recipe = kind === "overload" && drowning ? drown : RECIPES[kind];
     if (!recipe) continue;
     const rep = replay ? { max: 1, step: 0 } : (REPEAT[kind] ?? { max: 1, step: 0 });
-    const base = kind === "ok" ? okAt : kind === "stale" ? staleAt : (SLOT[kind] ?? 0);
+    const base = kind === "ok" ? okAt : kind === "stale" ? staleAt : kind === "set" ? setAt : kind === "del" || kind === "del0" ? delAt : (SLOT[kind] ?? 0);
     const ss = kind === "ok" && byKind.has("verdict") ? scaled(s, 0.7) : s;
     events.slice(0, rep.max).forEach((e, i) => recipe(ss, Math.min(base + i * rep.step, EVENT_WINDOW), e, i));
   }

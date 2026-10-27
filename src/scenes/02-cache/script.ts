@@ -396,7 +396,7 @@ export function buildSteps(): Step<World>[] {
   d.shot("", (w) => {
     w.stamp = "⟲ Иначе: шесть узлов";
     addRedis(w, 6, 5);
-    w.events.push({ kind: "reshard" });
+    w.events.push({ kind: "reshard" }, { kind: "overload" });
     visit(w, "A");
     visit(w, "B");
   }, {
