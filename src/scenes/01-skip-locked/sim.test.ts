@@ -272,7 +272,7 @@ describe("сценарий не врёт", () => {
     for (const s of steps) expect(s.narration).not.toMatch(/SELECT|WHERE id|BEGIN|COMMIT;/);
   });
 
-  it("закадр без телеграфного стиля: не больше одного тире на кадр (CLAUDE.md «Закадровый голос»)", () => {
+  it("закадр без телеграфного стиля: не больше одного тире на кадр (docs/series-style.md «Закадровый голос»)", () => {
     const choppy = steps.filter((s) => (s.narration?.match(/ — /g) ?? []).length > 1).map((s) => s.narration);
     expect(choppy).toEqual([]);
   });

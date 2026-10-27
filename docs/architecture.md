@@ -43,6 +43,9 @@
   `scripts/voice.mjs` (ffmpeg: щелчки, тишина, шум, громкость) и раздаёт `/voice/…` с диска.
 - `scripts/ep.mjs` (`npm run ep -- NN`) — эпизод в своей папке без переключения веток: ветка `episode/NN-*` →
   git worktree `../<репо>-NN`, dev-сервер на порту `51NN`, суфлёр `?scene=NN&record`.
+- Расход токенов (`npm run tokens`) — скрипт вне репо `~/.claude/scripts/tokens.py`: сводка каждой сессии Claude
+  Code в архив `~/.claude/token-stats/`, отчёт по неделям, веткам, агентам. Архив пополняет хук `SessionEnd`
+  (`.claude/settings.json`), там же строка статуса с размером контекста (`~/.claude/scripts/statusline.py`).
 - `Narrator` (`engine/narrator.ts`) — закадровый голос: дубль из `Takes`, без дубля — Web Speech API. Закадр режется на куски
   `phrases` (предложения, длинные — по паузе, ≤ `MAX_PHRASE` знаков = строка субтитра); `speechParts`
   читает кусок одним русским голосом (синтез — черновик, озвучивает пользователь; решение 23.10), словарь сцены
