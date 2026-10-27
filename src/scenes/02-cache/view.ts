@@ -228,7 +228,8 @@ function drawPodArrows(pen: Pen, w: World): void {
     if (toDb) {
       pen.line(`arr:${id}:db`, {
         x1: from.x, y1: from.y - 8, x2: TABLE_END + 40, y2: rowMid(0),
-        stroke: toDb === "write" ? color : COLOR.muted, "stroke-width": toDb === "write" ? 3.5 : 2.5, "stroke-linecap": "round", marker: "arrow", opacity: op, ...DRAW,
+        // Под перегрузкой чтения в базу — тревожные: это и есть поток, от которого база тонет (хук).
+        stroke: toDb === "write" ? color : dbLoad(w) > 1 ? COLOR.error : COLOR.muted, "stroke-width": toDb === "write" || dbLoad(w) > 1 ? 3.5 : 2.5, "stroke-linecap": "round", marker: "arrow", opacity: op, ...DRAW,
       });
     }
     if (!w.redis) continue;

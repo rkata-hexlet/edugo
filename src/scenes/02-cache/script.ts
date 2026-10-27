@@ -241,7 +241,7 @@ export function buildSteps(): Step<World>[] {
     w.events.push({ kind: "expire" });
     visit(w, "B", 10);
   }, {
-    focus: ["B", "redis", "browsers", "clock"],
+    focus: ["B", "row", "redis", "browsers", "clock"],
     voice: "Тогда сократим срок жизни записи, TTL, до десяти секунд. Правка та же. Пару секунд посетители ещё видят 404, но потом срок выходит, у пода B случается промах, он идёт в базу, и вот уже promo!",
   });
   d.shot("", (w) => {
@@ -285,7 +285,7 @@ export function buildSteps(): Step<World>[] {
     commitEdit(w);
     visit(w, "C");
   }, {
-    verdict: ["red", "green"], focus: ["A", "C", "redis", "browsers", "board"],
+    verdict: ["red", "green"], focus: ["A", "C", "row", "redis", "browsers", "board"],
     voice: "Под A делает COMMIT, но поздно: в Redis уже прочно засела старая копия, и под C снова получает 404! Так будет весь час.",
   });
   d.term("Race condition");
@@ -344,7 +344,7 @@ export function buildSteps(): Step<World>[] {
     visit(w, "B");
     visit(w, "C");
   }, {
-    focus: ["B", "C", "redis", "browsers"],
+    focus: ["B", "C", "row", "redis", "browsers"],
     voice: "И вот поды B и C снова отдают старый адрес, а посетители получают 404. Но у этой копии, как у любой в нашем кэше, есть срок жизни, и он уже идёт.",
   });
   d.term("TTL · bounded staleness");
@@ -439,7 +439,7 @@ export function buildSteps(): Step<World>[] {
     visit(w, "B");
     visit(w, "C");
   }, {
-    focus: ["B", "C", "browsers"],
+    focus: ["B", "C", "row", "browsers"],
     voice: "А вот у подов B и C в L1 всё ещё лежит sale, и посетители снова получают 404! Это опять stale cache: копии в подах разошлись с базой, а сообщить им о правке некому.",
   });
   d.shot("", (w) => {
