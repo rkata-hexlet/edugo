@@ -2,7 +2,7 @@ import type { Attrs, Pen } from "../engine/contract";
 import { COLOR, FONT, SIZE } from "./theme";
 
 // Предметы мира серии (motion-designer, эпизод 05): кружка, покупатель, навес витрины, кнопка «Купить»,
-// замок с дужкой. Только примитивы Pen; (x, y) — левый верхний угол; анимацию вешает эпизод классом fx-*.
+// замок с дужкой; эпизод 09 — бирка замка, корона лидера. Только примитивы Pen; (x, y) — левый верхний угол; анимацию вешает эпизод классом fx-*.
 
 /** Размер кружки без пара: корпус и ручка. */
 export const MUG = { w: 54, h: 36 };
@@ -62,15 +62,16 @@ export function awning(pen: Pen, key: string, o: { x: number; y: number; w: numb
   });
 }
 
-/** Кнопка «Купить»: нажатая — темнее и ниже на 2 px. */
-export function buyButton(pen: Pen, key: string, o: { x: number; y: number; pressed: boolean; attrs?: Attrs }): void {
+/** Кнопка покупки («Купить» по умолчанию; `label`, `w` — своя надпись и ширина): нажатая — темнее и ниже на 2 px. */
+export function buyButton(pen: Pen, key: string, o: { x: number; y: number; pressed: boolean; label?: string; w?: number; attrs?: Attrs }): void {
   const dy = o.pressed ? 2 : 0;
+  const w = o.w ?? 96;
   pen.group(key, o.x, o.y, () => {
-    if (!o.pressed) pen.rect(`${key}:sh`, { x: 0, y: 3, width: 96, height: 32, rx: 9, fill: COLOR.shadow });
-    pen.rect(`${key}:bg`, { x: 0, y: dy, width: 96, height: 32, rx: 9, fill: o.pressed ? COLOR.awning2 : COLOR.browser });
+    if (!o.pressed) pen.rect(`${key}:sh`, { x: 0, y: 3, width: w, height: 32, rx: 9, fill: COLOR.shadow });
+    pen.rect(`${key}:bg`, { x: 0, y: dy, width: w, height: 32, rx: 9, fill: o.pressed ? COLOR.awning2 : COLOR.browser });
     pen.text(`${key}:t`, {
-      x: 48, y: dy + 22, "font-family": FONT.sans, "font-size": SIZE.body, "font-weight": 700, fill: COLOR.bg, "text-anchor": "middle",
-    }, "Купить");
+      x: w / 2, y: dy + 22, "font-family": FONT.sans, "font-size": SIZE.body, "font-weight": 700, fill: COLOR.bg, "text-anchor": "middle",
+    }, o.label ?? "Купить");
   }, o.attrs);
 }
 
@@ -88,5 +89,31 @@ export function lock(pen: Pen, key: string, o: { x: number; y: number; color: st
     o.shackle, o.open ? { rotate: -25, origin: [5, 10] } : {});
     pen.rect(`${key}:body`, { x: 0, y: 9, width: 22, height: 15, rx: 3, fill: o.color });
     pen.rect(`${key}:hole`, { x: 9.5, y: 13, width: 3, height: 6, rx: 1.5, fill: COLOR.bg });
+  }, o.attrs);
+}
+
+/**
+ * Бирка замка (эпизод 09): замок ×1.4 и метка на подложке 92×44, чтобы провод под ней не резал корпус;
+ * (x, y) — центр. `open` — замок отпущен: дужка открывается, бирка гаснет; `fresh` — только что взят.
+ */
+export function lockTag(pen: Pen, key: string, o: { x: number; y: number; color: string; label: string; open?: boolean; fresh?: boolean }): void {
+  pen.group(key, o.x - 40, o.y - 22, () => {
+    pen.rect(`${key}:bg`, { width: 92, height: 44, rx: 10, fill: COLOR.bg2, stroke: o.color, "stroke-width": 2 });
+    pen.group(`${key}:l`, 8, 6, () => lock(pen, `${key}:lk`, {
+      x: 0, y: 0, color: o.color, open: o.open, shackle: o.open ? { class: "fx-unlock" } : o.fresh ? { class: "fx-lock" } : {},
+    }), {}, { scale: 1.4 });
+    pen.text(`${key}:n`, { x: 44, y: 29, "font-family": FONT.mono, "font-size": SIZE.body, fill: COLOR.ink, "font-weight": 700 }, o.label);
+  }, o.open ? { class: "fx-fade", opacity: 0.5 } : o.fresh ? { class: "fx-pop" } : {});
+}
+
+/** Размер короны лидера. */
+export const CROWN = { w: 48, h: 26 };
+
+/** Корона (эпизод 09: под уверен, что он лидер): три зубца с жемчужинами и обод; (x, y) — левый верхний угол. */
+export function crown(pen: Pen, key: string, o: { x: number; y: number; color: string; attrs?: Attrs }): void {
+  pen.group(key, o.x, o.y, () => {
+    pen.path(`${key}:b`, { d: "M2 26 L0 6 L12 14 L24 2 L36 14 L48 6 L46 26 Z", fill: o.color, stroke: COLOR.bg, "stroke-width": 2 });
+    [[0, 6], [24, 2], [48, 6]].forEach(([cx, cy], i) =>
+      pen.rect(`${key}:p${i}`, { x: cx - 4, y: cy - 4, width: 8, height: 8, rx: 4, fill: o.color, stroke: COLOR.bg, "stroke-width": 1.5 }));
   }, o.attrs);
 }

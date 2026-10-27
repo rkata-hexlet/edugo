@@ -20,6 +20,11 @@ describe("highlightSql", () => {
     expect(color(q, "-- ждёт COMMIT")).toBe(SQL_COLOR.note);
   });
 
+  it("цифры, сросшиеся с буквами (код ошибки 40P01), не теряются", () => {
+    const q = "ERROR: deadlock detected (40P01)";
+    expect(highlightSql(q).map((s) => s.text).join("")).toBe(q);
+  });
+
   it("-- внутри строки — не комментарий", () => {
     expect(color("SELECT '--x' FROM t", "'--x'")).toBe(SQL_COLOR.string);
   });
