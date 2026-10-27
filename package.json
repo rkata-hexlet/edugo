@@ -8,7 +8,8 @@
     "check": "tsc --noEmit",
     "render": "node scripts/render.mjs",
     "narration": "node scripts/narration.mjs",
-    "voice": "node scripts/voice.mjs"
+    "voice": "node scripts/voice.mjs",
+    "ep": "node scripts/ep.mjs"
   },
   "type": "module",
   "devDependencies": {
