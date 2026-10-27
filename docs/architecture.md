@@ -41,6 +41,8 @@
 - Суфлёр (`engine/recorder.ts`, `?record`, только dev) — кадр и текст крупно, пробел — дубль и сразу
   следующий; запись уходит `POST /__voice/<сцена>/<ключ>` в плагин `vite.config.ts`, тот зовёт
   `scripts/voice.mjs` (ffmpeg: щелчки, тишина, шум, громкость) и раздаёт `/voice/…` с диска.
+- `scripts/ep.mjs` (`npm run ep -- NN`) — эпизод в своей папке без переключения веток: ветка `episode/NN-*` →
+  git worktree `../<репо>-NN`, dev-сервер на порту `51NN`, суфлёр `?scene=NN&record`.
 - `Narrator` (`engine/narrator.ts`) — закадровый голос: дубль из `Takes`, без дубля — Web Speech API. Закадр режется на куски
   `phrases` (предложения, длинные — по паузе, ≤ `MAX_PHRASE` знаков = строка субтитра); `speechParts`
   читает кусок одним русским голосом (синтез — черновик, озвучивает пользователь; решение 23.10), словарь сцены
@@ -110,6 +112,7 @@
 ```
 scripts/render.mjs ──(puppeteer, ?capture&render)──► страница плеера
 vite.config.ts (dev) ──► scripts/voice.mjs ──► ffmpeg
+scripts/ep.mjs ──(git worktree)──► vite в папке эпизода
 main.ts ──► engine/takes ──► engine/contract (тип Step)
    ├──► engine/recorder ──► engine/pen, engine/takes
    └──► engine/player ──► engine/pen ──► engine/contract
