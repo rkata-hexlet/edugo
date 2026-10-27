@@ -150,10 +150,10 @@ describe("сценарий не врёт", () => {
   });
 
   it("рассылка — строго после COMMIT и DEL", () => {
-    const [w] = frames(ACT.pubsub).filter((x) => kinds(x).includes("publish"));
-    const k = kinds(w);
+    const k = frames(ACT.pubsub).flatMap(kinds); // шаги разнесены по кадрам акта — порядок по всему акту
     expect(k.indexOf("commit")).toBeLessThan(k.indexOf("del"));
     expect(k.indexOf("del")).toBeLessThan(k.indexOf("publish"));
+    expect(k).toContain("publish");
   });
 
   it("табло не врёт: лампы сверены с моделью в кадре оценки", () => {

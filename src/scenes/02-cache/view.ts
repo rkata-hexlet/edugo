@@ -104,7 +104,7 @@ function drawEntry(pen: Pen, w: World): void {
         pen.text("redis:gone:t", { x, y, ...MONO, fill: COLOR.muted, "text-decoration": "line-through" }, HOT);
         icon(pen, "redis:gone:i", "trash", x + 70, y - 18, 22, COLOR.warn);
       }, { class: "fx-pop" });
-    } else pen.text("redis:empty", { x, y, ...SANS, fill: COLOR.faint }, "пусто");
+    } else pen.text("redis:empty", { x, y, ...SANS, fill: COLOR.muted }, "пусто");
     return;
   }
   const isNew = ACTORS.some((id) => did(w.actors[id], "set"));
@@ -207,7 +207,7 @@ function drawPocket(pen: Pen, w: World, a: Actor): void {
   pen.rect(`pod:${a.id}:l1:bg`, { x, y, width: 168, height: 26, rx: 8, fill: COLOR.surface2, stroke: dropped ? COLOR.warn : COLOR.line, "stroke-width": 1.5 });
   pen.text(`pod:${a.id}:l1:k`, { x: x + 8, y: y + 19, ...MONO, fill: COLOR.muted }, "L1");
   if (!p) {
-    pen.text(`pod:${a.id}:l1:v`, { x: x + 36, y: y + 19, ...SANS, fill: COLOR.faint }, dropped ? "сброшен" : "пусто");
+    pen.text(`pod:${a.id}:l1:v`, { x: x + 36, y: y + 19, ...SANS, fill: COLOR.muted }, dropped ? "сброшен" : "пусто");
     return;
   }
   pen.text(`pod:${a.id}:l1:v`, { x: x + 36, y: y + 19, ...MONO, fill: p.value === w.links[0].url ? COLOR.ink : COLOR.error, "font-weight": 700 }, path(p.value));
