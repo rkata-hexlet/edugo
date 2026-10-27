@@ -1,5 +1,6 @@
 import type { Pen } from "../engine/contract";
 import { icon } from "./icons";
+import { lock } from "./props";
 import { COLOR, FONT } from "./theme";
 
 // Персонажи серии в примитивах Pen (прямоугольники со скруглением, пути). Эмоцию и взгляд выбирает
@@ -10,6 +11,12 @@ export type Mood = "idle" | "work" | "wait" | "won" | "lost" | "frozen" | "talk"
 /** Куда смотрят зрачки: −1…1 по каждой оси (влево/вверх — минус). */
 export type Look = { x: number; y: number };
 
+/**
+ * Руки пода: `crossed` — скрещены на брюшке («ждём друг друга»), `open` — ладони по бокам. `locks` — сколько замков
+ * держит под (висят у боков, справа первый; цвет — `lockColor`): «замок в руках» до COMMIT; 0 при `open` — пустые руки.
+ */
+export type Hands = { pose: "crossed" | "open"; locks: number; lockColor: string };
+
 /** Размер «боба» без антенны: тело + ножки. */
 export const BOB = { w: 64, h: 64 };
 
@@ -19,7 +26,7 @@ export const BOB = { w: 64, h: 64 };
  */
 export function bob(
   pen: Pen, key: string,
-  o: { x: number; y: number; color: string; tint: string; letter: string; mood: Mood; look: Look; ghost?: boolean; dashed?: boolean },
+  o: { x: number; y: number; color: string; tint: string; letter: string; mood: Mood; look: Look; ghost?: boolean; dashed?: boolean; hands?: Hands },
 ): void {
   const { color, tint, mood } = o;
   const frozen = mood === "frozen";
@@ -48,9 +55,28 @@ export function bob(
     pen.rect(`${key}:face`, { x: 7, y: 5, width: 50, height: 34, rx: 15, fill: tint });
     eyes(pen, key, mood, o.look);
     mouth(pen, key, mood);
+    // Руки — под буквой: скрещённые на брюшке не должны закрывать, кто это.
+    if (o.hands) hands(pen, `${key}:hands`, body, o.hands);
     pen.text(`${key}:letter`, {
       x: 32, y: 54, "text-anchor": "middle", "font-family": FONT.sans, "font-size": 18, "font-weight": 800, fill: frozen ? COLOR.muted : COLOR.bg,
     }, o.letter);
+  });
+}
+
+/** Руки и замки в них: поверх тела; замки висят снаружи, у боков. */
+function hands(pen: Pen, key: string, body: string, h: Hands): void {
+  const arm = { fill: "none", stroke: mix(body, "#ffffff", 0.18), "stroke-width": 6, "stroke-linecap": "round" };
+  pen.group(key, 0, 0, () => {
+    if (h.pose === "crossed") {
+      pen.path(`${key}:l`, { d: "M 2 34 Q 24 46 46 36", ...arm });
+      pen.path(`${key}:r`, { d: "M 62 34 Q 40 46 18 36", ...arm });
+    } else {
+      pen.path(`${key}:l`, { d: "M 3 30 Q -6 36 -6 44", ...arm });
+      pen.path(`${key}:r`, { d: "M 61 30 Q 70 36 70 44", ...arm });
+    }
+    // Замки: справа, затем слева — у кисти открытой руки или у локтя скрещённой.
+    [[64, 38], [-18, 38]].slice(0, h.locks).forEach(([lx, ly], i) =>
+      lock(pen, `${key}:lock${i}`, { x: lx, y: ly, color: h.lockColor }));
   });
 }
 
@@ -91,7 +117,11 @@ function mouth(pen: Pen, key: string, mood: Mood): void {
 }
 
 /** Слон-Postgres: голова с ухом, хоботом и очками. (x, y) — левый верхний угол квадрата 56×56; scale — крупнее. */
-export function elephant(pen: Pen, key: string, o: { x: number; y: number; talking: boolean; scale?: number }): void {
+/**
+ * Слон-Postgres. `look` — куда смотрят зрачки (на строку, на поды); `frown` — нахмурен (отказ, 0 строк).
+ * Без них — прежний слон эпизодов 01–02.
+ */
+export function elephant(pen: Pen, key: string, o: { x: number; y: number; talking: boolean; scale?: number; look?: Look; frown?: boolean }): void {
   const skin = "#8ea4d6";
   pen.group(key, o.x, o.y, () => {
     pen.rect(`${key}:ear`, { x: 22, y: 4, width: 34, height: 40, rx: 17, fill: "#6d82b3" });
@@ -104,7 +134,11 @@ export function elephant(pen: Pen, key: string, o: { x: number; y: number; talki
     // Очки: две оправы и перемычка.
     [8, 24].forEach((ex, i) => pen.rect(`${key}:lens${i}`, { x: ex, y: 15, width: 13, height: 12, rx: 6, fill: "#e8edff", stroke: COLOR.bg, "stroke-width": 2 }));
     pen.line(`${key}:bridge`, { x1: 21, y1: 21, x2: 24, y2: 21, stroke: COLOR.bg, "stroke-width": 2 });
-    [14.5, 30.5].forEach((ex, i) => pen.rect(`${key}:pupil${i}`, { x: ex - 2.5, y: 19, width: 5, height: 5, rx: 2.5, fill: COLOR.bg }));
+    const px = (o.look?.x ?? 0) * 3;
+    const py = (o.look?.y ?? 0) * 2.5;
+    [14.5, 30.5].forEach((ex, i) => pen.rect(`${key}:pupil${i}`, { x: ex - 2.5 + px, y: 19 + py, width: 5, height: 5, rx: 2.5, fill: COLOR.bg }));
+    if (o.frown) [[8, 10, 19, 14], [36, 10, 25, 14]].forEach(([x1, y1, x2, y2], i) =>
+      pen.line(`${key}:brow${i}`, { x1, y1, x2, y2, stroke: COLOR.bg, "stroke-width": 3, "stroke-linecap": "round" }));
   }, {}, { scale: o.scale ?? 1 });
 }
 

@@ -133,7 +133,8 @@ export function board(
       const current = i === (b.focus ?? b.attempts.length - 1);
       pen.group(`board:a${i}`, 0, 0, () => {
         pen.text(`board:n${i}`, { x: o.x + 18, y: y + 18, ...font, fill: current ? COLOR.ink : COLOR.muted, "font-weight": current ? 700 : 400 }, t.name);
-        lampX.forEach((x, j) => lamp(pen, `board:l${i}:${j}`, x, y + 12, t.lamps?.[j] ?? null, 10));
+        // Критерий с пустым именем ещё не введён голосом — его ламп нет.
+        lampX.forEach((x, j) => b.criteria[j] && lamp(pen, `board:l${i}:${j}`, x, y + 12, t.lamps?.[j] ?? null, 10));
       }, { opacity: current ? 1 : 0.45 });
     });
   }, o.attrs);

@@ -20,7 +20,7 @@ export function highlightSql(text: string): Span[] {
     if (last && last.attrs?.fill === fill && !bold && last.attrs?.["font-weight"] === undefined) last.text += t;
     else spans.push({ text: t, attrs: bold ? { fill, "font-weight": 700 } : { fill } });
   };
-  const re = /('(?:[^']|'')*')|(\b\d+\b)|([A-Za-z_][A-Za-z_0-9]*)(?=\s*\()|([A-Za-z_][A-Za-z_0-9]*)|(\s+|[^\sA-Za-z_0-9']+)/g;
+  const re = /('(?:[^']|'')*')|(\b\d+\b)|([A-Za-z_][A-Za-z_0-9]*)(?=\s*\()|([A-Za-z_0-9]+)|(\s+|[^\sA-Za-z_0-9']+)/g;
   for (const m of text.matchAll(re)) {
     const [all, str, num, fn, word] = m;
     if (str) push(all, SQL_COLOR.string);

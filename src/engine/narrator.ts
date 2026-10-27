@@ -3,7 +3,7 @@ import { Takes } from "./takes";
 /**
  * Закадровый голос: дубль живого диктора (`Takes`), а без дубля — Web Speech API (speechSynthesis).
  * Без синтеза или русского голоса — молча выжидает расчётное время фразы, чтобы автопроигрывание
- * шло в том же темпе. В синтезе английские слова читает английский голос, остальное — русский.
+ * шло в том же темпе. Синтез читает всё одним русским голосом: он лишь черновик, озвучивает пользователь.
  */
 /** Сколько ждать начала звука дубля, прежде чем читать фразу синтезом. */
 const LOAD_TIMEOUT_MS = 4000;
@@ -50,16 +50,13 @@ export class Narrator {
       const voices = synth?.getVoices() ?? [];
       const voice = pickVoice(voices, "ru");
       if (this.muted || !synth || !voice) return wait();
-      // Нет английского голоса — английское читает русский: хуже, но фраза не теряется.
-      const byLang = { ru: voice, en: pickVoice(voices, "en") ?? voice };
       const parts = speechParts(text, this.pronounce);
       parts.forEach((part, i) => {
-        const v = byLang[part.lang];
         const u = new SpeechSynthesisUtterance(part.text);
-        u.voice = v;
-        u.lang = v.lang;
+        u.voice = voice;
+        u.lang = voice.lang;
         u.rate = rate;
-        if (i === 0 || parts[i - 1].phrase !== part.phrase) u.onstart = () => gen === this.generation && onPhrase(part.phrase);
+        u.onstart = () => gen === this.generation && onPhrase(part.phrase);
         if (i === parts.length - 1) {
           u.onend = done;
           u.onerror = done;
@@ -113,14 +110,13 @@ export class Narrator {
 }
 
 /** Голос языка: сетевые голоса Google звучат живее локальных — их первыми. */
-function pickVoice(voices: SpeechSynthesisVoice[], lang: "ru" | "en"): SpeechSynthesisVoice | undefined {
+function pickVoice(voices: SpeechSynthesisVoice[], lang: "ru"): SpeechSynthesisVoice | undefined {
   const of = voices.filter((v) => v.lang.toLowerCase().startsWith(lang));
-  return of.find((v) => /google/i.test(v.name) && (lang !== "en" || /us/i.test(v.lang))) ?? of.find((v) => /google/i.test(v.name)) ?? of[0];
+  return of.find((v) => /google/i.test(v.name)) ?? of[0];
 }
 
 export interface SpeechPart {
   text: string;
-  lang: "ru" | "en";
   /** Номер куска `phrases(text)`, к которому относится часть. */
   phrase: number;
 }
@@ -163,36 +159,18 @@ export function phraseStarts(text: string, totalMs?: number): number[] {
   });
 }
 
-/** Латинские слова подряд (через пробел или дефис) — один английский кусок: «race condition», «FOR UPDATE». */
-const LATIN = /[A-Za-z][A-Za-z0-9']*(?:[ -][A-Za-z][A-Za-z0-9']*)*/g;
+/** Английское в верхнем регистре (SKIP LOCKED) — строчными, чтобы голос не читал его по буквам; аббревиатуры (API) — как есть. */
+const CAPS = /\b[A-Z][A-Z0-9']{3,}\b/g;
 
 /**
- * Фраза для синтеза — куски по языкам: сначала словарь сцены (исключения вроде букв подов), затем
- * латиница → английский голос. Режем и по кускам `phrases`: онлайн-голоса Chrome обрывают фразу
- * длиннее ~15 с и не присылают onend, а субтитр меняется в начале куска. Английский в верхнем
- * регистре (SKIP LOCKED) — строчными, чтобы голос не читал его по буквам; аббревиатуры (API) — как есть.
+ * Фраза для синтеза — по куску `phrases` на часть, со словарём сцены (исключения вроде букв подов).
+ * Режем по кускам: онлайн-голоса Chrome обрывают фразу длиннее ~15 с и не присылают onend, а
+ * субтитр меняется в начале куска.
  */
 export function speechParts(text: string, pronounce: Record<string, string>): SpeechPart[] {
-  const parts: SpeechPart[] = [];
-  let phrase = 0;
-  const push = (t: string, lang: SpeechPart["lang"]) => {
-    if (/[\p{L}\p{N}]/u.test(t)) parts.push({ text: t.trim(), lang, phrase });
-  };
-  for (const [i, original] of phrases(text).entries()) {
-    phrase = i;
-    const sentence = speakable(original, pronounce);
-    let at = 0;
-    for (const m of sentence.matchAll(LATIN)) {
-      push(sentence.slice(at, m.index), "ru");
-      push(m[0].length > 3 && m[0] === m[0].toUpperCase() ? m[0].toLowerCase() : m[0], "en");
-      at = m.index! + m[0].length;
-    }
-    // Хвост с точкой — к последнему куску, чтобы голос сделал паузу конца предложения.
-    const tail = sentence.slice(at);
-    if (/[\p{L}\p{N}]/u.test(tail)) push(tail, "ru");
-    else if (parts.at(-1)?.phrase === i && tail.trim()) parts[parts.length - 1].text += tail.trim();
-  }
-  return parts;
+  return phrases(text)
+    .map((original, phrase) => ({ text: speakable(original, pronounce).replace(CAPS, (m) => m.toLowerCase()).trim(), phrase }))
+    .filter((p) => /[\p{L}\p{N}]/u.test(p.text));
 }
 
 /** Текст для синтеза: подставить произношение по словарю, целыми словами. */

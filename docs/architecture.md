@@ -26,7 +26,7 @@
   префиксом пода `podSql`, штамп перемотки `stamp`, `iconText`, разовый эффект `once`, плашка главы),
   `director` (режиссёр серии, см. `script.ts` ниже; типы `Board`, `Lamp`, `Verdict`), `sql`
   (`highlightSql` → `Span[]`), `characters` (под-«боб» с эмоцией `Mood` и взглядом `Look`,
-  слон-Postgres, лицо Почты), `widgets.meter` (полоса нагрузки с потолком), `motion.css` (словарь движений `fx-*`: pop, slide, rise,
+  слон-Postgres, лицо Почты), `widgets.meter` (полоса нагрузки с потолком), `props` (предметы мира: кружка, покупатель, кнопка, замок `lock`, бирка замка `lockTag`, корона лидера `crown`), `code` (окно кода на Go `codeWindow`, подсветка `highlightGo`; SQL внутри `…` — как SQL), `motion.css` (словарь движений `fx-*`: pop, slide, rise,
   stamp, draw, hop, shake, jolt, nod, pulse, cascade — всё в первые 450 мс кадра). Kit не знает ни
   плеера, ни моделей эпизодов: эмоцию, взгляд и эффект выбирает `view.ts` по состоянию кадра и
   `World.events`. Разовый эффект — новый ключ узла (`World.frame` в ключе), свежий стол — `World.scene`.
@@ -41,10 +41,12 @@
 - Суфлёр (`engine/recorder.ts`, `?record`, только dev) — кадр и текст крупно, пробел — дубль и сразу
   следующий; запись уходит `POST /__voice/<сцена>/<ключ>` в плагин `vite.config.ts`, тот зовёт
   `scripts/voice.mjs` (ffmpeg: щелчки, тишина, шум, громкость) и раздаёт `/voice/…` с диска.
+- `scripts/ep.mjs` (`npm run ep -- NN`) — эпизод в своей папке без переключения веток: ветка `episode/NN-*` →
+  git worktree `../<репо>-NN`, dev-сервер на порту `51NN`, суфлёр `?scene=NN&record`.
 - `Narrator` (`engine/narrator.ts`) — закадровый голос: дубль из `Takes`, без дубля — Web Speech API. Закадр режется на куски
   `phrases` (предложения, длинные — по паузе, ≤ `MAX_PHRASE` знаков = строка субтитра); `speechParts`
-  делит кусок по языкам: латиница — английским голосом, остальное — русским, словарь сцены
-  (`Scene.pronounce`, исключения вроде букв подов) — до деления и только для речи. `onPhrase(i)` —
+  читает кусок одним русским голосом (синтез — черновик, озвучивает пользователь; решение 23.10), словарь сцены
+  (`Scene.pronounce`, исключения вроде букв подов) — только для речи. `onPhrase(i)` —
   начало куска: плеер меняет субтитр в такт голосу; у дубля и в записи субтитр идёт по
   `phraseStarts` (расчётный темп, растянутый на длину дубля). Страховочный таймер — если синтез не сообщит о конце; без голоса
   или в mute — выжидает расчётное время. `VOICE_DELAY_MS` — пауза перед голосом.
@@ -118,6 +120,7 @@
 ```
 scripts/render.mjs ──(puppeteer, ?capture&render)──► страница плеера
 vite.config.ts (dev) ──► scripts/voice.mjs ──► ffmpeg
+scripts/ep.mjs ──(git worktree)──► vite в папке эпизода
 main.ts ──► engine/takes ──► engine/contract (тип Step)
    ├──► engine/recorder ──► engine/pen, engine/takes
    └──► engine/player ──► engine/pen ──► engine/contract

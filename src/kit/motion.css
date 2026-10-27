@@ -120,6 +120,68 @@
   animation: fx-pulse 0.4s ease both;
 }
 
+/* Замок (kit/props): дужка защёлкнулась — упала с отскоком; открылась — поднялась из закрытого положения. */
+@keyframes fx-lock {
+  0% { translate: 0 -6px; }
+  60% { translate: 0 1px; }
+  100% { translate: 0 0; }
+}
+.stage .fx-lock {
+  animation: fx-lock 0.22s ease-out both;
+}
+@keyframes fx-unlock {
+  from { translate: 0 5px; rotate: 25deg; }
+  to { translate: 0 0; rotate: 0deg; }
+}
+.stage .fx-unlock {
+  animation: fx-unlock 0.3s ease-out both;
+}
+
+/* Вспышка: элемент на миг ярче — строка, в которую попало событие. */
+@keyframes fx-flash {
+  0%, 100% { filter: brightness(1); }
+  40% { filter: brightness(1.8); }
+}
+.stage .fx-flash {
+  animation: fx-flash 0.4s ease both;
+}
+
+/* Ожидание — единственные циклы серии: «бегущий» пунктир и дыхание того, кто ждёт. */
+@keyframes fx-march {
+  to { stroke-dashoffset: -13; }
+}
+.stage .fx-march {
+  animation: fx-march 1.2s linear infinite;
+}
+@keyframes fx-breathe {
+  0%, 100% { scale: 1; }
+  50% { scale: 1.03; }
+}
+.stage .fx-breathe {
+  animation: fx-breathe 1.6s ease-in-out infinite;
+}
+
+/* Проиграл — сник; повтор — значок обернулся. */
+@keyframes fx-droop {
+  from { scale: 1; translate: 0 0; }
+  to { scale: 0.94; translate: 0 3px; }
+}
+.stage .fx-droop {
+  animation: fx-droop 0.3s ease-out both;
+}
+@keyframes fx-spin {
+  from { rotate: 0deg; }
+  to { rotate: 360deg; }
+}
+.stage .fx-spin {
+  animation: fx-spin 0.4s ease-out both;
+}
+
+/* Переезд, который должен уложиться в 0,45 с кадра. */
+.stage .mv.fast {
+  transition-duration: 0.4s;
+}
+
 /* Свежий стол: строки въезжают каскадом сверху вниз. */
 .stage .fx-cascade > g {
   animation: fx-slide 0.3s cubic-bezier(0.2, 0.8, 0.2, 1) both;
@@ -142,4 +204,14 @@
   .stage .fx-cascade > g {
     animation: none !important;
   }
+}
+
+/* Очерёдность внутри окна 0,45 с: взгляд идёт по цепочке событий (штамп → предмет → реакция персонажа). */
+.stage .d1 { animation-delay: 0.12s; }
+.stage .d2 { animation-delay: 0.22s; }
+.stage .d3 { animation-delay: 0.3s; }
+
+/* Код и SQL в кадре — как написаны: без лигатур JetBrains Mono (`!=` не превращается в `≠`, `>=` — в `≥`). */
+.stage text {
+  font-variant-ligatures: none;
 }
