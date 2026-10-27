@@ -13,7 +13,7 @@ import "./recorder.css";
  * Суфлёр живого диктора (`?record`, только `npm run dev`): кадр, его текст крупно, одна клавиша.
  * Пробел — сохранить дубль и сразу писать следующий кадр без дубля; если у следующего дубль уже есть
  * (переписываем отдельный кадр) — пауза на сохранённом. Backspace — читать кадр заново, Esc — пауза.
- * Кадр выбирается стрелками или номером в адресе (`#step=N`).
+ * Кадр выбирается стрелками или номером в адресе (`#step=N`); стрелки и P во время записи сами ставят паузу.
  * Дубль уходит на dev-сервер (`POST /__voice/<сцена>/<ключ>`), тот чистит звук и обновляет справочник.
  */
 export function mountRecorder<S>(host: HTMLElement, scene: Scene<S>, takes: Takes): void {
@@ -135,9 +135,14 @@ export function mountRecorder<S>(host: HTMLElement, scene: Scene<S>, takes: Take
     show();
     state("Пробел — записать этот кадр");
   });
+  /** Встать на паузу: недочитанный дубль выбрасывается, а не сохраняется. */
+  const pause = () => {
+    discard();
+    state("Пауза — пробел, чтобы записать этот кадр; P — прослушать; ←/→ — другой кадр");
+  };
   const listen = () => {
     const text = lines[at].text;
-    if (takes.duration(text) === undefined) return;
+    if (takes.duration(text) === undefined) return state("У этого кадра дубля нет — ← к прошлому, пробел — записать");
     playing?.pause();
     playing = new Audio(`${takes.url(text)}?v=${Date.now()}`); // свежий дубль, а не из кэша
     void playing.play();
@@ -175,12 +180,15 @@ export function mountRecorder<S>(host: HTMLElement, scene: Scene<S>, takes: Take
       e.preventDefault();
       discard();
       begin();
-    } else if (key === "escape" && take) {
-      discard();
-      state("Пауза — пробел, чтобы продолжить с этого кадра");
-    } else if (!take && key === "arrowleft") move(-1);
-    else if (!take && key === "arrowright") move(1);
-    else if (!take && (key === "p" || key === "з")) listen();
+    } else if (key === "escape" && take) pause();
+    // Стрелки и P во время записи сначала ставят паузу: записал кадр → ← → P — слышишь только что записанное.
+    else if (key === "arrowleft" || key === "arrowright") {
+      pause();
+      move(key === "arrowleft" ? -1 : 1);
+    } else if (key === "p" || key === "з") {
+      pause();
+      listen();
+    }
   });
 
   state("Пробел — начать запись с этого кадра");
