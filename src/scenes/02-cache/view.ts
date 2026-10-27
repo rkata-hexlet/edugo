@@ -306,7 +306,7 @@ function drawBrowserArrows(pen: Pen, w: World): void {
 function drawDb(pen: Pen, w: World, key = "db:face"): void {
   const sweat = dbLoad(w) > 1;
   elephant(pen, key, { x: TABLE.x + 4, y: 8, talking: !!w.db, scale: 1.08, frown: sweat, look: w.db ? { x: 1, y: 0 } : undefined });
-  if (sweat) pen.path(`${key}:sweat`, { d: "M 47 10 Q 42 18 47 21 Q 52 18 47 10 Z", fill: "#7cc4ff", class: "fx-pulse" });
+  if (sweat) pen.path(`${key}:sweat`, { d: "M 47 10 Q 42 18 47 21 Q 52 18 47 10 Z", fill: COLOR.browser });
 }
 
 function drawHeader(pen: Pen, w: World): void {

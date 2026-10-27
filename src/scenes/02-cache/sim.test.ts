@@ -153,7 +153,7 @@ describe("сценарий не врёт", () => {
     const k = frames(ACT.pubsub).flatMap(kinds); // шаги разнесены по кадрам акта — порядок по всему акту
     expect(k.indexOf("commit")).toBeLessThan(k.indexOf("del"));
     expect(k.indexOf("del")).toBeLessThan(k.indexOf("publish"));
-    expect(k).toContain("publish");
+    for (const kind of ["commit", "del", "publish"]) expect(k).toContain(kind); // indexOf -1 прошёл бы сравнение молча
   });
 
   it("табло не врёт: лампы сверены с моделью в кадре оценки", () => {
