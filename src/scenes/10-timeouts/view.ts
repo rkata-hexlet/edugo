@@ -15,11 +15,12 @@ const SLOT = { x: 56, y: 140, w: 78, h: 34, gap: 10 };
 const GUESTS = { x: 40, y: 216, w: 226, h: 256, line0: 290, lineH: 30 };
 const POD_Y: Record<PodId, number> = { A: 220, B: 316, C: 412 };
 const POD_X = 300;
+const SERVICE = { x: 284, y: 200, w: 316, h: 304 };
 const SUP = { x: 690, y: 104, w: 550, h: 346 };
 const CARD = { x: 706, y: 196, w: 52, h: 40, gap: 8 };
 const ROWS = { x: 706, y: 300, lineH: 30 };
 const BOARD = { x: 750, y: 466, w: 490, rowH: 26 };
-const WAVE = { x: 300, y: 530, w: 420, h: 110 };
+const WAVE = { x: 300, y: 548, w: 420, h: 100 };
 const DB = { x: 100, w: 130 };
 const HEAD_X = 640;
 
@@ -36,6 +37,7 @@ const podMid = (id: PodId) => POD_Y[id] + BOB.h / 2;
 const seconds = (ms: number) => (ms < 1000 ? `${String(ms / 1000).replace(".", ",")} с` : `${ms / 1000} с`);
 
 function drawPool(pen: Pen, w: World): void {
+  if (w.unseen.includes("pool")) return;
   const busy = w.pool.filter(Boolean).length;
   const [k, fx] = once("pool", w.frame, happened(w, "jam") ? "fx-shake" : null);
   pen.group(k, 0, 0, () => {
@@ -103,6 +105,14 @@ function drawPod(pen: Pen, w: World, p: Pod): void {
   }, fade(w, p.id));
 }
 
+/** Наш сервис: рамка вокруг подов — к нему обращается гость. */
+function drawService(pen: Pen, w: World): void {
+  pen.group("svc", 0, 0, () => {
+    panel(pen, "svc:box", { ...SERVICE, fill: "none", stroke: COLOR.line, shadow: false });
+    pen.text("svc:title", { x: SERVICE.x + 16, y: SERVICE.y + SERVICE.h - 14, ...SANS, "font-weight": 700, fill: COLOR.muted }, "Сервис бронирования");
+  }, fade(w, ...PODS));
+}
+
 /** Стрелки пода: к пулу (слот), к поставщику (вызов; повтор — пунктиром), таймаут — крест на обрыве. */
 function drawArrows(pen: Pen, w: World): void {
   for (const id of PODS) {
@@ -110,7 +120,10 @@ function drawArrows(pen: Pen, w: World): void {
     const op = fade(w, id).opacity;
     const color = ACTOR[id].color;
     const from = { x: POD_X + BOB.w / 2, y: POD_Y[id] - 4 };
-    if (did(p, "search") || did(p, "slot")) {
+    if ((did(p, "search") || did(p, "slot")) && w.unseen.includes("pool")) {
+      // Пула ещё нет в кадре: под ходит прямо в базу.
+      pen.line(`arr:${id}:db`, { x1: from.x, y1: from.y, x2: DB.x + DB.w + 14, y2: 74, stroke: color, "stroke-width": 2.5, "stroke-linecap": "round", marker: "arrow", opacity: op, ...DRAW });
+    } else if (did(p, "search") || did(p, "slot")) {
       pen.line(`arr:${id}:pool`, { x1: from.x, y1: from.y, x2: from.x, y2: SLOT.y + SLOT.h + 10, stroke: color, "stroke-width": 2.5, "stroke-linecap": "round", marker: "arrow", opacity: op, ...DRAW });
     }
     const call = p.acts.find((a) => a.kind === "call");
@@ -137,6 +150,7 @@ function drawThoughts(pen: Pen, w: World): void {
 }
 
 function drawSupplier(pen: Pen, w: World): void {
+  if (w.unseen.includes("supplier")) return;
   const s = w.supplier;
   const dead = s.latency === null;
   const [k, fx] = once("sup", w.frame, happened(w, "down") || happened(w, "up") ? "fx-pulse" : null);
@@ -208,6 +222,7 @@ export function render(pen: Pen, w: World): void {
   if (w.term) pill(pen, "term", w.term, { x: HEAD_X, y: 64, fill: COLOR.surface2, color: COLOR.ink, stroke: COLOR.ink, mono: true, attrs: { class: "fx-slide" } });
   drawPool(pen, w);
   drawGuests(pen, w);
+  drawService(pen, w);
   drawSupplier(pen, w);
   drawArrows(pen, w);
   for (const id of PODS) drawPod(pen, w, w.pods[id]);

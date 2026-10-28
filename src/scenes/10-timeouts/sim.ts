@@ -116,6 +116,8 @@ export interface World {
   board: Board | null;
   stamp: string | null;
   focus: Focus[] | null;
+  /** Ещё не показанные зрителю части мира (знакомство вводит их по одной). */
+  unseen: ("pool" | "supplier")[];
   term: string | null;
   events: SimEvent[];
   frame: number;
@@ -147,6 +149,7 @@ export function world(): World {
     board: null,
     stamp: null,
     focus: null,
+    unseen: [],
     term: null,
     events: [],
     frame: 0,
@@ -172,8 +175,9 @@ function release(w: World, by: PodId, kind: "search" | "book"): void {
   w.events.push({ kind: "release", by });
 }
 
-/** Поиск: слот на миг → база → список номеров. Нет слота — гость встаёт в очередь и ждёт. */
-export function search(w: World, who: PodId): Reply {
+/** Поиск: слот на миг → база → список номеров. Нет слота — гость встаёт в очередь и ждёт.
+ *  `hold` — слот остаётся занятым до конца кадра, чтобы зритель увидел, что его брали (знакомство с пулом). */
+export function search(w: World, who: PodId, hold = false): Reply {
   const p = w.pods[who];
   p.acts.push({ kind: "search" });
   if (!take(w, who, "search")) {
@@ -182,7 +186,7 @@ export function search(w: World, who: PodId): Reply {
     return log(w, { by: who, kind: "search", status: "wait" });
   }
   w.events.push({ kind: "search", by: who });
-  release(w, who, "search");
+  if (!hold) release(w, who, "search");
   return log(w, { by: who, kind: "search", status: "ok" });
 }
 
