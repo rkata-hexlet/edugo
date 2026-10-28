@@ -122,6 +122,7 @@ function drawTape(pen: Pen, w: World): void {
       });
     });
     for (const id of REPLICAS) {
+      if (w.unseen.includes("runners")) break;
       const r = w.replicas[id];
       const n = applied(w, id);
       const x = n === 0 ? TAPE.x - 3 : (cardX(w, n - 1) ?? TAPE.x - TAPE.card) + TAPE.card + TAPE.gap / 2;

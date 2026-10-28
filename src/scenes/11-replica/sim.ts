@@ -100,7 +100,7 @@ export interface World {
   lsn: boolean;
   code: Code | null;
   /** Ещё не показанные зрителю части мира (знакомство вводит их по одной). */
-  unseen: ("replicas" | "tape" | "crowd")[];
+  unseen: ("replicas" | "tape" | "runners" | "crowd")[];
   sql: string[];
   db: string | null;
   plate: string | null;
