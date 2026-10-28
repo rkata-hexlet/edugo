@@ -246,7 +246,7 @@ function next(w: World, prefer?: ReplicaId): ReplicaId {
   return id;
 }
 
-/** Куда наш код отправит чтение гостя. Метка LSN: первая реплика по кругу, что догнала; не догнала ни одна — primary. */
+/** Куда наш код отправит чтение гостя. remote_apply: по кругу, как без метки — синхронная лишь одна. Метка LSN: первая реплика по кругу, что догнала; не догнала ни одна — primary. */
 function target(w: World, by: PodId, prefer?: ReplicaId): Source {
   const g = w.guest;
   switch (w.route) {
@@ -254,8 +254,6 @@ function target(w: World, by: PodId, prefer?: ReplicaId): Source {
       return "primary";
     case "seal":
       return g.sealUntil !== null && w.clock < g.sealUntil ? "primary" : next(w, prefer);
-    case "sync":
-      return REPLICAS.find((id) => w.replicas[id].sync)!;
     case "lsn": {
       if (g.ticket === null) return next(w, prefer);
       const first = next(w, prefer);

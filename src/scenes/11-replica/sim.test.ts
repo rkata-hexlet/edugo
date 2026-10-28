@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { speechParts } from "../../engine/narrator";
 import { ACT, PRONOUNCE, buildSteps } from "./script";
 import {
-  ask, book, bookings, bookingsAt, crowd, down, flood, head, primaryLamp, read, replayLsn, seesLamp, tick, wentBack, world,
+  ask, book, bookings, crowd, down, flood, head, primaryLamp, read, replayLsn, seesLamp, tick, wentBack, world,
   type EventKind, type Route, type World,
 } from "./sim";
 
@@ -86,14 +86,15 @@ describe("модель чтения с реплик", () => {
     expect(ask(w, "C", "primary")).toBe(false);
   });
 
-  it("remote_apply: COMMIT ждёт лаг синхронной реплики, с неё сразу видно; легла — COMMIT висит", () => {
+  it("remote_apply: COMMIT ждёт лаг синхронной реплики, с неё сразу видно, со второй — нет; легла — COMMIT висит", () => {
     const w = sale("sync", [3000, 5000]);
     w.replicas[1].sync = true;
     const t = w.clock;
     book(w);
     expect(w.clock - t).toBe(3000);
-    expect(read(w)).toMatchObject({ from: 1, seen: 1 });
-    expect(bookingsAt(w, 2)).toBe(0); // асинхронная отстаёт по-прежнему
+    expect(read(w, "B", 1)).toMatchObject({ from: 1, seen: 1 });
+    expect(read(w, "B", 2)).toMatchObject({ from: 2, seen: 0 }); // асинхронная отстаёт по-прежнему
+    expect(seesLamp(w)).toBe("red");
     down(w, 1);
     book(w);
     expect(w.guest.saving).toBe(true);
