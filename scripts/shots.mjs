@@ -33,6 +33,8 @@ const page = await browser.newPage();
 page.on("pageerror", (e) => console.error("страница:", e.message));
 const shots = [];
 for (let n = from; n <= to; n++) {
+  // Смена одного #step — переход внутри документа: плеер не перезагрузится и номер за концом не поправит.
+  await page.goto("about:blank");
   await page.goto(`${url}?scene=${sceneId}&capture#step=${n}`, { waitUntil: "networkidle0" });
   await new Promise((r) => setTimeout(r, 400));
   // Плеер сам поправляет номер за последним кадром — значит, кадры кончились.
