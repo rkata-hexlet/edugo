@@ -107,6 +107,8 @@ function cardX(w: World, i: number): number | null {
 function drawTape(pen: Pen, w: World): void {
   if (w.unseen.includes("tape")) return;
   pen.group("tape", 0, 0, () => {
+    // Журнал пишет primary и отправляет репликам: стрелка от базы к началу ленты.
+    pen.line("tape:feed", { x1: PRIMARY.x + PRIMARY.w - 24, y1: PRIMARY.y + PRIMARY.h + 2, x2: TAPE.x - 8, y2: TAPE.cardY + TAPE.cardH / 2, stroke: COLOR.postgres, "stroke-width": 2.5, marker: "arrow", ...fade(w, "primary", "tape") });
     pen.text("tape:title", { x: TAPE.x, y: TAPE.y + 20, ...SANS, "font-weight": 700, fill: COLOR.muted }, "Журнал WAL");
     if (w.lsn && w.wal.length) {
       pen.text("tape:head", { x: TAPE.x + TAPE.w, y: TAPE.y + 20, ...MONO, "text-anchor": "end", fill: COLOR.ink }, `конец: ${lsnText(w.wal.at(-1)!.lsn)}`);
