@@ -17,7 +17,7 @@ const GUEST = { x: 30, y: 104, w: 266, h: 380 };
 const SERVICE = { x: 316, y: 104, w: 230, h: 380 };
 const POD_X = 400;
 const POD_Y: Record<PodId, number> = { A: 124, B: 236, C: 348 };
-const PRIMARY = { x: 372, y: 20, w: 148, h: 46 };
+const PRIMARY = { x: 372, y: 20, w: 210, h: 46 };
 const TAPE = { x: 566, y: 104, w: 674, card: 38, gap: 6, cardY: 136, cardH: 40, slots: 15 };
 const REP = { y: 266, w: 327, h: 190 };
 const REP_X: Record<ReplicaId, number> = { 1: 566, 2: 913 };
@@ -40,7 +40,8 @@ function drawHeader(pen: Pen, w: World): void {
   elephant(pen, "db:face", { x: PRIMARY.x - 56, y: 8, talking: !!w.db, scale: 1.08, look: w.db ? { x: 1, y: 0 } : undefined });
   pen.group("primary", 0, 0, () => {
     panel(pen, "primary:box", { ...PRIMARY, rx: 14, fill: COLOR.surface2, stroke: COLOR.postgres });
-    pen.text("primary:t", { x: PRIMARY.x + 16, y: 50, ...SANS, "font-size": SIZE.say, "font-weight": 700, fill: COLOR.ink }, "Primary");
+    pen.text("primary:t", { x: PRIMARY.x + 16, y: 50, ...SANS, "font-size": SIZE.say, "font-weight": 700, fill: COLOR.ink },
+      w.unseen.includes("replicas") ? "Postgres" : "Postgres · primary");
   }, fade(w, "primary"));
   if (w.chapter) pill(pen, "chapter", `КЕЙС ${w.chapter}`, { x: CHAPTER_X, y: 22, fill: "none", color: COLOR.ink, stroke: COLOR.ink });
   if (!(w.focus?.includes("clock") || happened(w, "clock"))) return;
