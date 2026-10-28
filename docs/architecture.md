@@ -67,6 +67,8 @@
 - Рендер в mp4 (`?capture&render`, `exposeRender` в `player.ts` → `window.__edugo`; `scripts/render.mjs`):
   перемотка на момент t с остановкой анимаций, звук через `WebAudioSound.offline(OfflineAudioContext)`
   + дубли диктора в той же дорожке, WAV кусками, склейка ffmpeg (ADR-0003, ADR-0004, docs/recording.md).
+- Снимки кадров (`scripts/shots.mjs`, `npm run shots`): `?capture#step=N` в headless Chrome с dev-сервера, анимации
+  доведены до конца, PNG 1280×720 в `out/shots/NN/`, `--sheet` — контактные листы 2×3 (`montage`).
 - Оболочка (`engine/shell.ts`, стили `engine/player.css`) — только DOM: кадр 16:9 по окну,
   подпись кадра оверлеем внутри кадра (попадает в запись), субтитры диктора по CC (только в плеере), панель (play, прогресс
   сегментами по актам, скорость, CC, звук, полный экран), которая прячется при проигрывании без
@@ -114,6 +116,7 @@
 ## Граф зависимостей
 ```
 scripts/render.mjs ──(puppeteer, ?capture&render)──► страница плеера
+scripts/shots.mjs ──(puppeteer, ?capture#step=N; montage)──► dev-сервер, снимки кадров
 vite.config.ts (dev) ──► scripts/voice.mjs ──► ffmpeg
 scripts/ep.mjs ──(git worktree)──► vite в папке эпизода
 main.ts ──► engine/takes ──► engine/contract (тип Step)
