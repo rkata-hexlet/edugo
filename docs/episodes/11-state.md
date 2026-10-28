@@ -41,3 +41,11 @@
 - **Дальше (новая сессия) — фаза 2, шлифовка:** план этапов по образцу `docs/plan-01-polish.md`; цепочка текстов
   tech-writer → tech-expert (список — раскадровка v2, «Что проверить») → learning-designer (кадры 5, 23, 20); затем
   motion-designer (отрисовка), sound-designer (звук), итоговая сверка tech-expert. Мелочи на шлифовку — выше в журнале.
+
+## 28.10 — фаза 2: шлифовка начата
+- План этапов — `docs/plan-11-polish.md`. Контактные листы 30 кадров сняты headless (`?scene=11&capture#step=N`, puppeteer-core
+  из проекта, `montage` 2×3); скрипт снимков пока в scratchpad сессии — третий раз этот ритуал, кандидат в `scripts/shots.mjs`.
+- Мой проход по листам: наездов и выхода за `SAFE_BOTTOM` нет; нижняя треть кадра почти везде пуста, сцена прижата
+  влево-вверх; кадр 5 перегружен — на motion-designer.
+- Запущены параллельно: tech-writer (этап 1) → `docs/reviews/11-tech-writer-polish.md`; motion-designer (этап 4, разбор)
+  → `docs/reviews/11-motion-designer-polish.md`.
