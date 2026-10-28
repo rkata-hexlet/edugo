@@ -6,9 +6,10 @@ import { loadTakes } from "./engine/takes";
 import { skipLocked } from "./scenes/01-skip-locked";
 import { cache } from "./scenes/02-cache";
 import { timeouts } from "./scenes/10-timeouts";
+import { replica } from "./scenes/11-replica";
 
 // У каждой сцены свой тип состояния; плееру он не важен — сцена сама рисует своё состояние.
-const scenes: Record<string, Scene<any>> = { [skipLocked.id]: skipLocked, [cache.id]: cache, [timeouts.id]: timeouts };
+const scenes: Record<string, Scene<any>> = { [skipLocked.id]: skipLocked, [cache.id]: cache, [timeouts.id]: timeouts, [replica.id]: replica };
 
 const params = new URLSearchParams(location.search);
 const scene = scenes[params.get("scene") ?? skipLocked.id] ?? skipLocked;
