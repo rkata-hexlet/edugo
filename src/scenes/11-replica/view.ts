@@ -167,7 +167,7 @@ function drawCrowd(pen: Pen, w: World): void {
     panel(pen, "crowd:box", { ...CROWD, fill: toPrimary ? COLOR.alarmBg : COLOR.surface, stroke: toPrimary ? COLOR.error : COLOR.line });
     iconText(pen, "crowd:t", "browser", CROWD.x + 14, CROWD.y + 34, "Листают номера: десятки гостей на одну бронь", COLOR.browser, { ...SANS, "font-weight": 700 });
     pen.text("crowd:to", { x: CROWD.x + 14, y: CROWD.y + 66, ...SANS, fill: toPrimary ? COLOR.error : COLOR.ok, "font-weight": 700 },
-      toPrimary ? "их чтения идут в primary" : "их чтения идут на реплики");
+      toPrimary ? `их чтения идут в ${w.unseen.includes("replicas") ? "Postgres" : "primary"}` : "их чтения идут на реплики");
   }, fade(w, "crowd"));
 }
 
