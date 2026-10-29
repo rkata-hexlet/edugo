@@ -191,4 +191,13 @@ describe("сценарий не врёт", () => {
     const bare = [ACT.case1, ACT.case2, ACT.summary] as string[];
     expect(steps.filter((s) => bare.includes(s.act)).every((s) => s.state.term === null)).toBe(true);
   });
+
+  it("отказ и компенсацию журнал помнит так же, как шаги (кадры «вперёд или исправлять»)", () => {
+    const fixes = steps.filter((s) => s.act !== ACT.summary && (s.state.fork === "fix" || s.state.fork === "retry"));
+    expect(fixes).toHaveLength(2);
+    for (const s of fixes) {
+      const state = Object.fromEntries(s.state.saga!.entries.map((e) => [e.step, e.state]));
+      expect(state).toMatchObject({ холд: "отменён", бронь: "отказ" });
+    }
+  });
 });

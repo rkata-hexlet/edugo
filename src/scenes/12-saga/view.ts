@@ -6,7 +6,7 @@ import { buyButton, person } from "../../kit/props";
 import { ACTOR, COLOR, DIM, FONT, SIZE } from "../../kit/theme";
 import { board, bubble, iconText, once, panel, pill, plate, stamp } from "../../kit/widgets";
 import {
-  BOOKING, PODS, PRICE, SAGA_STEPS, active, net, type Act, type Focus, type Op, type Pod, type PodId, type SimEvent, type World,
+  BOOKING, PODS, PRICE, SAGA_STEPS, active, net, type Act, type Focus, type LogState, type Op, type Pod, type PodId, type SimEvent, type World,
 } from "./sim";
 
 // MVP эпизода 12: серые фигуры. Слева — гость (сайт и банк), в середине — поды, правее — наша база (брони и журнал
@@ -125,16 +125,17 @@ function drawDb(pen: Pen, w: World): void {
       SAGA_STEPS.forEach((step, i) => {
         const e = s.entries.find((x) => x.step === step);
         const y = DB.y + 178 + i * 44;
-        pen.rect(`log:s${i}`, { x: DB.x + 14, y, width: DB.w - 28, height: 36, rx: 6, fill: e?.done ? COLOR.doneBg : e ? COLOR.draftBg : COLOR.surface2, stroke: COLOR.line });
+        pen.rect(`log:s${i}`, { x: DB.x + 14, y, width: DB.w - 28, height: 36, rx: 6, fill: e ? LOG_BG[e.state] : COLOR.surface2, stroke: COLOR.line });
         pen.text(`log:s${i}:t`, { x: DB.x + 26, y: y + 25, ...SANS, fill: e ? COLOR.ink : COLOR.faint }, step);
-        if (e) {
-          const label = e.done ? "сделан" : "начат";
-          pen.text(`log:s${i}:st`, { x: DB.x + DB.w - 26, y: y + 25, ...SANS, "text-anchor": "end", fill: e.done ? COLOR.ok : COLOR.warn }, label);
-        }
+        if (e) pen.text(`log:s${i}:st`, { x: DB.x + DB.w - 26, y: y + 25, ...SANS, "text-anchor": "end", fill: LOG_INK[e.state] }, e.state);
       });
     }, fade(w, "log"));
   }, fade(w, "db", "log"));
 }
+
+/** Журнал: начатое и компенсация в работе — жёлтым, сделанное и отменённое — зелёным, отказ — красным. */
+const LOG_BG: Record<LogState, string> = { начат: COLOR.draftBg, сделан: COLOR.doneBg, отказ: COLOR.alarmBg, отмена: COLOR.draftBg, отменён: COLOR.doneBg };
+const LOG_INK: Record<LogState, string> = { начат: COLOR.warn, сделан: COLOR.ok, отказ: COLOR.error, отмена: COLOR.warn, отменён: COLOR.ok };
 
 const OP: Partial<Record<Op, string>> = {
   charge: "списать", hold: "холд", capture: "списать холд", release: "снять холд", refund: "возврат", book: "бронь",
@@ -225,7 +226,7 @@ function drawArrows(pen: Pen, w: World): void {
 }
 
 const PAIRS: [string, string | null][] = [["pending", "cancelled"], ["списание", "возврат"], ["бронь", "отмена брони"], ["confirmed", null]];
-const PIVOT: [string, string][] = [["pending", "легко отменить"], ["холд", "легко отменить"], ["бронь", "может отказать"], ["списание", "необратимо"]];
+const PIVOT: [string, string][] = [["pending", "легко отменить"], ["холд", "легко отменить"], ["бронь", "может отказать"], ["списание", "только возврат"]];
 const CARD = { w: 152, h: 40, gap: 8 };
 
 /** Цепочка саги: шаги и обратные шаги (стрелки обратно справа налево) или порядок с точкой невозврата. */

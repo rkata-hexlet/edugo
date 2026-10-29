@@ -66,10 +66,14 @@ export interface Supplier {
 /** Шаги саги в журнале. */
 export type SagaStep = "старт" | "холд" | "бронь" | "списание";
 export const SAGA_STEPS: SagaStep[] = ["старт", "холд", "бронь", "списание"];
-/** Строка журнала: шаг начат (записали перед вызовом) или сделан (после ответа). */
+/**
+ * Состояние шага в журнале: начат (записали перед вызовом), сделан (после ответа), отказ (ответ окончательный);
+ * отмена и отменён — компенсация шага, её журнал помнит так же, как сам шаг.
+ */
+export type LogState = "начат" | "сделан" | "отказ" | "отмена" | "отменён";
 export interface LogEntry {
   step: SagaStep;
-  done: boolean;
+  state: LogState;
 }
 
 export interface Saga {
@@ -323,22 +327,22 @@ export function openLog(w: World, owner: PodId): void {
   w.saga = { entries: [], owner };
 }
 
-/** Записать в журнал: шаг начат (перед вызовом) или сделан (после ответа). */
-export function log(w: World, by: PodId, step: SagaStep, done: boolean): void {
+/** Записать в журнал состояние шага. */
+export function log(w: World, by: PodId, step: SagaStep, state: LogState): void {
   const s = w.saga!;
   const e = s.entries.find((x) => x.step === step);
-  if (e) e.done = done;
-  else s.entries.push({ step, done });
+  if (e) e.state = state;
+  else s.entries.push({ step, state });
   act(w, by, "log", "db");
   emit(w, "log", by);
 }
 
 /** Шаг с записью в журнал до и после. Под может умереть между вызовом и записью «сделан» — `dieAfterCall`. */
 export function logged(w: World, by: PodId, step: SagaStep, call: () => unknown, dieAfterCall = false): void {
-  log(w, by, step, false);
+  log(w, by, step, "начат");
   call();
   if (dieAfterCall) return crash(w, by);
-  log(w, by, step, true);
+  log(w, by, step, "сделан");
 }
 
 /** Под захватывает застрявшую сагу (FOR UPDATE SKIP LOCKED); второй — пропускает занятую строку. */
@@ -355,7 +359,7 @@ export function skip(w: World, by: PodId): void {
 
 /** Какой шаг журнал считает следующим: первый не сделанный. */
 export function nextStep(w: World): SagaStep | null {
-  return SAGA_STEPS.find((step) => !w.saga!.entries.find((e) => e.step === step)?.done) ?? null;
+  return SAGA_STEPS.find((step) => w.saga!.entries.find((e) => e.step === step)?.state !== "сделан") ?? null;
 }
 
 // --- Лампы табло: по ним тест сверяет оценки кадров. ---
