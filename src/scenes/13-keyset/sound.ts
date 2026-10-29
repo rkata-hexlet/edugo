@@ -1,8 +1,8 @@
 import type { Sound, Voice } from "../../engine/contract";
 import type { Lamp } from "../../kit/director";
-import { type EventKind, type SimEvent, type World } from "./sim";
+import { type EventKind, LAST_PAGE, type SimEvent, type World } from "./sim";
 
-// Звук-черновик MVP эпизода 13 (до карты sound-designer): только из событий модели. Звуки событий — в окне 0–0.45 с,
+// Звук эпизода 13 по разбору sound-designer (`docs/reviews/13-sound-designer-polish.md`): только из событий модели. Звуки событий — в окне 0–0.45 с,
 // с 0.5 с говорит диктор; дальше только бормотание Postgres, тихо.
 
 /** Окно звуков событий, с. Держит тест: дальше начинается голос диктора. */
@@ -30,23 +30,39 @@ const RECIPES: Partial<Record<EventKind, Recipe>> = {
   press: (s, at) => s.tone({ freq: 900, to: 1200, dur: 0.04, wave: "square", gain: 0.05, at }),
   count: (s, at) => [0, 0.05, 0.1].forEach((d) => s.noise({ dur: 0.02, freq: 3000, q: 1.5, gain: 0.03, at: at + d })),
   fetch: (s, at) => s.noise({ dur: 0.1, freq: 2200, q: 0.8, gain: 0.04, at }),
-  insert: (s, at) => s.tone({ freq: 784, to: 988, dur: 0.07, gain: 0.06, at }),
-  delete: (s, at) => s.tone({ freq: 1319, to: 1568, dur: 0.06, gain: 0.05, at }),
-  update: (s, at) => s.tone({ freq: 988, to: 740, dur: 0.08, gain: 0.05, at }),
-  jump: (s, at) => s.tone({ freq: 300, to: 180, dur: 0.15, wave: "square", gain: 0.06, at }),
-  mark: (s, at) => s.tone({ freq: 660, to: 880, dur: 0.06, gain: 0.05, at }),
-  dup: (s, at) => {
-    s.tone({ freq: 200, dur: 0.1, wave: "square", gain: 0.1, at });
-    s.tone({ freq: 200, dur: 0.1, wave: "square", gain: 0.1, at: at + 0.13 });
+  // Изменения строки различимы на слух: подъём — плавный рост, вспышка — два щелчка, зачёркивание — штрих и стук.
+  insert: (s, at) => s.tone({ freq: 784, to: 988, dur: 0.12, gain: 0.07, at }),
+  delete: (s, at) => {
+    s.noise({ dur: 0.22, freq: 2500, q: 1, gain: 0.04, at });
+    s.tone({ freq: 330, to: 220, dur: 0.1, wave: "triangle", gain: 0.06, at: at + 0.2 });
   },
-  lost: (s, at) => s.tone({ freq: 500, to: 120, dur: 0.25, wave: "triangle", gain: 0.08, at }),
-  trash: (s, at) => s.noise({ dur: 0.2, freq: 400, q: 0.6, gain: 0.06, at }),
-  verdict: (s, at, e) => e.lamps?.filter((lamp) => lamp).forEach((lamp, i) => lampTone(s, at + 0.05 + 0.1 * i, lamp!)),
+  update: (s, at) => {
+    s.tone({ freq: 880, dur: 0.04, wave: "triangle", gain: 0.05, at });
+    s.tone({ freq: 1047, dur: 0.05, wave: "triangle", gain: 0.05, at: at + 0.06 });
+  },
+  jump: (s, at) => s.tone({ freq: 300, to: 180, dur: 0.15, wave: "square", gain: 0.06, at }),
+  // Флажок воткнули: колокольчик с октавой вниз.
+  mark: (s, at) => {
+    s.tone({ freq: 1175, dur: 0.14, gain: 0.05, at });
+    s.tone({ freq: 587, dur: 0.08, gain: 0.04, at });
+  },
+  dup: (s, at) => {
+    s.tone({ freq: 200, dur: 0.08, wave: "square", gain: 0.1, at });
+    s.tone({ freq: 200, dur: 0.08, wave: "square", gain: 0.1, at: at + 0.11 });
+  },
+  lost: (s, at) => s.tone({ freq: 500, to: 120, dur: 0.19, wave: "triangle", gain: 0.08, at }),
+  // Выброшенное растёт с глубиной: страница 2 → 0.22 с, 3 → 0.32 с, дальше 0.4 с; последняя — громче.
+  trash: (s, at, e) => {
+    const page = e.page ?? 2;
+    s.noise({ dur: Math.min(0.12 + 0.1 * (page - 1), 0.4), freq: 400, q: 0.6, gain: page === LAST_PAGE ? 0.08 : 0.06, at });
+  },
+  verdict: (s, at, e) => e.lamps?.filter((lamp) => lamp).forEach((lamp, i) => lampTone(s, at + 0.08 * i, lamp!)),
 };
 
-/** Лесенка по ходу кадра: событие выдачи → нажатие → отсчёт → страница → итог, табло — последним. */
+/** Лесенка по ходу кадра: событие выдачи → нажатие → отсчёт → страница → итог, табло — последним.
+ *  Беда (dup, lost) кончается к 0.34 с, лампы — с 0.36 с: между бедой и лампой пауза. */
 const SLOT_AT: Partial<Record<EventKind, number>> = {
-  insert: 0.05, delete: 0.05, update: 0.05, press: 0.1, jump: 0.1, count: 0.12, fetch: 0.2, trash: 0.2, mark: 0.25, dup: 0.25, lost: 0.25, verdict: 0.3,
+  insert: 0.05, delete: 0.05, update: 0.05, press: 0.1, jump: 0.1, count: 0.12, dup: 0.15, lost: 0.15, fetch: 0.2, trash: 0.2, mark: 0.25, verdict: 0.36,
 };
 
 /** Тот же звук, громкость × k: повтор в итоге — «воспоминание», тише исходного. */

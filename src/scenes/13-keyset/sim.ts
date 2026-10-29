@@ -80,6 +80,8 @@ export interface SimEvent {
   kind: EventKind;
   by?: PodId;
   lamps?: Verdict;
+  /** trash: страница выгрузки — чем дальше, тем больше выброшено. */
+  page?: number;
 }
 
 export interface World {
@@ -292,7 +294,7 @@ export function exportPage(w: World, mode: Export["mode"], page: number, by: Pod
     ? `SELECT * FROM bookings\nORDER BY created_at, id\nLIMIT ${BATCH} OFFSET ${(page - 1) * BATCH}`
     : `SELECT * FROM bookings\nWHERE (created_at, id) > ($1, $2)\nORDER BY created_at, id LIMIT ${BATCH}`];
   emit(w, "fetch", by);
-  if (read > BATCH) emit(w, "trash");
+  if (read > BATCH) w.events.push({ kind: "trash", page });
 }
 
 /** Сумма прочитанного за всю выгрузку OFFSET: 1 000 + 2 000 + … + 2 000 000. */
