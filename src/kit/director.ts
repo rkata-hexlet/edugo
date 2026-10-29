@@ -1,16 +1,16 @@
 import type { Step } from "../engine/contract";
 
 // Режиссёр серии: из глаголов сценария собирает кадры по общей грамматике подачи (docs/series-style.md, «Подача серии») —
-// сцены и перемотка, главы с табло двух критериев, ярлык акта, фокус, голос диктора. Что живёт в мире эпизода
+// сцены и перемотка, главы с табло критериев (обычно двух), ярлык акта, фокус, голос диктора. Что живёт в мире эпизода
 // один кадр сверх общего (реплика Почты, сомнение над подом), эпизод добавляет в `clear` и `finish`.
 
 export type Lamp = "red" | "yellow" | "green";
-/** Оценка попытки по двум критериям главы; null — эта лампа ещё не горит. */
-export type Verdict = [Lamp | null, Lamp | null];
+/** Оценка попытки по критериям главы, лампа на критерий; null — эта лампа ещё не горит (или прежняя). */
+export type Verdict = (Lamp | null)[];
 
 /** Табло главы: попытки и их оценка. Оценку сверяют тесты эпизода по модели. */
 export interface Board {
-  criteria: [string, string];
+  criteria: string[];
   attempts: { name: string; lamps: Verdict | null }[]; // null — ещё не проверили
   focus?: number; // о какой попытке говорит диктор; нет — о последней
 }
@@ -91,8 +91,8 @@ export abstract class Director<F, W extends Staged<F>> {
     this.label = label;
   }
 
-  /** Глава: номер в углу и чистое табло с двумя критериями; null — вне глав. */
-  chapter(no: number | null, criteria: [string, string] | null = null): void {
+  /** Глава: номер в углу и чистое табло с критериями (обычно двумя); null — вне глав. */
+  chapter(no: number | null, criteria: string[] | null = null): void {
     this.chapterNo = no;
     this.board = criteria ? { criteria, attempts: [] } : null;
   }
@@ -119,7 +119,7 @@ export abstract class Director<F, W extends Staged<F>> {
     if (w.stamp) w.events.push({ kind: "rewind" });
     if (opts.verdict) {
       const a = this.board!.attempts.at(-1)!;
-      a.lamps = [opts.verdict[0] ?? a.lamps?.[0] ?? null, opts.verdict[1] ?? a.lamps?.[1] ?? null];
+      a.lamps = this.board!.criteria.map((_, i) => opts.verdict![i] ?? a.lamps?.[i] ?? null);
       w.events.push({ kind: "verdict", lamps: opts.verdict });
     }
     this.finish(w);
