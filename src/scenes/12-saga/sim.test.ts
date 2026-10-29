@@ -106,8 +106,8 @@ describe("сценарий не врёт", () => {
     expect(JSON.stringify(buildSteps())).toBe(JSON.stringify(steps));
   });
 
-  it("раскадровка v1 со слияниями: 28 кадров + итог из 6 образов", () => {
-    expect(steps.length).toBe(34);
+  it("раскадровка v1 со слияниями и нарезкой фазы 2: 32 кадра + итог из 6 образов", () => {
+    expect(steps.length).toBe(38);
   });
 
   it("хук: деньги ушли, брони нет, строка висит в pending", () => {
@@ -125,7 +125,7 @@ describe("сценарий не врёт", () => {
       const model = w.chapter === 1 ? [evenLamp(w), noRefundLamp(w)] : [doneLamp(w), onceLamp(w)];
       e.lamps!.forEach((l, i) => l && expect(l, `${s.act}: лампа ${i + 1}`).toBe(model[i]));
     }
-    expect(checked).toBe(7);
+    expect(checked).toBe(6);
   });
 
   it("журнал без ключа даёт дубль, с ключом — одну бронь", () => {
@@ -194,7 +194,7 @@ describe("сценарий не врёт", () => {
 
   it("отказ и компенсацию журнал помнит так же, как шаги (кадры «вперёд или исправлять»)", () => {
     const fixes = steps.filter((s) => s.act !== ACT.summary && (s.state.fork === "fix" || s.state.fork === "retry"));
-    expect(fixes).toHaveLength(2);
+    expect(fixes).toHaveLength(3);
     for (const s of fixes) {
       const state = Object.fromEntries(s.state.saga!.entries.map((e) => [e.step, e.state]));
       expect(state).toMatchObject({ холд: "отменён", бронь: "отказ" });
