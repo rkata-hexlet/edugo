@@ -290,11 +290,15 @@ export function exportPage(w: World, mode: Export["mode"], page: number, by: Pod
   const total = mode === "offset" ? (BATCH * page * (page + 1)) / 2 : BATCH * page;
   w.export = { mode, page, read, sent: BATCH, total };
   w.served.push(by);
-  w.sql = [mode === "offset"
-    ? `SELECT * FROM bookings\nORDER BY created_at, id\nLIMIT ${BATCH} OFFSET ${(page - 1) * BATCH}`
-    : `SELECT * FROM bookings\nWHERE (created_at, id) > ($1, $2)\nORDER BY created_at, id LIMIT ${BATCH}`];
+  w.sql = [exportSql(mode, page)];
   emit(w, "fetch", by);
   if (read > BATCH) w.events.push({ kind: "trash", page });
+}
+
+/** Запрос выгрузки: первая страница OFFSET — без смещения, как у гостя; закладка — по паре. */
+export function exportSql(mode: Export["mode"], page: number): string {
+  if (mode === "pair") return `SELECT * FROM bookings\nWHERE (created_at, id) > ($1, $2)\nORDER BY created_at, id LIMIT ${BATCH}`;
+  return `SELECT * FROM bookings\nORDER BY created_at, id\nLIMIT ${BATCH}${page > 1 ? ` OFFSET ${(page - 1) * BATCH}` : ""}`;
 }
 
 /** Сумма прочитанного за всю выгрузку OFFSET: 1 000 + 2 000 + … + 2 000 000. */

@@ -1,7 +1,7 @@
 import type { Step } from "../../engine/contract";
 import { Director } from "../../kit/director";
 import {
-  CHEAP, CRITERIA, LAST_PAGE, exportPage, insert, jump, next, nextSql, PRICEY, reprice, reveal, remove, world, type Focus, type Mode, type World,
+  CHEAP, CRITERIA, LAST_PAGE, exportPage, exportSql, insert, jump, next, nextSql, PRICEY, reprice, reveal, remove, world, type Focus, type Mode, type World,
 } from "./sim";
 
 // Акты эпизода — синхронно с docs/episodes/13-keyset.md, «Арка v2»: все беды OFFSET до закладки, закладка чинит их все,
@@ -312,7 +312,7 @@ export function buildSteps(): Step<World>[] {
     w.guest.say = null;
   }, {
     sql: true, focus: ["guest", "db"],
-    voice: "Можно ли обойтись и без этого дубля? Только снимком выдачи на всё листание: держать транзакцию открытой, пока гость думает, или сохранить себе весь список. Это дорого, ведь каждое нажатие может прийти на другой под. И гость будет видеть уже проданные номера и старые цены.",
+    voice: "Можно ли обойтись и без этого дубля? Проще всего на экране: не показывать карточку, которую гость уже видел, по её id. А чтобы выдача вовсе не менялась, пока гость листает, нужен снимок на всё листание: держать транзакцию открытой или сохранить весь список для каждого гостя. Это дорого. И гость будет видеть уже проданные номера и старые цены.",
   });
 
 
@@ -321,7 +321,9 @@ export function buildSteps(): Step<World>[] {
     sql: true, verdict: [null, null, "green"], focus: ["guest", "db", "index", "mark", "sql", "board"],
     voice: "А что с ночной выгрузкой? Закладка здесь та же пара: время создания и id последней выгруженной брони. Postgres по индексу сразу встаёт на закладку, читает тысячу строк и отдаёт тысячу, что на первой странице, что на двухтысячной. Кофе у бухгалтера не успевает остыть!",
   });
-  d.shot("", undefined, {
+  d.shot("", (w) => {
+    w.sql = [exportSql("pair", LAST_PAGE)]; // тот же запрос, без нового обращения к базе
+  }, {
     sql: true, focus: ["db", "index", "mark", "sql"],
     voice: "И id здесь нужен по той же причине, что и у цен. Бывает, что сто броней из пакетного импорта получили одно и то же время. Если страница закончится посреди них, одно время не скажет, на какой из ста мы остановились, и часть броней потеряется, как «Лагуна».",
   });

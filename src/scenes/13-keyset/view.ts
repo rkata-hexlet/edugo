@@ -333,7 +333,7 @@ function sqlMark(w: World): SqlMark[] {
   const where = /WHERE .*/.exec(q);
   if (where) return [{ text: where[0].replace(/^WHERE /, "") }];
   const offset = / OFFSET \d+/.exec(q);
-  if (w.export) return offset ? [{ text: offset[0].trim(), color: COLOR.warn }] : [];
+  if (w.export) return offset ? [{ text: offset[0].trim(), color: COLOR.warn }] : [{ text: "ORDER BY created_at, id" }];
   if (offset) return [{ text: offset[0].trim(), color: COLOR.warn }, { text: /LIMIT \d+/.exec(q)![0], color: COLOR.ok }];
   return [{ text: "ORDER BY price, id" }];
 }
