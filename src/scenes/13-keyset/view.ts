@@ -1,8 +1,9 @@
-import { STAGE, type Pen } from "../../engine/contract";
+import { STAGE, type Pen, type TextContent } from "../../engine/contract";
 import { bob, elephant } from "../../kit/characters";
 import { icon } from "../../kit/icons";
-import { buyButton, mug, person } from "../../kit/props";
+import { bookmark, buyButton, mug, person } from "../../kit/props";
 import { ACTOR, COLOR, DIM, FONT, SIZE } from "../../kit/theme";
+import type { SqlMark } from "../../kit/sql";
 import { board, bubble, lamp, once, panel, pill, plate, podSql, sqlWindow, stamp } from "../../kit/widgets";
 import {
   BATCH, BOOKINGS, CRITERIA, LAST_PAGE, PODS, behind, dups, listing, lost, offer, type Focus, type Offer, type PodId,
@@ -22,7 +23,7 @@ const DB = { x: 482, y: 104, w: 758, h: 370 };
 const ROW = { y: 150, h: 26, step: 29 };
 /** Таблица и результат запроса — на одном месте и одной ширины; справа — поле подписей. */
 const RESULT = { x: 600, w: 300 };
-const SIDE_X = 920;
+const SIDE_X = 934;
 const GHOST_X = 1050;
 const TITLE_Y = ROW.y - 14;
 /** Выгрузка: таблица и индекс — столбики, справа счётчик. */
@@ -34,7 +35,7 @@ const PASS = { x: 594, step: 16, w: 10 };
 /** Первые страницы показываем крупно: в масштабе двух миллионов тысяча строк — меньше пикселя. */
 const ZOOM = 3 * BATCH;
 const COUNT_X = 980;
-const BOARD = { x: 700, y: 490, w: 540, rowH: 26 };
+const BOARD = { x: 700, y: 490, w: 540, rowH: 30 };
 const LAMP_X = [250, 365, 480];
 const SQL_X = 30;
 const BOTTOM = 648;
@@ -80,6 +81,9 @@ function drawGuest(pen: Pen, w: World): void {
       seen.add(id);
       return { id, p, dup, price: g.prices[p][i] };
     }));
+    // Первое появление дубля — красной рамкой без заливки: зритель видит пару, а не ищет «оригинал» сам.
+    const twice = new Set(all.filter((c) => c.dup).map((c) => c.id));
+    const missing = w.ghost && lost(w).length > 0;
     const last = g.pages.length - 1;
     const from = Math.max(0, all.findIndex((c) => c.p === last) - TAIL);
     let y = phone.y + 10;
@@ -91,9 +95,15 @@ function drawGuest(pen: Pen, w: World): void {
       if (i && list[i - 1].p !== p) {
         pen.line(`guest:div${p}`, { x1: phone.x + 10, y1: y + 2, x2: phone.x + phone.w - 10, y2: y + 2, stroke: COLOR.muted, "stroke-width": 2, "stroke-dasharray": "6 4" });
         y += 6;
+        // Пропавшая карточка: гость её не видит — на её месте пустой слот.
+        if (missing && p === last) {
+          pen.rect("guest:slot", { x: phone.x + 8, y, width: phone.w - 16, height: 24, rx: 5, fill: "none", stroke: COLOR.error, "stroke-width": 2, "stroke-dasharray": "5 4", class: "fx-fade d3" });
+          pen.text("guest:slot:t", { x: phone.x + phone.w / 2, y: y + 19, ...SANS, "text-anchor": "middle", "font-weight": 700, fill: COLOR.error, class: "fx-fade d3" }, "?");
+          y += 27;
+        }
       }
       const key = `guest:c${p}:${id}`;
-      pen.rect(key, { x: phone.x + 8, y, width: phone.w - 16, height: 24, rx: 5, fill: dup ? COLOR.alarmBg : COLOR.surface2, stroke: dup ? COLOR.error : "none", "stroke-width": 2, class: p === last && p ? "fx-slide" : "" });
+      pen.rect(key, { x: phone.x + 8, y, width: phone.w - 16, height: 24, rx: 5, fill: dup ? COLOR.alarmBg : COLOR.surface2, stroke: twice.has(id) ? COLOR.error : "none", "stroke-width": 2, class: p === last && p ? "fx-slide" : "" });
       pen.text(`${key}:t`, { x: phone.x + 16, y: y + 19, ...SANS, fill: dup ? COLOR.error : p === last ? COLOR.ink : COLOR.muted }, card({ ...offer(w, id), price }));
       y += 27;
     });
@@ -139,81 +149,105 @@ function drawArrows(pen: Pen, w: World): void {
   }
 }
 
-/** Строка с полями id, отель, цена — одинаково в таблице и в результате запроса. */
-function drawRow(pen: Pen, key: string, o: Offer, y: number, look: { fill?: string; stroke?: string; ink?: string; dash?: boolean } = {}): void {
-  pen.rect(`${key}:bg`, {
-    x: RESULT.x, y, width: RESULT.w, height: ROW.h, rx: 5, fill: look.fill ?? COLOR.surface2, stroke: look.stroke ?? "none", "stroke-width": 2,
-    ...(look.dash ? { "stroke-dasharray": "6 4" } : {}),
-  });
-  const ink = look.ink ?? COLOR.ink;
-  const strike: Record<string, string> = o.deleted ? { "text-decoration": "line-through" } : {};
-  pen.text(`${key}:id`, { x: RESULT.x + 8, y: y + 20, ...MONO, fill: o.deleted ? COLOR.faint : COLOR.muted, ...strike }, String(o.id));
-  pen.text(`${key}:t`, { x: RESULT.x + 70, y: y + 20, ...SANS, fill: o.deleted ? COLOR.faint : ink, ...strike }, o.hotel);
-  pen.text(`${key}:p`, { x: RESULT.x + RESULT.w - 10, y: y + 20, ...SANS, "text-anchor": "end", fill: o.deleted ? COLOR.faint : ink, ...strike }, `${rub(o.price)} ₽`);
+type Look = { fill?: string; stroke?: string; ink?: string; dash?: boolean; tie?: boolean };
+
+/**
+ * Строка с полями id, отель, цена — одна группа `row:id` и в таблице, и в результате: при смене кадра она переезжает
+ * на новое место (таблица → порядок запроса, позиции съехали). Внутри — локальные координаты, y = 0 — верх строки.
+ */
+function drawRow(pen: Pen, w: World, o: Offer, i: number, look: Look, attrs: Record<string, string | number>, extra: (key: string) => void = () => {}): void {
+  const key = `row:${o.id}`;
+  pen.group(key, 0, rowY(i), () => {
+    // Эффект изменения — на внутренней группе: у неё ключ на кадр, а у строки ключ один, чтобы она переезжала.
+    const fresh = (o.moved && o.was === null && happened(w, "insert")) || (o.was !== null && happened(w, "update")) || (o.deleted && happened(w, "delete"));
+    const [k, fx] = once(`${key}:in`, w.frame, fresh ? (o.deleted ? null : o.was !== null ? "fx-flash" : "fx-rise") : null);
+    pen.group(k, 0, 0, () => {
+      pen.rect(`${k}:bg`, {
+        x: RESULT.x, y: 0, width: RESULT.w, height: ROW.h, rx: 5, fill: look.fill ?? COLOR.surface2, stroke: look.stroke ?? "none", "stroke-width": 2,
+        ...(look.dash ? { "stroke-dasharray": "6 4" } : {}),
+      });
+      const ink = o.deleted ? COLOR.faint : look.ink ?? COLOR.ink;
+      pen.text(`${k}:id`, { x: RESULT.x + 8, y: 20, ...MONO, fill: o.deleted ? COLOR.faint : COLOR.muted }, String(o.id));
+      pen.text(`${k}:t`, { x: RESULT.x + 70, y: 20, ...SANS, fill: ink }, o.hotel);
+      pen.text(`${k}:p`, { x: RESULT.x + RESULT.w - 10, y: 20, ...SANS, "text-anchor": "end", fill: ink }, `${rub(o.price)} ₽`);
+      // Удалённая — зачёркнута линией: на кадре DELETE она прорисовывается.
+      if (o.deleted) pen.line(`${k}:strike`, { x1: RESULT.x + 6, y1: ROW.h / 2, x2: RESULT.x + RESULT.w - 6, y2: ROW.h / 2, stroke: COLOR.warn, "stroke-width": 2.5, ...(fresh ? DRAW : {}) });
+      // Ничья по цене — пунктир под ценой (амбер занят изменениями таблицы).
+      if (look.tie) pen.line(`${k}:tie`, { x1: RESULT.x + RESULT.w - 84, y1: ROW.h - 3, x2: RESULT.x + RESULT.w - 10, y2: ROW.h - 3, stroke: COLOR.ink, "stroke-width": 2, "stroke-dasharray": "3 3" });
+    }, fx);
+    if (w.spot.includes(o.id)) pen.rect(`${key}:spot`, { x: RESULT.x - 5, y: -4, width: RESULT.w + 10, height: ROW.h + 8, rx: 8, fill: "none", stroke: COLOR.ink, "stroke-width": 2.5, class: "fx-pop d2" });
+    extra(key);
+  }, attrs);
 }
 
 /** Таблица `offers` как лежит: по id, новые — в конец, удалённые зачёркнуты на месте, у сменивших цену — прежняя. Показана, пока запрос не выполнился. */
 function drawTable(pen: Pen, w: World): void {
-  pen.group("table", 0, 0, () => {
-    pen.text("table:t", { x: RESULT.x, y: TITLE_Y, ...SANS, "font-weight": 700, fill: COLOR.muted }, "таблица offers, как лежит");
-    w.offers.forEach((o, i) => {
-      const changed = o.moved || o.deleted;
-      const fresh = (o.moved && happened(w, "insert")) || (o.was !== null && happened(w, "update")) || (o.deleted && happened(w, "delete"));
-      const [k, fx] = once(`table:${o.id}`, w.frame, fresh ? "fx-pop" : null);
-      pen.group(k, 0, 0, () => drawRow(pen, k, o, rowY(i), { stroke: changed ? COLOR.warn : undefined }), fx);
-      const note = o.deleted ? "удалена" : o.was !== null ? `было ${rub(o.was)} ₽` : o.moved ? "новая строка" : null;
-      if (note) pen.text(`${k}:new`, { x: SIDE_X, y: rowY(i) + 20, ...SANS, "font-weight": 700, fill: COLOR.warn }, note);
+  pen.text("table:t", { x: RESULT.x, y: TITLE_Y, ...SANS, "font-weight": 700, fill: COLOR.muted, class: "fx-fade", ...fade(w, "db") }, "таблица offers, как лежит");
+  w.offers.forEach((o, i) => {
+    const note = o.deleted ? "удалена" : o.was !== null ? `было ${rub(o.was)} ₽` : o.moved ? "новая строка" : null;
+    drawRow(pen, w, o, i, { stroke: o.moved || o.deleted ? COLOR.warn : undefined }, fade(w, "db"), (key) => {
+      if (note) pen.text(`${key}:new`, { x: SIDE_X, y: 20, ...SANS, "font-weight": 700, fill: COLOR.warn, class: "fx-slide d2" }, note);
     });
-  }, fade(w, "db"));
+  });
+}
+
+/** Скобка справа от строк a…b: «отсчитал» / «взял» — одной формой, разным цветом; подпись — в поле справа. */
+function bracket(pen: Pen, key: string, a: number, b: number, color: string, label: string, attrs: Record<string, string | number>): void {
+  const x = RESULT.x + RESULT.w + 12;
+  const [top, bottom] = [rowY(a) + 2, rowY(b) + ROW.h - 2];
+  pen.group(key, 0, 0, () => {
+    pen.path(`${key}:b`, { d: `M ${x} ${top} h 8 V ${bottom} h -8`, stroke: color, "stroke-width": 2.5, "stroke-linejoin": "round", ...DRAW });
+    pen.text(`${key}:t`, { x: SIDE_X, y: (top + bottom) / 2 + 7, ...SANS, "font-weight": 700, fill: color, class: "fx-fade d2" }, label);
+  }, attrs);
 }
 
 /**
  * Результат запроса `ORDER BY price, id` — только в кадре, где запрос выполнился. Ярко — страница, которую он отдал (в рамке),
- * остальное приглушено; отсчитанные OFFSET — номером, закладка — флажком у значения, пропущенная — «Я здесь!».
+ * остальное приглушено; отсчитанные OFFSET — номером и скобкой, закладка — флажком у значения, пропущенная — «Я здесь!»,
+ * изменённая строка — амбер-пунктиром.
  */
 function drawResult(pen: Pen, w: World): void {
   const rows = listing(w);
   const page = new Set(w.guest.pages.at(-1));
   const gone = new Set(w.ghost ? lost(w) : []);
   const late = new Set(behind(w));
+  const doubled = new Set(dups(w));
   const twins = (o: Offer) => rows.filter((x) => x.price === o.price).length > 1;
-  pen.text("result:t", { x: RESULT.x, y: TITLE_Y, ...SANS, "font-weight": 700, fill: COLOR.muted }, "результат запроса, не сама таблица");
+  pen.text("result:t", { x: RESULT.x, y: TITLE_Y, ...SANS, "font-weight": 700, fill: COLOR.muted, class: "fx-fade" }, "результат запроса, не сама таблица");
   rows.forEach((o, i) => {
-    const y = rowY(i);
     const ghost = gone.has(o.id);
-    const twin = twins(o);
-    pen.group(`r:${o.id}`, 0, 0, () => {
-      drawRow(pen, `r:${o.id}`, o, y, {
-        fill: ghost ? "none" : undefined, dash: ghost, ink: ghost ? COLOR.error : twin && lit(w, "twins") && w.focus ? COLOR.warn : undefined,
-        stroke: ghost || dups(w).includes(o.id) ? COLOR.error : late.has(o.id) ? COLOR.warn : undefined,
-      });
-    }, { opacity: page.has(o.id) || ghost || late.has(o.id) ? 1 : DIM });
-    const counted = w.counted.indexOf(o.id);
-    if (counted >= 0) pen.text(`r:${o.id}:n`, { x: RESULT.x - 8, y: y + 20, ...MONO, "text-anchor": "end", "font-weight": 700, fill: COLOR.warn }, String(counted + 1));
-    if (ghost) pen.text(`ghost:${o.id}`, { x: w.mark ? GHOST_X : SIDE_X, y: y + 20, ...SANS, "font-weight": 700, fill: COLOR.error, class: "fx-pop", ...fade(w, "ghost") }, "Я здесь!");
-    if (late.has(o.id)) pen.text(`behind:${o.id}`, { x: SIDE_X, y: y + 20, ...SANS, fill: COLOR.warn, ...fade(w, "behind") }, "позади закладки");
+    const look: Look = {
+      fill: ghost ? "none" : undefined, dash: ghost || (o.moved && !doubled.has(o.id) && !late.has(o.id)), ink: ghost ? COLOR.error : undefined,
+      stroke: ghost || doubled.has(o.id) ? COLOR.error : late.has(o.id) || o.moved ? COLOR.warn : undefined,
+      tie: twins(o) && lit(w, "twins") && !!w.focus,
+    };
+    drawRow(pen, w, o, i, look, { opacity: page.has(o.id) || ghost || late.has(o.id) ? 1 : DIM }, (key) => {
+      const counted = w.counted.indexOf(o.id);
+      if (counted >= 0) pen.text(`${key}:n`, { x: RESULT.x - 8, y: 20, ...MONO, "text-anchor": "end", "font-weight": 700, fill: COLOR.warn }, String(counted + 1));
+      if (ghost) pen.text(`${key}:ghost`, { x: w.mark ? GHOST_X : SIDE_X, y: 20, ...SANS, "font-weight": 700, fill: COLOR.error, class: "fx-pop d3", ...fade(w, "ghost") }, "Я здесь!");
+      if (late.has(o.id)) pen.text(`${key}:behind`, { x: SIDE_X, y: 20, ...SANS, fill: COLOR.warn, ...fade(w, "behind") }, "позади закладки");
+    });
   });
 
-  // Окно страницы: рамка вокруг того, что отдал запрос; у OFFSET — сколько отсчитал.
+  // Окно страницы: рамка вокруг того, что отдал запрос (появляется после переезда строк); у OFFSET — скобки «отсчитал / взял».
   const at = rows.map((o, i) => (page.has(o.id) ? i : -1)).filter((i) => i >= 0);
   if (at.length) {
     const [a, b] = [at[0], at.at(-1)!];
-    pen.rect("page", { x: RESULT.x - 4, y: rowY(a) - 3, width: RESULT.w + 8, height: rowY(b) - rowY(a) + ROW.h + 6, rx: 8, fill: "none", stroke: COLOR.ok, "stroke-width": 2.5, ...fade(w, "pages", "db") });
-    if (w.guest.pages.length > 1 && !w.mark) pen.text("page:t", { x: SIDE_X, y: rowY((a + b) / 2) + 20, ...SANS, fill: COLOR.ok, ...fade(w, "pages", "db") }, `взял ${at.length}`);
+    const attrs = fade(w, "pages", "db");
+    pen.rect("page", { x: RESULT.x - 4, y: rowY(a) - 3, width: RESULT.w + 8, height: rowY(b) - rowY(a) + ROW.h + 6, rx: 8, fill: "none", stroke: COLOR.ok, "stroke-width": 2.5, ...attrs });
+    if (w.counted.length) bracket(pen, "take", a, b, COLOR.ok, `взял ${at.length}`, attrs);
   }
   if (w.counted.length) {
-    const mid = (w.counted.length - 1) / 2;
-    pen.text("count:t", { x: SIDE_X, y: rowY(mid) + 20, ...SANS, "font-weight": 700, fill: COLOR.warn, ...fade(w, "pages", "db") }, `отсчитал ${w.counted.length}`);
+    const idx = w.counted.map((id) => rows.findIndex((o) => o.id === id));
+    bracket(pen, "skip", Math.min(...idx), Math.max(...idx), COLOR.warn, `отсчитал ${w.counted.length}`, fade(w, "pages", "db"));
   }
   if (w.mark) {
     const i = rows.findIndex((o) => o.price === w.mark!.price && o.id === w.mark!.id);
     if (i >= 0) {
-      const y = rowY(i) + ROW.h / 2;
-      const label = w.mode === "pair" ? `${rub(w.mark.price)} | ${w.mark.id}` : rub(w.mark.price);
-      pen.group("mark", 0, 0, () => {
-        pen.line("mark:pole", { x1: RESULT.x + RESULT.w + 4, y1: y, x2: SIDE_X, y2: y, stroke: COLOR.ok, "stroke-width": 3 });
-        pill(pen, "mark:t", label, { x: SIDE_X, y: y - 16, fill: COLOR.doneBg, color: COLOR.ok, stroke: COLOR.ok, mono: true });
-      }, fade(w, "mark"));
+      const label: TextContent = w.mode === "pair"
+        ? [{ text: rub(w.mark.price) }, { text: ` | ${w.mark.id}`, attrs: { "fill-opacity": 0.75 } }]
+        : rub(w.mark.price);
+      bookmark(pen, "mark", { x: RESULT.x + RESULT.w + 12, y: rowY(i) + ROW.h / 2, label, fresh: happened(w, "mark"), attrs: fade(w, "mark") });
     }
   }
 }
@@ -223,6 +257,10 @@ function drawBookings(pen: Pen, w: World): void {
   const e = w.export!;
   pen.group("bookings", 0, 0, () => {
     pen.rect("bookings:box", { x: TABLE_X, y: SHELF.y, width: SHELF.w, height: SHELF.h, rx: 6, fill: COLOR.surface2, stroke: COLOR.line, "stroke-width": 2 });
+    [0.09, 0.31, 0.38, 0.57, 0.71, 0.93].forEach((f, i) => {
+      const y = SHELF.y + f * SHELF.h;
+      pen.line(`bookings:r${i}`, { x1: TABLE_X + 8 + (i % 3) * 4, y1: y, x2: TABLE_X + SHELF.w - 8 - (i % 2) * 10, y2: y, stroke: COLOR.line, "stroke-width": 1.5 });
+    });
     pen.text("bookings:t", { x: TABLE_X - 20, y: SHELF.y + SHELF.h + 34, ...MONO, fill: COLOR.muted }, "bookings");
   }, fade(w, "db"));
   pen.group("index", 0, 0, () => {
@@ -239,7 +277,10 @@ function drawBookings(pen: Pen, w: World): void {
     }
     const y = SHELF.y + Math.min((e.page - 1) * BATCH * (SHELF.h / BOOKINGS), SHELF.h - 8);
     pen.rect("index:sent", { x: INDEX_X - 6, y, width: SHELF.w + 12, height: 8, rx: 3, fill: COLOR.ok, class: "fx-pop" });
-    pill(pen, "mark:t", "09:12:05 | 880412", { x: INDEX_X + SHELF.w + 14, y: y - 12, fill: COLOR.doneBg, color: COLOR.ok, stroke: COLOR.ok, mono: true, attrs: fade(w, "mark") });
+    bookmark(pen, "mark", {
+      x: INDEX_X + SHELF.w + 10, y: y + 4, label: [{ text: "09:12:05" }, { text: " | 880412", attrs: { "fill-opacity": 0.75 } }],
+      fresh: e.page === 1, attrs: fade(w, "mark"),
+    });
   }, fade(w, "index", "db"));
   pen.group("count", 0, 0, () => {
     pen.text("count:page", { x: COUNT_X, y: DB.y + 90, ...SANS, fill: COLOR.muted }, `страница ${rub(e.page)}`);
@@ -278,7 +319,23 @@ function drawPasses(pen: Pen, w: World): void {
       pen.line(`${k}:sent`, { x1: x, y1: SHELF.y + thrown, x2: x, y2: SHELF.y + thrown + sent, stroke: COLOR.ok, "stroke-width": PASS.w, ...draw });
     }, { opacity: last ? 1 : DIM });
   });
+  if (deep) pen.text("pass:all", { x: INDEX_X + SHELF.w + 14, y: SHELF.y + 60, ...SANS, fill: COLOR.muted, class: "fx-pop d2" }, "весь индекс");
   if (deep) pen.text("pass:more", { x: PASS.x + 2 * PASS.step + PASS.w / 2, y: SHELF.y + 40, ...SANS, "text-anchor": "middle", fill: COLOR.muted }, "…");
+}
+
+/**
+ * Часть SQL, о которой говорит голос, — из состояния кадра: первая страница — порядок; OFFSET — отсчитать (амбер, как
+ * скобка) и взять (зелёный, как рамка); закладка — условие. INSERT/DELETE/UPDATE — целиком.
+ */
+function sqlMark(w: World): SqlMark[] {
+  const q = w.sql.join("\n");
+  if (!q.startsWith("SELECT")) return [];
+  const where = /WHERE .*/.exec(q);
+  if (where) return [{ text: where[0].replace(/^WHERE /, "") }];
+  const offset = / OFFSET \d+/.exec(q);
+  if (w.export) return offset ? [{ text: offset[0].trim(), color: COLOR.warn }] : [];
+  if (offset) return [{ text: offset[0].trim(), color: COLOR.warn }, { text: /LIMIT \d+/.exec(q)![0], color: COLOR.ok }];
+  return [{ text: "ORDER BY price, id" }];
 }
 
 /** Цена закладки: на страницу 812 не прыгнуть. */
@@ -319,14 +376,15 @@ export function render(pen: Pen, w: World): void {
   pen.group("db", 0, 0, () => panel(pen, "db:box", { ...DB, stroke: COLOR.postgres }));
   if (w.teaser) {
     // Тизер: только беда гостя, механику покажем потом.
+    pen.text("teaser:q", { x: DB.x + DB.w / 2, y: DB.y + DB.h / 2 + 40, ...SANS, "font-size": 120, "font-weight": 700, "text-anchor": "middle", fill: COLOR.line }, "?");
   } else if (w.matrix) drawMatrix(pen);
   else if (w.export) drawBookings(pen, w);
   else if (w.order === "query") drawResult(pen, w);
   else drawTable(pen, w);
   if (!w.matrix && !w.teaser) drawArrows(pen, w);
   if (w.jump) drawJump(pen, w);
-  if (w.sql.length) sqlWindow(pen, "sql", podSql(w.sql), { x: SQL_X, bottom: BOTTOM, attrs: fade(w, "sql") });
-  if (w.board) board(pen, w.board, { ...BOARD, lampX: LAMP_X, attrs: fade(w, "board") });
+  if (w.sql.length) sqlWindow(pen, "sql", podSql(w.sql), { x: SQL_X, bottom: BOTTOM, mark: sqlMark(w), attrs: fade(w, "sql") });
+  if (w.board) board(pen, w.board, { ...BOARD, lampX: LAMP_X, lampR: 13, dimIdle: true, attrs: fade(w, "board") });
   pen.layer("top", () => {
     if (w.guest.say && !w.export) bubble(pen, "guest:say", w.guest.say, { x: GUEST.x + 36, y: GUEST.y + 8, tail: "down", attrs: { class: "fx-pop", ...fade(w, "guest") } });
     if (w.plate) {

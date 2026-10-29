@@ -104,6 +104,8 @@ export interface World {
   matrix: boolean;
   /** Тизер: в кадре только гость, Postgres пока пуст. */
   teaser: boolean;
+  /** Строки, на которые голос просит посмотреть (обвести); живёт один кадр. */
+  spot: number[];
   sql: string[];
   db: string | null;
   plate: string | null;
@@ -128,6 +130,7 @@ export function world(): World {
     guest: { pages: [], prices: [], pressed: false, say: null },
     served: [],
     ghost: false,
+    spot: [],
     export: null,
     jump: false,
     matrix: false,
