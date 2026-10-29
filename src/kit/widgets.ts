@@ -114,12 +114,12 @@ export function lamp(pen: Pen, key: string, x: number, y: number, state: LampSta
 }
 
 /**
- * Табло главы: критерии в шапке, строка на попытку с двумя лампами. Ярко — только попытка, о которой речь;
+ * Табло главы: критерии в шапке, строка на попытку с лампой на критерий (обычно две). Ярко — только попытка, о которой речь;
  * прошлые — фоном (learning-designer: 4×2 ламп не читают). `lampX` — центры ламп от левого края табло.
  */
 export function board(
   pen: Pen, b: Board,
-  o: { x: number; y: number; w: number; rowH: number; lampX: [number, number]; attrs?: Attrs },
+  o: { x: number; y: number; w: number; rowH: number; lampX: number[]; attrs?: Attrs },
 ): void {
   const font = { "font-family": FONT.sans, "font-size": SIZE.body };
   const lampX = o.lampX.map((dx) => o.x + dx);
