@@ -18,6 +18,7 @@ describe("highlightSql", () => {
     expect(color(q, "now")).toBe(SQL_COLOR.fn);
     expect(color(q, "tasks")).toBe(SQL_COLOR.plain);
     expect(color(q, "-- ждёт COMMIT")).toBe(SQL_COLOR.note);
+    expect(color("SELECT * FROM offers LIMIT 5 OFFSET 5", "OFFSET")).toBe(SQL_COLOR.keyword);
   });
 
   it("цифры, сросшиеся с буквами (код ошибки 40P01), не теряются", () => {
