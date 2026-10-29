@@ -124,8 +124,8 @@ describe("сценарий не врёт", () => {
     expect(JSON.stringify(buildSteps())).toBe(JSON.stringify(steps));
   });
 
-  it("арка v2: 29 кадров + итог из двух", () => {
-    expect(steps.length).toBe(31);
+  it("арка v2: 31 кадр + итог из двух", () => {
+    expect(steps.length).toBe(33);
     expect(frames(ACT.summary)).toHaveLength(2);
   });
 
