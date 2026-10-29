@@ -118,6 +118,16 @@
 `bookingsOf`, `supplierLamp(retryWave)` (удары повторов по секундам против ёмкости `SUP_CAP`), `fastLamp`,
 `resumeLamp`; тест сверяет с ними каждый кадр оценки.
 
+## Эпизод 12 (`scenes/12-saga/`, `?scene=12`)
+Та же раскладка файлов. `sim.ts` — бронь в трёх местах: наша строка `booking` (pending → confirmed/cancelled), платёжный шлюз
+(`Gateway.statement` — строки выписки гостя «списание»/«возврат», `frozen` — холд, `keys` — узнанные повторы, `failNext` — сколько
+следующих снятий холда споткнутся) и поставщик (`Supplier.free`, `bookings` с ключом, `slow` — бронь создана, ответ не дошёл).
+Шаги саги — функции `insert/charge/hold/capture/release/refund/book/settle`; `Pod.memory` — сага в горутине (пропадает при `crash`),
+`World.saga` — журнал в Postgres (`logged` пишет «начат» → вызов → «сделан», `dieAfterCall` — смерть между вызовом и записью),
+`claim/skip` — подхват застрявшей саги. `World.keyed` — ключ идемпотентности во всех вызовах. Лампы — `evenLamp`/`noRefundLamp`
+(кейс 1), `doneLamp`/`onceLamp` (кейс 2); тест сверяет с ними кадры оценки. Внизу кадра — `chain` (обратные шаги или pivot) и
+`fork` (временный сбой / окончательный отказ / повтор исправления).
+
 ## Порядок сборки (main.ts)
 1. Импорт сцен → реестр (`Record<string, Scene<any>>`: у каждой сцены свой тип состояния). 2. Выбор сцены (`?scene=01`). 3. `loadTakes(scene.id)` — справочник дублей.
 4. `mountPlayer(host, scene, takes)` или `mountRecorder(…)` при `?record` — сами создают SVG и `SvgPen`.
