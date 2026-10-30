@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { COVER_S, OUTRO_S, frameAt, frameSeconds, timeline } from "./timeline";
+import { VOICE_DELAY_MS } from "./narrator";
+import { COVER_S, OUTRO_S, frameAt, frameSeconds, lastPhrase, phraseAt, timeline } from "./timeline";
 
 const step = (narration?: string, hold?: number) => ({ act: "a", caption: "", state: null, hold, narration });
 
@@ -30,5 +31,18 @@ describe("шкала записи", () => {
     expect(frameAt(starts, 4.49)).toBe(0);
     expect(frameAt(starts, 4.5)).toBe(1);
     expect(frameAt(starts, 100)).toBe(2);
+  });
+
+  it("кусок закадра в момент кадра: до голоса — первый, дальше — по темпу, растянутому на дубль", () => {
+    // Два предложения по 5 слов: при 2.5 слова/с — по 2 с; дубль 8 с растягивает каждое до 4 с.
+    const two = step("Раз два три четыре пять. Шесть семь восемь девять десять.");
+    expect(lastPhrase(two)).toBe(1);
+    expect(lastPhrase(step())).toBe(0);
+    expect(phraseAt(two, 100)).toEqual({ phrase: 0, since: 100 });
+    expect(phraseAt(two, VOICE_DELAY_MS + 1999).phrase).toBe(0);
+    expect(phraseAt(two, VOICE_DELAY_MS + 2100)).toEqual({ phrase: 1, since: 100 });
+    expect(phraseAt(two, VOICE_DELAY_MS + 3000, () => 8000).phrase).toBe(0);
+    expect(phraseAt(two, VOICE_DELAY_MS + 4100, () => 8000)).toEqual({ phrase: 1, since: 100 });
+    expect(phraseAt(step(), 5000)).toEqual({ phrase: 0, since: 5000 });
   });
 });
