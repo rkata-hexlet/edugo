@@ -303,7 +303,7 @@ function drawSplit(pen: Pen, w: World): void {
 function drawContract(pen: Pen): void {
   pen.group("contract", 0, 0, () => {
     panel(pen, "contract:box", { x: BOTTOM.x, y: BOTTOM.y, w: BOTTOM.w, h: 100, shadow: false });
-    pen.text("contract:t", { x: BOTTOM.x + 20, y: BOTTOM.y + 40, ...SANS, "font-size": SIZE.accent, "font-weight": 700, fill: COLOR.ink }, "три деплоя: научить читать → включить запись → убрать старое");
+    pen.text("contract:t", { x: BOTTOM.x + 20, y: BOTTOM.y + 40, ...SANS, "font-size": SIZE.accent, "font-weight": 700, fill: COLOR.ink }, "два деплоя и флаг: научить читать → включить запись → убрать старое");
     pen.text("contract:s", { x: BOTTOM.x + 20, y: BOTTOM.y + 78, ...SANS, fill: COLOR.warn }, "откатить бинарник ниже «читает at_hotel» — нельзя");
   });
 }
