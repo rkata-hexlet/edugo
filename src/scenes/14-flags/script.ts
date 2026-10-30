@@ -308,7 +308,6 @@ export function buildSteps(): Step<World>[] {
     focus: ["guest", "A", "B", "db", "steps"],
     voice: "Что же делать? Решение о флаге принимается один раз, в начале брони, и записывается вместе с ней. Дальше все шаги и все поды идут по тому, что выбрано в самом начале, и не спрашивают флаг заново. Тогда переключение посреди брони гостю уже не страшно.",
   });
-  const drift = structuredClone(d.w);
 
   // КЕЙС 3 — выключатель не откатывает данные: брони at_hotel → старая ветка их отменяет → expand → флаг включает запись → contract.
   d.scene(ACT.case3);
@@ -408,7 +407,9 @@ export function buildSteps(): Step<World>[] {
   d.scene(ACT.summary, structuredClone(survived), { replay: true });
   d.shot("", (w) => {
     quiet(w);
-    w.visits = structuredClone(drift.visits);
+    for (const p of Object.values(w.pods)) p.log = null;
+    w.pods.C.copy = { ...w.console, percent: 10 };
+    w.visits = [{ by: "A", fresh: true }, { by: "C", fresh: false }];
   }, {
     focus: ["service", "A", "B", "C", "steps"],
     voice: "Правила флагов лежат копией в памяти пода и обновляются в фоне, поэтому сервис флагов может лечь, а оплата этого не заметит. Платим мы тем, что в момент переключения поды расходятся до полуминуты, и поэтому решение принимается один раз и едет вместе с бронью.",

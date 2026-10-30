@@ -39,7 +39,6 @@ export interface Pod {
   copy: Rules | null;
   /** Под научился читать `at_hotel` (expand). */
   reads: boolean;
-  /** Упал при запуске — до проверки флага не дошёл. */
   /** Ждёт ответа сервиса флагов. */
   hanging: boolean;
   /** Последняя строка лога. */
