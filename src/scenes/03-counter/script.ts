@@ -217,7 +217,6 @@ export function buildSteps(): Step<World>[] {
   });
   d.shot("", (w) => {
     shard(w);
-    w.events.push({ kind: "shard" });
     w.sql.push(SQL.schema);
   }, {
     sql: true, focus: ["row", "table", "sql"],
@@ -235,6 +234,7 @@ export function buildSteps(): Step<World>[] {
   });
   d.shot("", (w) => {
     flood(w, 10_000);
+    w.events.push({ kind: "calm" }); // очередь к строке ушла — облегчение, хотя акт начат без затора
     sql(w, "C", SQL.sum);
   }, {
     sql: true, verdict: ["green", null], focus: ["C", "row", "sql", "board"],

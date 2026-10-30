@@ -61,7 +61,7 @@ export interface Actor {
 export type Focus = ActorId | "table" | "row" | "queue" | "pool" | "jar" | "adds" | "flushes" | "browsers" | "board" | "clock" | "sql" | "load" | "lock" | "lag";
 
 export type EventKind =
-  | "flood" | "click" | "add" | "commit" | "wait" | "overload" | "calm" | "async" | "restart" | "spill" | "shard"
+  | "flood" | "click" | "add" | "commit" | "wait" | "overload" | "calm" | "async" | "restart" | "spill" | "shard" | "split"
   | "flush" | "sigterm" | "deploy" | "spawn" | "lost" | "dup" | "skip" | "kill" | "clock"
   | "card" | "page" | "rewind" | "verdict";
 
@@ -174,14 +174,17 @@ export function contended(w: World): boolean {
   return writes(w).row > ROW_CAP;
 }
 
-/** Нахлынул поток: при очереди к строке пулы подов забиты ждущими, клики других ссылок ждут соединения. */
+/** Нахлынул поток: при очереди к строке пулы подов забиты ждущими, клики других ссылок ждут соединения.
+ *  Облегчение (`calm`) — только если до этого был затор: без него облегчать нечего. */
 export function flood(w: World, flow: number): void {
   w.flow = flow;
   w.events.push({ kind: "flood" });
+  const was = w.starved > 0 || ACTORS.some((id) => w.actors[id].waiting > 0);
   const jam = contended(w) && (w.mode === "direct" || w.mode === "async");
   for (const id of ACTORS) w.actors[id].waiting = jam && w.actors[id].present ? POOL : 0;
   w.starved = jam && w.mode === "direct" ? 6 : 0;
-  w.events.push({ kind: jam ? "overload" : "calm" });
+  if (jam) w.events.push({ kind: "overload" });
+  else if (was) w.events.push({ kind: "calm" });
 }
 
 /** Сколько ещё не дошло до базы, но живо в подах (фон и копилки). Копилка пода, который ждёт ответа на сброс, уже
@@ -266,6 +269,7 @@ export function shard(w: World): void {
   const base = Math.floor(row.clicks / SHARDS);
   row.shards = Array.from({ length: SHARDS }, (_, i) => base + (i < row.clicks % SHARDS ? 1 : 0));
   w.mode = "sharded";
+  w.events.push({ kind: "split" });
 }
 
 /** Номер батча пода: «A · 17». */

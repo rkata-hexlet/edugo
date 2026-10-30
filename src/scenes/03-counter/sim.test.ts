@@ -25,6 +25,17 @@ describe("модель счётчика", () => {
     expect(w.starved).toBeGreaterThan(0);
   });
 
+  it("поток без затора облегчения не играет: «calm» — только когда до этого был затор", () => {
+    const w = batching();
+    flood(w, 10_000);
+    expect(w.events.map((e) => e.kind)).not.toContain("calm");
+    const jammed = world();
+    flood(jammed, 10_000);
+    jammed.mode = "sharded";
+    flood(jammed, 10_000);
+    expect(jammed.events.map((e) => e.kind)).toContain("calm");
+  });
+
   it("go func(): ответ сразу, прибавки в фоне; рестарт теряет их — клик был, а в счёте его нет", () => {
     const w = world();
     w.mode = "async";
