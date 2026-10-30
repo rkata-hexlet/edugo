@@ -305,7 +305,7 @@ function drawPodArrows(pen: Pen, w: World): void {
     if (add || fl || a.waiting > 0) {
       const waits = a.waiting > 0 && !fl;
       pen.line(`arr:${id}:row`, {
-        x1: from.x, y1: from.y - 8, x2: waits && !w.rows[0].shards ? QUEUE.x + QUEUE.n * QUEUE.step + 24 : to.x, y2: waits && !w.rows[0].shards ? rowMid(0) + 4 + fan(id, 9) : to.y,
+        x1: from.x, y1: from.y - 8, x2: waits && !w.rows[0].shards ? QUEUE.x + QUEUE.n * QUEUE.step - 10 + fan(id, -24) : to.x, y2: waits && !w.rows[0].shards ? rowMid(0) + 18 : to.y,
         stroke: waits ? COLOR.warn : color, "stroke-width": fl ? 5 : 3, "stroke-linecap": "round", marker: "arrow", opacity: op,
         ...(waits ? { "stroke-dasharray": "7 6", class: "fx-march" } : DRAW),
       });
@@ -406,7 +406,7 @@ export function render(pen: Pen, w: World): void {
   drawTable(pen, w);
   drawAdds(pen, w);
   drawFlushes(pen, w);
-  if (w.board) board(pen, w.board, { ...BOARD, lampX: [255, 398], attrs: fade(w, "board") });
+  if (w.board) board(pen, w.board, { ...BOARD, lampX: [241, 384], attrs: fade(w, "board") });
   if (w.sql.length) sqlWindow(pen, "sql", podSql(w.sql), { x: TABLE.x, bottom: BOTTOM, attrs: fade(w, "sql") }); // SQL — только где его надо прочитать
   drawPodArrows(pen, w);
   drawBrowsers(pen, w);
