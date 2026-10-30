@@ -11,12 +11,16 @@ import {
 
 // Эпизод 14. Слева гость (телефон с кнопками оплаты и шагами брони; очередь гостей с бакетами; стойка отеля),
 // дальше рамка с подами (копия правил, лог, «читает at_hotel»), в центре пульт дежурного и сервис флагов, справа Postgres с
-// бронями. Низ — строка кода, полоса бакетов, ящики старой ветки, «код / данные», contract.
+// бронями. Низ — строка кода, полоса бакетов, ящики старой ветки, «код / данные», contract; когда низ свободен, панели
+// вытягиваются до него (высота — транзишеном `.tw`, поды разъезжаются).
 
 const GUEST = { x: 30, y: 104, w: 250, h: 370 };
 const SERVICE = { x: 296, y: 104, w: 324, h: 370 };
 const POD_X = 312;
 const POD_Y: Record<PodId, number> = { A: 124, B: 236, C: 348 };
+const POD_Y_TALL: Record<PodId, number> = { A: 140, B: 300, C: 460 };
+/** Прибавка высоты панелей, когда низ кадра ничем не занят. */
+const TALL = 130;
 const CARD_X = 392;
 const CONSOLE = { x: 636, y: 104, w: 288, h: 170 };
 const TWIN = { x: 636, y: 296, w: 288, h: 170 };
@@ -34,6 +38,12 @@ const SANS = { "font-family": FONT.sans, "font-size": SIZE.body };
 const MONO = { "font-family": FONT.mono, "font-size": SIZE.body };
 const DRAW = { pathLength: 1, class: "fx-draw" };
 
+/** Низ кадра занят: код, ящики, «код / данные», contract или полоса бакетов. */
+const bottomUsed = (w: World) => w.code.length > 0 || w.boxes || w.split || w.contracted || w.queue;
+const grow = (w: World) => (bottomUsed(w) ? 0 : TALL);
+/** Панель столбца: при свободном низе — до него; высота меняется транзишеном. */
+const tall = <B extends { h: number }>(w: World, box: B) => ({ ...box, h: box.h + grow(w), attrs: { class: "tw" } });
+const podY = (w: World, id: PodId) => (bottomUsed(w) ? POD_Y : POD_Y_TALL)[id];
 const lit = (w: World, ...ids: Focus[]) => !w.focus || ids.some((id) => w.focus!.includes(id));
 const fade = (w: World, ...ids: Focus[]) => ({ opacity: lit(w, ...ids) ? 1 : DIM });
 const happened = (w: World, kind: SimEvent["kind"], by?: PodId) => w.events.some((e) => e.kind === kind && (!by || e.by === by));
@@ -51,7 +61,7 @@ function drawHeader(pen: Pen, w: World): void {
 function drawGuest(pen: Pen, w: World): void {
   const last = w.visits.at(-1);
   pen.group("guest", 0, 0, () => {
-    panel(pen, "guest:box", { ...GUEST });
+    panel(pen, "guest:box", tall(w, GUEST));
     person(pen, "guest:p", { x: GUEST.x + 14, y: GUEST.y + 14, shirt: SHIRTS[0], mood: w.guestSay ? "sad" : "idle" });
     if ((w.chapter ?? 0) >= 2 || w.replay) pen.text("guest:tag", { x: GUEST.x + 70, y: GUEST.y + 44, ...MONO, fill: COLOR.muted }, `бакет ${tag(bucket(GUESTS[0]))}`);
     const phone = { x: GUEST.x + 14, y: GUEST.y + 76, w: GUEST.w - 28, h: 150 };
@@ -135,7 +145,7 @@ function drawLane(pen: Pen, w: World): void {
 /** Стойка отеля: гость с чемоданом, на экране бронь отменена. */
 function drawDesk(pen: Pen, w: World): void {
   pen.group("desk", 0, 0, () => {
-    panel(pen, "guest:box", { ...GUEST });
+    panel(pen, "guest:box", tall(w, GUEST));
     person(pen, "desk:p", { x: GUEST.x + 30, y: GUEST.y + 150, shirt: SHIRTS[0], mood: "sad" });
     pen.rect("desk:case", { x: GUEST.x + 84, y: GUEST.y + 170, width: 40, height: 50, rx: 6, fill: COLOR.surface2, stroke: COLOR.muted, "stroke-width": 2 });
     pen.rect("desk:case:h", { x: GUEST.x + 96, y: GUEST.y + 160, width: 16, height: 12, rx: 4, fill: "none", stroke: COLOR.muted, "stroke-width": 2 });
@@ -150,8 +160,10 @@ function drawDesk(pen: Pen, w: World): void {
 /** Поды в рамке: копия правил (отставшая — пунктиром), до обновления, лог, метка «читает at_hotel». */
 function drawService(pen: Pen, w: World): void {
   pen.group("svc", 0, 0, () => {
-    panel(pen, "svc:box", { ...SERVICE, fill: "none", stroke: COLOR.line, shadow: false });
-    pen.text("svc:title", { x: SERVICE.x + 16, y: SERVICE.y + SERVICE.h - 14, ...SANS, "font-weight": 700, fill: COLOR.muted }, "Сервис бронирования");
+    panel(pen, "svc:box", { ...tall(w, SERVICE), fill: "none", stroke: COLOR.line, shadow: false });
+    pen.group("svc:foot", 0, grow(w), () => {
+      pen.text("svc:title", { x: SERVICE.x + 16, y: SERVICE.y + SERVICE.h - 14, ...SANS, "font-weight": 700, fill: COLOR.muted }, "Сервис бронирования");
+    });
   }, fade(w, ...PODS));
   const lagging = PODS.some((id) => stale(w, w.pods[id]));
   PODS.forEach((id, i) => {
@@ -159,7 +171,7 @@ function drawService(pen: Pen, w: World): void {
     const { color, tint } = ACTOR[id];
     const busy = w.visits.some((v) => v.by === id);
     const mood = p.hanging ? "wait" : busy ? "work" : "idle";
-    pen.group(`pod:${id}`, POD_X, POD_Y[id], () => {
+    pen.group(`pod:${id}`, POD_X, podY(w, id), () => {
       bob(pen, `pod:${id}:bob`, { x: 0, y: 0, color, tint, letter: id, mood, look: { x: 0, y: 0 } });
       if (w.mode === "local" && !w.contracted) {
         const fresh = happened(w, "copy", id) || happened(w, "refresh", id);
@@ -182,18 +194,18 @@ function drawService(pen: Pen, w: World): void {
 /** Стрелки: гость → под на каждом шаге; под → сервис флагов, когда спрашивает; пульт → поды — только в кадре, где пульт переключили. */
 function drawArrows(pen: Pen, w: World): void {
   for (const id of new Set(w.visits.map((v) => v.by))) {
-    pen.line(`arr:${id}:in`, { x1: GUEST.x + GUEST.w, y1: GUEST.y + 140, x2: POD_X - 4, y2: POD_Y[id] + 32, stroke: COLOR.browser, "stroke-width": 2.5, marker: "arrow", ...fade(w, id, "guest"), ...DRAW });
+    pen.line(`arr:${id}:in`, { x1: GUEST.x + GUEST.w, y1: GUEST.y + 140, x2: POD_X - 4, y2: podY(w, id) + 32, stroke: COLOR.browser, "stroke-width": 2.5, marker: "arrow", ...fade(w, id, "guest"), ...DRAW });
   }
   if (w.mode === "remote") {
     for (const id of PODS) {
       if (!happened(w, "ask", id)) continue;
-      pen.line(`arr:${id}:ask`, { x1: POD_X + 68, y1: POD_Y[id] + 32, x2: BOOTH.x - 6, y2: BOOTH.y + 60, stroke: ACTOR[id].color, "stroke-width": 2.5, marker: "arrow", ...fade(w, id), ...DRAW });
+      pen.line(`arr:${id}:ask`, { x1: POD_X + 68, y1: podY(w, id) + 32, x2: BOOTH.x - 6, y2: BOOTH.y + 60, stroke: ACTOR[id].color, "stroke-width": 2.5, marker: "arrow", ...fade(w, id), ...DRAW });
     }
   }
   const pinged = happened(w, "toggle") || happened(w, "slide");
   if (w.mode === "direct" && pinged && !w.contracted && lit(w, "console") && !w.desk && !w.queue) {
     PODS.forEach((id, i) => {
-      pen.line(`arr:${id}:flag`, { x1: CONSOLE.x - 4, y1: CONSOLE.y + 63, x2: w.pods[id].reads ? CARD_X + 200 : POD_X + 72, y2: POD_Y[id] + 30, stroke: w.console.on ? COLOR.ok : COLOR.muted, "stroke-width": 2, "stroke-dasharray": "6 5", marker: "arrow", pathLength: 1, class: `fx-draw d${i + 1}` });
+      pen.line(`arr:${id}:flag`, { x1: CONSOLE.x - 4, y1: CONSOLE.y + 63, x2: w.pods[id].reads ? CARD_X + 200 : POD_X + 72, y2: podY(w, id) + 30, stroke: w.console.on ? COLOR.ok : COLOR.muted, "stroke-width": 2, "stroke-dasharray": "6 5", marker: "arrow", pathLength: 1, class: `fx-draw d${i + 1}` });
     });
   }
 }
@@ -233,12 +245,12 @@ function drawConsole(pen: Pen, w: World, box = CONSOLE, flag = FLAG): void {
   if (flag === FLAG && duty && !w.twin && !w.dutySay && w.service === null && !w.contracted) mug(pen, "duty:mug", { x: box.x + box.w - 70, y: box.y + box.h + 16, steam: !w.desk });
 }
 
-/** Сервис флагов: работает или не отвечает; в итоге лежит «не страшно» — без красного. */
+/** Сервис флагов: работает или не отвечает; лежит «не страшно» без красного — в итоге и в кадре дефолта (там герой — `false` в коде). */
 function drawBooth(pen: Pen, w: World): void {
   const down = w.service === "down";
-  const alarm = down && !w.replay;
+  const alarm = down && !w.replay && !w.codeMark;
   pen.group("booth", 0, 0, () => {
-    panel(pen, "booth:box", { ...BOOTH, stroke: alarm ? COLOR.error : COLOR.line, fill: down ? COLOR.bg2 : COLOR.surface });
+    panel(pen, "booth:box", { ...tall(w, BOOTH), stroke: alarm ? COLOR.error : COLOR.line, fill: down ? COLOR.bg2 : COLOR.surface });
     pen.text("booth:t", { x: BOOTH.x + 16, y: BOOTH.y + 34, ...SANS, "font-weight": 700, fill: down ? COLOR.faint : COLOR.ink }, "Сервис флагов");
     pen.text("booth:s", { x: BOOTH.x + 16, y: BOOTH.y + 72, ...SANS, fill: alarm ? COLOR.error : down ? COLOR.faint : COLOR.ok, ...(happened(w, "down") ? { class: "fx-fade" } : {}) }, down ? "не отвечает" : "отвечает");
     if (down) icon(pen, "booth:x", "cross", BOOTH.x + BOOTH.w - 48, BOOTH.y + 16, 32, alarm ? COLOR.error : COLOR.faint);
@@ -249,7 +261,7 @@ function drawBooth(pen: Pen, w: World): void {
 /** Postgres: брони; отменённые зачёркнуты, у брони с записанным решением — метка. */
 function drawDb(pen: Pen, w: World): void {
   pen.group("db", 0, 0, () => {
-    panel(pen, "db:box", { ...DB, stroke: COLOR.postgres });
+    panel(pen, "db:box", { ...tall(w, DB), stroke: COLOR.postgres });
     pen.text("db:t", { x: DB.x + 16, y: DB.y + 32, ...MONO, "font-weight": 700, fill: COLOR.muted }, "bookings");
     w.bookings.forEach((b, i) => {
       const y = DB.y + 50 + i * 40;
@@ -266,7 +278,7 @@ function drawDb(pen: Pen, w: World): void {
       });
     });
     if (w.bookings.some((b) => b.cancelled)) {
-      pen.text("db:cancelled", { x: DB.x + 16, y: DB.y + DB.h - 18, ...SANS, "font-weight": 700, fill: COLOR.error }, "отменены");
+      pen.text("db:cancelled", { x: DB.x + 16, y: DB.y + DB.h + grow(w) - 18, ...SANS, "font-weight": 700, fill: COLOR.error }, "отменены");
     }
   }, fade(w, "db"));
 }
@@ -274,18 +286,20 @@ function drawDb(pen: Pen, w: World): void {
 /** Строка кода пода; подсвеченный кусок (дефолт) — рамкой. */
 function drawCode(pen: Pen, w: World): void {
   const h = 40 + w.code.length * 30;
+  // В кадре дефолта строка — второй по важности акцент: крупнее.
+  const font = { ...MONO, "font-size": w.codeMark ? SIZE.accent : SIZE.say };
   pen.group("code", 0, 0, () => {
     panel(pen, "code:box", { x: BOTTOM.x, y: BOTTOM.y, w: BOTTOM.w, h, fill: "#11172e", stroke: COLOR.muted });
     highlightGo(w.code).forEach((spans, i) => {
       const y = BOTTOM.y + 36 + i * 30;
-      pen.text(`code:l${i}`, { x: BOTTOM.x + 20, y, ...MONO, "font-size": SIZE.say }, spans);
+      pen.text(`code:l${i}`, { x: BOTTOM.x + 20, y, ...font }, spans);
       if (!w.codeMark) return;
       const at = spans.findIndex((s) => s.text === w.codeMark);
       if (at < 0) return;
       const before = spans.slice(0, at).map((s: Span) => s.text).join("");
-      const x = BOTTOM.x + 20 + pen.measure(before, { ...MONO, "font-size": SIZE.say }).width;
-      const wd = pen.measure(w.codeMark, { ...MONO, "font-size": SIZE.say }).width;
-      pen.rect(`code:mark${i}`, { x: x - 4, y: y - 22, width: wd + 8, height: 30, rx: 5, fill: "none", stroke: COLOR.warn, "stroke-width": 2.5, class: "fx-pop d2", ...fade(w, "default") });
+      const x = BOTTOM.x + 20 + pen.measure(before, font).width;
+      const wd = pen.measure(w.codeMark, font).width;
+      pen.rect(`code:mark${i}`, { x: x - 4, y: y - 24, width: wd + 8, height: 32, rx: 5, fill: "none", stroke: COLOR.warn, "stroke-width": 2.5, class: "fx-pop d2", ...fade(w, "default") });
     });
   }, fade(w, "code", "default"));
 }
@@ -296,7 +310,7 @@ const BOXES: { box: Box; label: string }[] = [
   { box: "cancel", label: "иначе: отменить" },
 ];
 
-/** Ящики старой ветки: куда ляжет каждая бронь; после expand `at_hotel` — в своём ящике «знаю». */
+/** Ящики старой ветки: куда ляжет каждая бронь (талон, цвет — как строка в таблице); после expand `at_hotel` — в своём ящике «знаю». */
 function drawBoxes(pen: Pen, w: World): void {
   const reads = w.pods.A.reads;
   const list = reads ? [...BOXES.slice(0, 2), { box: "known" as Box, label: "при заселении: ок" }] : BOXES;
@@ -312,9 +326,16 @@ function drawBoxes(pen: Pen, w: World): void {
         pen.text(`boxes:${box}:t`, { x: x + 14, y: BOTTOM.y + 30, ...SANS, "font-weight": 700, fill: bad ? COLOR.error : box === "known" ? COLOR.ok : COLOR.ink }, label);
       }, attrs);
       w.bookings.filter((b) => boxOf(b, reads) === box).forEach((b, j) => {
-        const y = BOTTOM.y + 54 + j * 30;
-        if (y > BOTTOM.y + BOTTOM.h - 26) return;
-        pen.text(`boxes:${b.id}`, { x: x + 14, y: y + 18, ...MONO, fill: b.cancelled ? COLOR.error : COLOR.muted, ...(b.cancelled && cancelling ? { class: "fx-hop" } : {}) }, `${b.id} ${PAYMENT[b.payment]}`);
+        const y = BOTTOM.y + 46 + j * 32;
+        if (y + 28 > BOTTOM.y + BOTTOM.h - 8) return;
+        const k = `boxes:${b.id}`;
+        pen.group(k, x + 14, y, () => {
+          pen.group(`${k}:hop`, 0, 0, () => {
+            pen.rect(`${k}:bg`, { x: 0, y: 0, width: bw - 28, height: 28, rx: 6, fill: b.payment === "at_hotel" ? COLOR.draftBg : COLOR.surface2, stroke: b.cancelled ? COLOR.error : "none", "stroke-width": 2 });
+            pen.text(`${k}:t`, { x: 10, y: 20, ...MONO, fill: b.cancelled ? COLOR.error : b.payment === "at_hotel" ? COLOR.warn : COLOR.muted }, `${b.id} ${PAYMENT[b.payment]}`);
+            if (b.cancelled) pen.line(`${k}:strike`, { x1: 4, y1: 14, x2: bw - 32, y2: 14, stroke: COLOR.error, "stroke-width": 2.5, ...(cancelling ? DRAW : {}) });
+          }, b.cancelled && cancelling ? { class: "fx-hop" } : undefined);
+        });
       });
     });
   }, fade(w, "boxes"));
@@ -405,7 +426,7 @@ export function render(pen: Pen, w: World): void {
   }
   pen.layer("top", () => {
     if (w.guestSay) bubble(pen, "guest:say", w.guestSay, { x: GUEST.x + 36, y: GUEST.y + 8, tail: "down", attrs: { class: "fx-pop", ...fade(w, "guest", "queue") } });
-    if (w.podSay) bubble(pen, "pod:say", w.podSay.text, { x: POD_X + 32, y: POD_Y[w.podSay.by] - 8, tail: "down", attrs: { class: "fx-pop" } });
+    if (w.podSay) bubble(pen, "pod:say", w.podSay.text, { x: POD_X + 32, y: podY(w, w.podSay.by) - 8, tail: "down", attrs: { class: "fx-pop" } });
     if (w.dutySay) bubble(pen, "duty:say", w.dutySay, { x: CONSOLE.x + 4, y: CONSOLE.y + CONSOLE.h + 4, tail: "up", attrs: { class: "fx-pop" } });
     if (w.plate) {
       const [head, ...rest] = w.plate.split("\n");
