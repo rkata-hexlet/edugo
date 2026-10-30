@@ -1,5 +1,5 @@
 import type { Step } from "./contract";
-import { POST_VOICE_MS, VOICE_DELAY_MS, estimateMs } from "./narrator";
+import { POST_VOICE_MS, VOICE_DELAY_MS, estimateMs, phraseStarts, phrases } from "./narrator";
 
 /** Сколько показывать кадр при автопроигрывании: заданное сценой или база + время на чтение подписи. */
 export const frameMs = (step: Step<unknown>, speed: number): number =>
@@ -51,4 +51,18 @@ export function frameAt(starts: number[], t: number): number {
     else hi = mid - 1;
   }
   return lo;
+}
+
+/** Последний кусок закадра — полная картинка кадра без голоса (перемотка, ссылка, снимок). */
+export const lastPhrase = (step: Step<unknown>): number => Math.max(0, phrases(step.narration ?? "").length - 1);
+
+/**
+ * Кусок закадра, который диктор читает через `ms` от начала кадра (как в плеере: голос — после паузы), и
+ * сколько мс прошло с его начала; до голоса — кусок 0 и время от начала кадра.
+ */
+export function phraseAt(step: Step<unknown>, ms: number, voiceMs: VoiceMs = estimateMs): { phrase: number; since: number } {
+  if (!step.narration) return { phrase: 0, since: ms };
+  const starts = phraseStarts(step.narration, voiceMs(step.narration));
+  const phrase = frameAt(starts, ms - VOICE_DELAY_MS);
+  return { phrase, since: phrase === 0 ? ms : ms - VOICE_DELAY_MS - starts[phrase] };
 }
