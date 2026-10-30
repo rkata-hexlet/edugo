@@ -4,7 +4,7 @@ import { Narrator, POST_VOICE_MS, VOICE_DELAY_MS, estimateMs, phrases } from "./
 import { SvgPen } from "./pen";
 import { Shell } from "./shell";
 import type { Takes } from "./takes";
-import { COVER_S, frameAt, frameMs, timeline } from "./timeline";
+import { COVER_S, frameAt, frameMs, lastPhrase, phraseAt, timeline } from "./timeline";
 import "@fontsource/inter/400.css";
 import "@fontsource/inter/600.css";
 import "@fontsource/inter/700.css";
@@ -64,6 +64,9 @@ export function mountPlayer<S>(host: HTMLElement, scene: Scene<S>, takes: Takes)
   const params = new URLSearchParams(location.search);
   const render = params.has("render");
   let index = render ? -1 : linked ? fromHash - 1 : 0;
+  let shown = 0; // кусок закадра, по которому нарисован кадр
+  // Снимок куска закадра (`npm run shots -- --phrases`): `?capture&phrase=K`, K с нуля.
+  const pinned = params.has("phrase") ? Number(params.get("phrase")) : undefined;
   // Обложка — для зрителя с чистой ссылкой (и в записи — как заставка); ссылка на кадр и dev открывают кадр сразу.
   shell.cover(!linked && !params.has("dev"));
   let timer: number | undefined;
@@ -79,7 +82,7 @@ export function mountPlayer<S>(host: HTMLElement, scene: Scene<S>, takes: Takes)
     clearTimeout(voiceDelay);
     const cues = phrases(text);
     voiceDelay = setTimeout(
-      () => mine === turn && narrator.speak(text, speed(), onEnd, (i) => shell.subtitle(cues[i])),
+      () => mine === turn && narrator.speak(text, speed(), onEnd, (i) => (shell.subtitle(cues[i]), i !== shown && draw(i))),
       VOICE_DELAY_MS / speed(),
     );
   };
@@ -95,7 +98,13 @@ export function mountPlayer<S>(host: HTMLElement, scene: Scene<S>, takes: Takes)
     );
   };
 
-  const show = (i: number) => {
+  /** Перерисовать текущий кадр по куску закадра: тот же ключ — тот же узел, новое появляется, лишнее гаснет. */
+  const draw = (phrase: number, instant = false) => {
+    shown = phrase;
+    pen.frame(() => scene.render(pen, steps[index].state, phrase), { instant });
+  };
+  /** Показать кадр i: шаг вперёд — с начала (голос поведёт по кускам), иначе — полная картинка. */
+  const show = (i: number, phrase?: number) => {
     const prev = index;
     index = Math.max(0, Math.min(last, i));
     const step = steps[index];
@@ -106,9 +115,10 @@ export function mountPlayer<S>(host: HTMLElement, scene: Scene<S>, takes: Takes)
     sound.babbleGain = step.narration ? NARRATION_DUCK : 1;
     if (index === prev + 1) scene.sound?.(sound, step.state);
     // Уход элементов гаснет только при шаге вперёд; перемотка и прыжок показывают кадр сразу.
-    pen.frame(() => scene.render(pen, step.state), { instant: index !== prev + 1 });
+    draw(phrase ?? pinned ?? (index === prev + 1 ? 0 : lastPhrase(step)), index !== prev + 1);
     shell.frame(index, step.caption, phrases(step.narration ?? "")[0] ?? "");
     history.replaceState(null, "", `${location.search}#step=${index + 1}`);
+    host.dataset.phrases = String(lastPhrase(step) + 1); // для снимков по кускам (scripts/shots.mjs)
   };
   const stop = () => {
     clearTimeout(timer);
@@ -140,6 +150,7 @@ export function mountPlayer<S>(host: HTMLElement, scene: Scene<S>, takes: Takes)
     if (timer !== undefined) return stop();
     shell.cover(false);
     if (shell.outroShown || index >= last) show(0);
+    else if (shown !== 0) draw(0, true); // голос начнёт кадр сначала
     sound.cut();
     scene.sound?.(sound, steps[index].state);
     shell.setPlaying(true);
@@ -185,7 +196,7 @@ export function mountPlayer<S>(host: HTMLElement, scene: Scene<S>, takes: Takes)
     else if (key === "d" || key === "в") shell.dev();
   });
 
-  if (render) return void fontsLoaded().then(() => exposeRender(scene, steps, takes, shell, show));
+  if (render) return void fontsLoaded().then(() => exposeRender(scene, steps, takes, shell, show, draw));
   void fontsLoaded().then(() => show(index));
 }
 
@@ -206,10 +217,13 @@ function exposeRender<S>(
   steps: ReturnType<Scene<S>["steps"]>,
   takes: Takes,
   shell: Shell,
-  show: (i: number) => void,
+  show: (i: number, phrase: number) => void,
+  draw: (phrase: number) => void,
 ): void {
-  const tl = timeline(steps, (text) => takes.duration(text) ?? estimateMs(text), scene.meta.outro);
+  const voiceMs = (text: string) => takes.duration(text) ?? estimateMs(text);
+  const tl = timeline(steps, voiceMs, scene.meta.outro);
   let current = -1;
+  let phrase = 0;
   let fresh: Animation[] = [];
   let wav: Uint8Array = new Uint8Array();
   const api: RenderApi = {
@@ -220,20 +234,22 @@ function exposeRender<S>(
       shell.outro(t >= tl.end);
       if (t < COVER_S || t >= tl.end) return;
       const i = frameAt(tl.starts, t);
-      if (i !== current) {
-        // Эффекты прошлого кадра — в конечное состояние; у цикла («ждёт») конца нет — его просто снимаем.
+      const at = phraseAt(steps[i], (t - tl.starts[i]) * 1000, voiceMs); // в ролике субтитров нет (решение пользователя 21.10)
+      if (i !== current || at.phrase !== phrase) {
+        // Эффекты прошлого кадра или куска — в конечное состояние; у цикла («ждёт») конца нет — его просто снимаем.
         for (const a of fresh) {
           if (a.effect?.getComputedTiming().endTime === Infinity) a.cancel();
           else a.finish();
         }
-        show(i);
+        if (i !== current) show(i, at.phrase);
+        else draw(at.phrase);
         getComputedStyle(document.body).opacity; // применить стили: новые анимации и переходы созданы
         fresh = document.getAnimations().filter((a) => a.playState !== "finished");
         for (const a of fresh) a.pause();
         current = i;
+        phrase = at.phrase;
       }
-      const ms = (t - tl.starts[i]) * 1000; // в ролике субтитров нет (решение пользователя 21.10)
-      for (const a of fresh) a.currentTime = ms;
+      for (const a of fresh) a.currentTime = at.since;
     },
     async renderAudio() {
       const rate = 44100;
