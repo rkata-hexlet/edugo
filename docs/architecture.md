@@ -43,6 +43,8 @@
   `scripts/voice.mjs` (ffmpeg: щелчки, тишина, шум, громкость) и раздаёт `/voice/…` с диска.
 - `scripts/ep.mjs` (`npm run ep -- NN`) — эпизод в своей папке без переключения веток: ветка `episode/NN-*` →
   git worktree `../<репо>-NN`, dev-сервер на порту `51NN`, суфлёр `?scene=NN&record`.
+- `scripts/mic.mjs` (`npm run mic`) — телефон Android как микрофон: scrcpy по USB → виртуальный микрофон
+  PhoneMic в PulseAudio по умолчанию; Ctrl+C возвращает прежний (docs/recording.md, раздел 2а).
 - Расход токенов (`npm run tokens`) — скрипт вне репо `~/.claude/scripts/tokens.py`: сводка каждой сессии Claude
   Code в архив `~/.claude/token-stats/`, отчёт по неделям, веткам, агентам. Архив пополняет хук `SessionEnd`
   (`.claude/settings.json`), там же строка статуса с размером контекста (`~/.claude/scripts/statusline.py`).
