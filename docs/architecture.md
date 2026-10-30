@@ -27,7 +27,7 @@
   `director` (режиссёр серии, см. `script.ts` ниже; типы `Board`, `Lamp`, `Verdict`), `sql`
   (`highlightSql` → `Span[]`), `characters` (под-«боб» с эмоцией `Mood` и взглядом `Look`,
   слон-Postgres, лицо Почты), `widgets.meter` (полоса нагрузки с потолком), `props` (предметы мира: кружка, покупатель, кнопка, замок `lock`, бирка замка `lockTag`, корона лидера `crown`), `code` (окно кода на Go `codeWindow`, подсветка `highlightGo`; SQL внутри `…` — как SQL), `motion.css` (словарь движений `fx-*`: pop, slide, rise,
-  stamp, draw, hop, shake, jolt, nod, pulse, cascade — всё в первые 450 мс кадра). Kit не знает ни
+  stamp, draw, hop, shake, jolt, nod, pulse, cascade — всё в первые 450 мс кадра; `.tw` — плавная смена размера рамки между кадрами). Kit не знает ни
   плеера, ни моделей эпизодов: эмоцию, взгляд и эффект выбирает `view.ts` по состоянию кадра и
   `World.events`. Разовый эффект — новый ключ узла (`World.frame` в ключе), свежий стол — `World.scene`.
 - `SceneMeta` (`Scene.meta`) — номер, название, подзаголовок, финальная фраза эпизода: заголовок
