@@ -192,6 +192,11 @@
 .stage .fx-cascade > g:nth-child(5) { animation-delay: 0.12s; }
 .stage .fx-cascade > g:nth-child(6) { animation-delay: 0.15s; }
 
+/* Рамка меняет размер между кадрами (панель вытягивается, заливка ползунка): плавно, как переезд группы .mv. */
+.stage .tw {
+  transition: height 0.6s ease-in-out, width 0.6s ease-in-out, y 0.6s ease-in-out;
+}
+
 /* Перемотка и прыжки по кадрам — без движения. */
 .stage.no-anim *,
 .stage.no-anim *::before {
@@ -203,6 +208,9 @@
   .stage [class*="fx-"],
   .stage .fx-cascade > g {
     animation: none !important;
+  }
+  .stage .tw {
+    transition: none;
   }
 }
 
