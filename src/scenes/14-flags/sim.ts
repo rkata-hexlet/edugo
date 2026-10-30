@@ -84,6 +84,8 @@ export interface World {
   queue: boolean;
   /** Второй пульт (флаг поиска) — кадр про соль. */
   twin: boolean;
+  /** Формула бакета на первом госте и порог на ползунке — кадр, где бакет вводят. */
+  formula: boolean;
   /** Шаги брони гостя в кадре. */
   visits: Visit[];
   guestSay: string | null;
@@ -130,6 +132,7 @@ export function world(): World {
     pods: { A: pod("A"), B: pod("B"), C: pod("C") },
     queue: false,
     twin: false,
+    formula: false,
     visits: [],
     guestSay: null,
     desk: false,

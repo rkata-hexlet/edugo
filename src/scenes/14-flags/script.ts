@@ -79,6 +79,7 @@ class Shots extends Director<Focus, World> {
     w.podSay = null;
     w.code = [];
     w.codeMark = null;
+    w.formula = false;
     for (const p of Object.values(w.pods)) p.hanging = false;
   }
 
@@ -137,7 +138,9 @@ export function buildSteps(): Step<World>[] {
   });
 
   d.scene(ACT.intro, hotel());
-  d.shot("", () => {}, {
+  d.shot("", (w) => {
+    w.stamp = "⟲ До флага";
+  }, {
     focus: ["guest", "A", "B", "C", "db"],
     voice: "Отмотаем назад, к тому дню, когда новую оплату только дописали. Вот как тогда был устроен наш сервис. Слева гость, который выбирает номер и бронирует его, посередине поды, которые принимают запросы, а справа Postgres, где лежат все брони.",
   });
@@ -192,6 +195,7 @@ export function buildSteps(): Step<World>[] {
   d.scene(ACT.bucket, hotel("direct", on(10)));
   d.shot("", (w) => {
     w.queue = true;
+    w.formula = true;
   }, {
     focus: ["queue", "console"],
     voice: "Зайдём с другой стороны. Берём название флага и ай-ди гостя, считаем от них хэш, и остаток от деления на сто даёт гостю его бакет, число от нуля до девяноста девяти. У кого бакет меньше десяти, тот получает новую оплату, остальные старую.",
@@ -278,6 +282,7 @@ export function buildSteps(): Step<World>[] {
   d.scene(ACT.local, local(on(100)));
   d.term("Safe default");
   d.shot("", (w) => {
+    w.stamp = "⟲ Через полгода";
     serviceDown(w);
     boot(w, "C");
     visit(w, "C");

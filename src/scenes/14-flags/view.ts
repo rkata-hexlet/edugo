@@ -76,17 +76,19 @@ function drawGuest(pen: Pen, w: World): void {
       }
     }
     if (w.visits.length > 1 || lit(w, "steps") && w.visits.length) drawSteps(pen, w);
+    if (w.mode === "coin" && w.visits.length) drawCoin(pen);
   }, fade(w, "guest", "steps"));
 }
 
-/** Шаги брони: какой под, какая оплата; разные соседние — трещина. */
+/** Шаги брони: какой под, какая оплата; разные соседние — трещина. В кадре монетки «шага» ещё нет — обновления страницы. */
 function drawSteps(pen: Pen, w: World): void {
   const y0 = GUEST.y + 254;
+  const reloads = w.mode === "coin" && !w.focus?.includes("steps");
   w.visits.forEach((v, i) => {
     const y = y0 + i * 32;
     const word = v.fresh === "hang" ? "ждёт…" : v.fresh ? "новая" : "старая";
     const color = v.fresh === "hang" ? COLOR.warn : v.fresh ? COLOR.ok : COLOR.muted;
-    pen.text(`steps:${i}`, { x: GUEST.x + 18, y, ...SANS, fill: COLOR.ink }, `шаг ${i + 1} · под ${v.by}`);
+    pen.text(`steps:${i}`, { x: GUEST.x + 18, y, ...SANS, fill: COLOR.ink }, reloads ? `обновление ${i + 1}` : `шаг ${i + 1} · под ${v.by}`);
     pen.text(`steps:${i}:v`, { x: GUEST.x + GUEST.w - 18, y, ...SANS, "text-anchor": "end", "font-weight": 700, fill: color }, word);
     const prev = w.visits[i - 1];
     if (prev && prev.fresh !== v.fresh && v.fresh !== "hang" && prev.fresh !== "hang") {
@@ -136,6 +138,14 @@ function drawLane(pen: Pen, w: World): void {
         if (!w.twin) pen.text(`${k}:b${i}`, { x: at(b), y: y + 50, ...MONO, "text-anchor": "middle", fill: inside ? COLOR.ok : COLOR.muted }, tag(b));
       });
     });
+    if (w.formula) {
+      const g = GUESTS[0];
+      const spans: Span[] = [
+        { text: `${FLAG} + ${g} → хэш → % 100 → ` },
+        { text: tag(bucket(g)), attrs: { fill: COLOR.ok, "font-weight": 700 } },
+      ];
+      pen.text("lane:formula", { x: BOTTOM.x, y: 516, ...MONO, fill: COLOR.ink, class: "fx-fade d1" }, spans);
+    }
     const y = rows.at(-1)! + 50;
     pen.text("lane:0", { x: LANE.x, y, ...MONO, "text-anchor": "middle", fill: COLOR.faint }, "0");
     pen.text("lane:99", { x: LANE.x + LANE.w, y, ...MONO, "text-anchor": "end", fill: COLOR.faint }, "99");
@@ -210,6 +220,17 @@ function drawArrows(pen: Pen, w: World): void {
   }
 }
 
+/** Монетка на телефоне гостя: на каждый запрос — «новая» или «старая» заново. */
+function drawCoin(pen: Pen): void {
+  const x = GUEST.x + GUEST.w / 2;
+  const y = GUEST.y + 186;
+  pen.group("coin", x, y, () => {
+    pen.rect("coin:face", { x: -22, y: -22, width: 44, height: 44, rx: 22, fill: COLOR.warn, stroke: COLOR.bg, "stroke-width": 3 });
+    pen.rect("coin:rim", { x: -15, y: -15, width: 30, height: 30, rx: 15, fill: "none", stroke: COLOR.bg, "stroke-width": 2 });
+    icon(pen, "coin:q", "question", -11, -11, 22, COLOR.bg);
+  }, { class: "fx-pop d1" });
+}
+
 /** Пульт дежурного: рычаг вкл/выкл, число процентов (при выключенном — тире), ползунок 0…99 с ручкой. */
 function drawConsole(pen: Pen, w: World, box = CONSOLE, flag = FLAG): void {
   const k = `console:${flag}`;
@@ -233,7 +254,8 @@ function drawConsole(pen: Pen, w: World, box = CONSOLE, flag = FLAG): void {
     pen.group(`${k}:knob`, cut, y, () => {
       pen.rect(`${k}:knob:c`, { x: -11, y: -11, width: 22, height: 22, rx: 11, fill: r.on ? COLOR.ink : COLOR.muted, stroke: COLOR.bg, "stroke-width": 3 });
     });
-    pen.text(`${k}:0`, { x: SLIDER.x, y: y + 36, ...MONO, "text-anchor": "middle", fill: COLOR.faint }, "0");
+    if (w.formula && flag === FLAG) pen.text(`${k}:cut`, { x: SLIDER.x - 6, y: y + 36, ...MONO, "font-weight": 700, fill: COLOR.ok, class: "fx-fade d2" }, `бакет < ${percent}`);
+    else pen.text(`${k}:0`, { x: SLIDER.x, y: y + 36, ...MONO, "text-anchor": "middle", fill: COLOR.faint }, "0");
     pen.text(`${k}:99`, { x: SLIDER.x + SLIDER.w, y: y + 36, ...MONO, "text-anchor": "middle", fill: COLOR.faint }, "99");
     if (w.contracted && flag === FLAG) {
       pen.rect(`${k}:veil`, { x: box.x, y: box.y, width: box.w, height: box.h, rx: 16, fill: COLOR.bg, opacity: 0.6 });
@@ -316,10 +338,12 @@ function drawBoxes(pen: Pen, w: World): void {
   const list = reads ? [...BOXES.slice(0, 2), { box: "known" as Box, label: "при заселении: ок" }] : BOXES;
   const bw = (BOTTOM.w - 2 * 16) / 3;
   const cancelling = happened(w, "cancel");
+  // Красный — когда отмена случилась; до неё ящик ровный, чтобы цвет не опережал голос.
+  const cancelled = w.bookings.some((b) => b.cancelled);
   pen.group("boxes", 0, 0, () => {
     list.forEach(({ box, label }, i) => {
       const x = BOTTOM.x + i * (bw + 16);
-      const bad = box === "cancel";
+      const bad = box === "cancel" && cancelled;
       const attrs = bad && cancelling ? { class: "fx-shake d2" } : box === "known" && happened(w, "expand") ? { class: "fx-rise" } : undefined;
       pen.group(`boxes:${box}:g`, 0, 0, () => {
         panel(pen, `boxes:${box}`, { x, y: BOTTOM.y, w: bw, h: BOTTOM.h, fill: bad ? COLOR.alarmBg : COLOR.surface, stroke: bad ? COLOR.error : box === "known" ? COLOR.ok : COLOR.line, shadow: false });
