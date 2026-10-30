@@ -121,11 +121,12 @@ describe("сценарий не врёт", () => {
     }
   });
 
-  it("кейс 1: табло «счёт точный / база справляется» сверено с моделью", () => {
+  it("кейс 1: табло «счёт точный / держим поток» сверено с моделью", () => {
     const direct = verdict(ACT.direct);
     expect([contended(direct), lost(direct), lamps(direct)]).toEqual([true, 0, ["green", "red"]]);
     const asyncJam = verdict(ACT.async, 0);
-    expect([asyncJam.starved > 0, lost(asyncJam), lamps(asyncJam)]).toEqual([true, 0, ["green", "red"]]);
+    // go func(): браузеры не ждут (ответ сразу), ждут фоновые горутины — пул забит.
+    expect([asyncJam.starved, asyncJam.actors.A.waiting, lost(asyncJam), lamps(asyncJam)]).toEqual([0, POOL, 0, ["green", "red"]]);
     const asyncLost = verdict(ACT.async);
     expect(lost(asyncLost)).toBeGreaterThan(0);
     expect(lamps(asyncLost)).toEqual(["yellow", "red"]);
@@ -139,7 +140,7 @@ describe("сценарий не врёт", () => {
     const dep = verdict(ACT.deploy);
     expect([lost(dep) > 0, doubled(dep), lamps(dep)]).toEqual([true, 0, ["red", "green"]]);
     const gr = verdict(ACT.graceful);
-    expect([lost(gr), doubled(gr), lamps(gr)]).toEqual([0, 0, ["yellow", "green"]]);
+    expect([lost(gr), doubled(gr), lamps(gr)]).toEqual([0, 0, ["green", "green"]]);
     const re = verdict(ACT.retry);
     expect([lost(re), doubled(re) > 0, lamps(re)]).toEqual([0, true, ["green", "red"]]);
     const key = verdict(ACT.keyed, 0);

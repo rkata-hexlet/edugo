@@ -180,7 +180,7 @@ export function flood(w: World, flow: number): void {
   w.events.push({ kind: "flood" });
   const jam = contended(w) && (w.mode === "direct" || w.mode === "async");
   for (const id of ACTORS) w.actors[id].waiting = jam && w.actors[id].present ? POOL : 0;
-  w.starved = jam ? 6 : 0;
+  w.starved = jam && w.mode === "direct" ? 6 : 0;
   w.events.push({ kind: jam ? "overload" : "calm" });
 }
 

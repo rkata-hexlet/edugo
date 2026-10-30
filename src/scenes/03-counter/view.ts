@@ -12,7 +12,7 @@ import {
 } from "./sim";
 
 // Поды стоят на месте; что они делают, говорят стрелки — только из состояния кадра (Actor.acts).
-// Сетка (1280×720): шапка; слева таблица link_stats, очередь к горячей строке, нагрузка базы, журналы прибавок и
+// Сетка (1280×720): шапка; слева таблица link_stats, очередь к горячей строке, нагрузка на запись, журналы прибавок и
 // сбросов; в центре поды с пулом соединений и копилкой; справа браузеры («кликов было») и табло. Ниже SAFE_BOTTOM — пусто.
 
 const POD_Y: Record<ActorId, number> = { A: 128, B: 244, C: 360 };
@@ -78,8 +78,8 @@ function drawTable(pen: Pen, w: World): void {
   if (!about(w, "load", false) && !w.replay) return; // в итоге полоса показывает прогресс попыток
   const y = w.rows[0].shards ? SHARD_SUM_Y + 44 : LOAD.y; // под суммой разложенного счётчика
   pen.group("dbload", 0, 0, () => {
-    pen.text("dbload:t", { x: TABLE.x, y: y + 6, ...SANS, fill: COLOR.muted }, "нагрузка базы");
-    meter(pen, "dbload:m", { x: TABLE.x + 150, y: y - 6, w: 230, h: 12, load: dbLoad(w) });
+    pen.text("dbload:t", { x: TABLE.x, y: y + 6, ...SANS, fill: COLOR.muted }, "нагрузка на запись");
+    meter(pen, "dbload:m", { x: TABLE.x + 180, y: y - 6, w: 200, h: 12, load: dbLoad(w) });
   }, fade(w, "load", "table"));
 }
 
@@ -372,7 +372,7 @@ export function render(pen: Pen, w: World): void {
   drawAdds(pen, w);
   drawFlushes(pen, w);
   if (w.term) pill(pen, "term", w.term, { x: POD.x, y: 76, fill: COLOR.surface2, color: COLOR.ink, stroke: COLOR.ink, mono: true, attrs: { class: "fx-slide" } });
-  if (w.board) board(pen, w.board, { ...BOARD, lampX: [258, 416], attrs: fade(w, "board") });
+  if (w.board) board(pen, w.board, { ...BOARD, lampX: [255, 398], attrs: fade(w, "board") });
   if (w.sql.length) sqlWindow(pen, "sql", podSql(w.sql), { x: TABLE.x, bottom: BOTTOM, attrs: fade(w, "sql") }); // SQL — только где его надо прочитать
   drawPodArrows(pen, w);
   drawBrowsers(pen, w);
