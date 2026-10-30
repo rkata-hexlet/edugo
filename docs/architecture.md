@@ -10,9 +10,7 @@
 
 ## Сущности
 - `Scene<S>` (`engine/contract.ts`) — просчитанная последовательность `Step<S>` (акт, подпись,
-  состояние) + `render(pen, state, phrase)`. Плеер ничего не знает о содержимом сцены, сцена — о плеере.
-  `phrase` — кусок закадра, который читает диктор (ADR-0006): сцена может менять картинку в такт голосу; кадр
-  без голоса (перемотка, ссылка, суфлёр) рисуется по последнему куску.
+  состояние) + `render(pen, state)`. Плеер ничего не знает о содержимом сцены, сцена — о плеере.
 - `Pen` (`engine/contract.ts`, реализация `engine/pen.ts`) — узкий порт отрисовки: `rect/text/line/path/group`
   по ключам. Тот же ключ в следующем кадре — тот же SVG-узел, поэтому переезд группы (x/y и
   `Transform`: поворот, масштаб вокруг `origin`) анимируется CSS-транзишеном сам. Сцены рисуют
@@ -52,7 +50,7 @@
   `phrases` (предложения, длинные — по паузе, ≤ `MAX_PHRASE` знаков = строка субтитра); `speechParts`
   читает кусок одним русским голосом (синтез — черновик, озвучивает пользователь; решение 23.10), словарь сцены
   (`Scene.pronounce`, исключения вроде букв подов) — только для речи. `onPhrase(i)` —
-  начало куска: плеер меняет субтитр в такт голосу и перерисовывает кадр по куску; у дубля и в записи субтитр идёт по
+  начало куска: плеер меняет субтитр в такт голосу; у дубля и в записи субтитр идёт по
   `phraseStarts` (расчётный темп, растянутый на длину дубля). Страховочный таймер — если синтез не сообщит о конце; без голоса
   или в mute — выжидает расчётное время. `VOICE_DELAY_MS` — пауза перед голосом.
 - Контракт кадра: `Step.narration` (текст диктора);
@@ -65,13 +63,12 @@
   ждёт до первого кадра, не дольше `FONTS_MS`.
 - Шкала записи (`engine/timeline.ts`): `frameMs` (время кадра), `frameSeconds` (дольше из кадра и
   голоса: длина дубля или расчётный темп), `timeline` (заставка → кадры → финал не короче своей фразы),
-  `frameAt`, `phraseAt` (кусок закадра в момент кадра), `lastPhrase`. Общая для плеера и рендера.
+  `frameAt`. Общая для плеера и рендера.
 - Рендер в mp4 (`?capture&render`, `exposeRender` в `player.ts` → `window.__edugo`; `scripts/render.mjs`):
   перемотка на момент t с остановкой анимаций, звук через `WebAudioSound.offline(OfflineAudioContext)`
   + дубли диктора в той же дорожке, WAV кусками, склейка ffmpeg (ADR-0003, ADR-0004, docs/recording.md).
 - Снимки кадров (`scripts/shots.mjs`, `npm run shots`): `?capture#step=N` в headless Chrome с dev-сервера, анимации
-  доведены до конца, PNG 1280×720 в `out/shots/NN/`, `--sheet` — контактные листы 2×3 (`montage`), `--phrases` — кадр по кускам
-  закадра (`NN-K.png`, плеер — `?capture&phrase=K`).
+  доведены до конца, PNG 1280×720 в `out/shots/NN/`, `--sheet` — контактные листы 2×3 (`montage`).
 - Оболочка (`engine/shell.ts`, стили `engine/player.css`) — только DOM: кадр 16:9 по окну,
   подпись кадра оверлеем внутри кадра (попадает в запись), субтитры диктора по CC (только в плеере), панель (play, прогресс
   сегментами по актам, скорость, CC, звук, полный экран), которая прячется при проигрывании без
@@ -142,7 +139,7 @@ scripts/shots.mjs ──(puppeteer, ?capture#step=N; montage)──► dev-се�
 vite.config.ts (dev) ──► scripts/voice.mjs ──► ffmpeg
 scripts/ep.mjs ──(git worktree)──► vite в папке эпизода
 main.ts ──► engine/takes ──► engine/contract (тип Step)
-   ├──► engine/recorder ──► engine/pen, engine/takes, engine/timeline
+   ├──► engine/recorder ──► engine/pen, engine/takes
    └──► engine/player ──► engine/pen ──► engine/contract
                     ├──────► engine/timeline ──► engine/narrator ──► engine/takes
                     └──────► engine/shell ──► engine/contract

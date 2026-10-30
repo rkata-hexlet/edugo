@@ -1,6 +1,5 @@
 import type { Scene } from "./contract";
 import { SvgPen } from "./pen";
-import { lastPhrase } from "./timeline";
 import { type Line, type Takes, firstLine, script, takeKey } from "./takes";
 import "@fontsource/inter/400.css";
 import "@fontsource/inter/600.css";
@@ -46,8 +45,7 @@ export function mountRecorder<S>(host: HTMLElement, scene: Scene<S>, takes: Take
   const show = () => {
     const line = lines[at];
     const outro = line.index === steps.length;
-    const step = steps[Math.min(line.index, steps.length - 1)];
-    pen.frame(() => scene.render(pen, step.state, lastPhrase(step)), { instant: true });
+    pen.frame(() => scene.render(pen, steps[Math.min(line.index, steps.length - 1)].state), { instant: true });
     $(".outro-card").textContent = outro ? scene.meta.outro : "";
     $(".frame").classList.toggle("outro", outro);
     $(".text").textContent = line.text;
