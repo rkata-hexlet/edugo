@@ -6,7 +6,7 @@
 (в его ветке), сценарии — `docs/episodes/`.
 
 Команды: `npm run dev` (просмотр), `npm test` (vitest), `npm run check` (tsc), `npm run build`,
-`npm run render` (mp4), `npm run shots -- --scene NN --sheet [--phrases]` (снимки и контактные листы кадров, по кускам закадра; нужен `npm run dev`), `npm run narration` (закадр для правки), `npm run tokens` (расход токенов).
+`npm run render` (mp4), `npm run shots -- --scene NN --sheet` (снимки и контактные листы кадров, нужен `npm run dev`), `npm run narration` (закадр для правки), `npm run tokens` (расход токенов).
 Удалённый репозиторий: `origin` = `git@github.com:rkata-hexlet/edugo.git`, ветка `master`.
 
 ## Для кого и как выпускаем
