@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ACT, buildSteps } from "./script";
 import {
-  ACTORS, POOL, click, contended, dbLoad, doubled, drain, flood, flush, kill, lost, pending, restart, shard, sigterm, spawn, stop, world,
+  ACTORS, POOL, click, contended, wait, dbLoad, doubled, drain, flood, flush, kill, lost, pending, restart, shard, sigterm, spawn, stop, world,
   type World,
 } from "./sim";
 import { flashbackState } from "./view";
@@ -23,6 +23,18 @@ describe("модель счётчика", () => {
     expect(contended(w)).toBe(true);
     expect(ACTORS.every((id) => w.actors[id].waiting === POOL)).toBe(true);
     expect(w.starved).toBeGreaterThan(0);
+  });
+
+  it("норма: B ждёт, пока прибавляет A; прибавил сам — уже не ждёт (кадр нормы на два)", () => {
+    const w = world();
+    wait(w, "B");
+    click(w, "A");
+    expect(w.actors.B.waiting).toBe(1);
+    click(w, "B");
+    expect(w.actors.B.waiting).toBe(0);
+    flood(w, 10_000);
+    click(w, "B");
+    expect(w.actors.B.waiting).toBe(POOL); // затор кликом не снимается
   });
 
   it("поток без затора облегчения не играет: «calm» — только когда до этого был затор", () => {

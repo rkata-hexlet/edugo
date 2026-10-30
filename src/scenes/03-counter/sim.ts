@@ -233,6 +233,7 @@ export function click(w: World, who: ActorId, n = 1, part?: number): void {
     return;
   }
   const row = hotRow(w);
+  if (a.waiting === 1) a.waiting = 0; // кадр нормы: сосед закоммитил, замок наш — больше не ждём
   if (row.shards) {
     const shard = part ?? (w.clicked + 15 + 5 * ACTORS.indexOf(who)) % SHARDS; // «случайная» часть — детерминированно
     row.shards[shard] += n;

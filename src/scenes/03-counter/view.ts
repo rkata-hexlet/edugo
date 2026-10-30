@@ -8,7 +8,7 @@ import { buildSteps as episode01 } from "../01-skip-locked/script";
 import { render as render01 } from "../01-skip-locked/view";
 import type { World as World01 } from "../01-skip-locked/sim";
 import {
-  ACTORS, HOT, OTHERS, POOL, SHARDS, contended, dbLoad, doubled, lost, pending,
+  ACTORS, DB_CAP, HOT, OTHERS, POOL, SHARDS, contended, dbLoad, doubled, lost, pending, writes,
   type Act, type Actor, type ActorId, type Focus, type SimEvent, type World,
 } from "./sim";
 
@@ -354,13 +354,15 @@ function drawBrowserArrows(pen: Pen, w: World): void {
   for (const id of ACTORS) {
     const a = w.actors[id];
     const replied = did(a, "reply");
-    if (!a.present || !replied && w.flow <= 0) continue;
+    // После SIGTERM под новых кликов не принимает: поток к нему не бежит.
+    const live = w.flow > 0 && !a.draining;
+    if (!a.present || !replied && !live) continue;
     const near = podRight(pen, w, a) + 14;
     const far = BROWSERS.x - 6;
     const op = fade(w, "browsers", id);
     pen.line(`arr:req:${id}`, {
       x1: far, y1: podMid(id) - 10, x2: near, y2: podMid(id) - 10, stroke: COLOR.browser, "stroke-linecap": "round", marker: "arrow", ...op,
-      ...(w.flow > 0 ? { "stroke-width": 4, "stroke-dasharray": "10 3", class: "fx-march" } : { "stroke-width": 2, ...DRAW }),
+      ...(live ? { "stroke-width": 4, "stroke-dasharray": "10 3", class: "fx-march" } : { "stroke-width": 2, ...DRAW }),
     });
     if (replied) pen.line(`arr:br:${id}`, {
       x1: near, y1: podMid(id) + 10, x2: far, y2: podMid(id) + 10,
@@ -372,7 +374,7 @@ function drawBrowserArrows(pen: Pen, w: World): void {
 function drawHeader(pen: Pen, w: World): void {
   const [dbKey, dbFx] = once("db:nod", w.frame, happened(w, "commit") || happened(w, "skip") ? "fx-nod" : null);
   pen.group(dbKey, 0, 0, () => elephant(pen, "db:face", { x: TABLE.x + 4, y: 8, talking: !!w.db, scale: 1.08 }), dbFx);
-  panel(pen, "db", { x: DB.x, y: 20, w: DB.w, h: 46, rx: 14, fill: COLOR.surface2, stroke: dbLoad(w) > 1 ? COLOR.error : COLOR.postgres });
+  panel(pen, "db", { x: DB.x, y: 20, w: DB.w, h: 46, rx: 14, fill: COLOR.surface2, stroke: writes(w).total / DB_CAP > 1 ? COLOR.error : COLOR.postgres });
   pen.text("db:name", { x: DB.x + 16, y: 50, ...SANS, "font-size": SIZE.say, "font-weight": 700, fill: COLOR.ink }, "Postgres");
   const chapterW = w.chapter ? pill(pen, "chapter", `КЕЙС ${w.chapter}`, { x: PILL_X, y: 22, fill: "none", color: COLOR.ink, stroke: COLOR.ink }) : 0;
   // Ярлык-термин — в одну строку с кейсом: ниже он касался антенны Pod A.
