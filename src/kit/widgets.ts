@@ -1,4 +1,4 @@
-import type { Attrs, Pen, Span, TextContent } from "../engine/contract";
+import { LINE_HEIGHT, type Attrs, type Pen, type Span, type TextContent } from "../engine/contract";
 import type { Board } from "./director";
 import { icon, type IconName } from "./icons";
 import { highlightSql, markSql, type SqlMark } from "./sql";
@@ -211,7 +211,9 @@ export function once(key: string, frame: number, fx: string | null): [string, At
 
 /** Полноэкранная плашка главы: надзаголовок и вопрос. */
 export function plate(pen: Pen, key: string, head: string, question: string, stage: { w: number; h: number }): void {
-  pen.group(key, 0, 0, () => {
+  // Вопрос в несколько строк (`\n`) поднимается на половину лишних строк: блок остаётся по центру кадра.
+  const lift = (question.split("\n").length - 1) * SIZE.plate * LINE_HEIGHT / 2;
+  pen.group(key, 0, -lift, () => {
     pen.rect(`${key}:bg`, { x: 0, y: 0, width: stage.w, height: stage.h, fill: COLOR.bg, opacity: 0.96 });
     pen.text(`${key}:head`, {
       x: stage.w / 2, y: stage.h / 2 - 50, "font-size": SIZE.title, "font-family": FONT.sans, "font-weight": 600,
