@@ -9,9 +9,10 @@ import { timeouts } from "./scenes/10-timeouts";
 import { replica } from "./scenes/11-replica";
 import { saga } from "./scenes/12-saga";
 import { keyset } from "./scenes/13-keyset";
+import { flags } from "./scenes/14-flags";
 
 // У каждой сцены свой тип состояния; плееру он не важен — сцена сама рисует своё состояние.
-const scenes: Record<string, Scene<any>> = { [skipLocked.id]: skipLocked, [cache.id]: cache, [timeouts.id]: timeouts, [replica.id]: replica, [saga.id]: saga, [keyset.id]: keyset };
+const scenes: Record<string, Scene<any>> = { [skipLocked.id]: skipLocked, [cache.id]: cache, [timeouts.id]: timeouts, [replica.id]: replica, [saga.id]: saga, [keyset.id]: keyset, [flags.id]: flags };
 
 const params = new URLSearchParams(location.search);
 const scene = scenes[params.get("scene") ?? skipLocked.id] ?? skipLocked;
