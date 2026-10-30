@@ -34,10 +34,6 @@ const RECIPES: Partial<Record<EventKind, Recipe>> = {
   refresh: (s, at) => s.tone({ freq: 988, dur: 0.05, gain: 0.04, at }),
   fail: (s, at) => s.tone({ freq: 250, dur: 0.08, wave: "square", gain: 0.05, at }),
   cold: (s, at) => s.tone({ freq: 392, to: 330, dur: 0.12, wave: "triangle", gain: 0.06, at }),
-  crash: (s, at) => {
-    s.noise({ dur: 0.15, freq: 300, q: 0.6, gain: 0.08, at });
-    s.tone({ freq: 160, to: 80, dur: 0.15, wave: "square", gain: 0.07, at: at + 0.05 });
-  },
   write: (s, at) => s.tone({ freq: 784, to: 988, dur: 0.12, gain: 0.07, at }),
   cancel: (s, at) => {
     s.noise({ dur: 0.22, freq: 2500, q: 1, gain: 0.04, at });
@@ -53,7 +49,7 @@ const RECIPES: Partial<Record<EventKind, Recipe>> = {
 
 /** Лесенка по ходу кадра: пульт → сервис → под → данные. */
 const SLOT_AT: Partial<Record<EventKind, number>> = {
-  toggle: 0.05, slide: 0.05, down: 0.05, crash: 0.05, coin: 0.1, ask: 0.1, copy: 0.1, refresh: 0.1, cold: 0.1, expand: 0.1,
+  toggle: 0.05, slide: 0.05, down: 0.05, coin: 0.1, ask: 0.1, copy: 0.1, refresh: 0.1, cold: 0.1, expand: 0.1,
   hang: 0.2, fail: 0.2, write: 0.2, contract: 0.2, cancel: 0.15, keep: 0.25,
 };
 

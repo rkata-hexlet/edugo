@@ -127,10 +127,9 @@ function drawService(pen: Pen, w: World): void {
     const p = w.pods[id];
     const { color, tint } = ACTOR[id];
     const busy = w.visits.some((v) => v.by === id);
-    const mood = p.crashed ? "lost" : p.hanging ? "wait" : busy ? "work" : "idle";
+    const mood = p.hanging ? "wait" : busy ? "work" : "idle";
     pen.group(`pod:${id}`, POD_X, POD_Y[id], () => {
       bob(pen, `pod:${id}:bob`, { x: 0, y: 0, color, tint, letter: id, mood, look: { x: 0, y: 0 } });
-      if (p.crashed) icon(pen, `pod:${id}:x`, "cross", 16, 10, 32, COLOR.error, { class: "fx-pop" });
       if (w.mode === "local" && !w.contracted) {
         const fresh = happened(w, "copy", id) || happened(w, "refresh", id);
         pen.rect(`pod:${id}:card`, { x: CARD_X - POD_X, y: 2, width: 190, height: 30, rx: 6, fill: p.copy ? COLOR.surface2 : "none", stroke: p.copy ? COLOR.ink : COLOR.faint, "stroke-width": 2, "stroke-dasharray": p.copy ? "none" : "5 4", ...(fresh ? { class: "fx-pop" } : {}) });
@@ -160,10 +159,6 @@ function drawArrows(pen: Pen, w: World): void {
   }
   if (w.mode === "direct" && !w.contracted && lit(w, "console") && !w.desk && !w.queue) {
     for (const id of PODS) {
-      if (w.pods[id].crashed) {
-        pen.line(`arr:${id}:flag`, { x1: CONSOLE.x - 4, y1: CONSOLE.y + 80, x2: SERVICE.x + SERVICE.w - 60, y2: POD_Y[id] + 30, stroke: COLOR.faint, "stroke-width": 2, "stroke-dasharray": "6 5" });
-        continue;
-      }
       pen.line(`arr:${id}:flag`, { x1: CONSOLE.x - 4, y1: CONSOLE.y + 80, x2: POD_X + 72, y2: POD_Y[id] + 30, stroke: w.console.on ? COLOR.ok : COLOR.faint, "stroke-width": 2, "stroke-dasharray": "6 5", marker: "arrow" });
     }
   }

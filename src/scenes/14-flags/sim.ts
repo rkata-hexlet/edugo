@@ -40,7 +40,6 @@ export interface Pod {
   /** Под научился читать `at_hotel` (expand). */
   reads: boolean;
   /** Упал при запуске — до проверки флага не дошёл. */
-  crashed: boolean;
   /** Ждёт ответа сервиса флагов. */
   hanging: boolean;
   /** Последняя строка лога. */
@@ -68,7 +67,7 @@ export type Focus =
   | PodId | "guest" | "queue" | "console" | "service" | "db" | "code" | "default" | "boxes" | "split" | "knight" | "steps";
 
 export type EventKind =
-  | "toggle" | "slide" | "coin" | "ask" | "hang" | "down" | "copy" | "refresh" | "fail" | "cold" | "crash"
+  | "toggle" | "slide" | "coin" | "ask" | "hang" | "down" | "copy" | "refresh" | "fail" | "cold"
   | "write" | "cancel" | "keep" | "expand" | "contract" | "page" | "rewind" | "verdict" | "card";
 
 export interface SimEvent {
@@ -122,7 +121,7 @@ export interface World {
   replay: boolean;
 }
 
-const pod = (id: PodId): Pod => ({ id, copy: null, reads: false, crashed: false, hanging: false, log: null, fresh: false });
+const pod = (id: PodId): Pod => ({ id, copy: null, reads: false, hanging: false, log: null, fresh: false });
 
 export function world(): World {
   return {
@@ -285,11 +284,6 @@ export function startBooking(w: World, id: PodId, guest: string = GUEST): Bookin
   return b;
 }
 
-/** Под упал при запуске (обновили библиотеку) — до проверки флага не дошёл. */
-export function crash(w: World, id: PodId): void {
-  w.pods[id].crashed = true;
-  emit(w, "crash", id);
-}
 
 // --- Данные: брони и старая ветка. ---
 

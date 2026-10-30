@@ -1,7 +1,7 @@
 import type { Step } from "../../engine/contract";
 import { Director } from "../../kit/director";
 import {
-  boot, contract, crash, expand, oldBranch, seed, serviceDown, slide, startBooking, tick, toggle, visit, world, writeNew,
+  boot, contract, expand, oldBranch, seed, serviceDown, slide, startBooking, tick, toggle, visit, world, writeNew,
   type Focus, type Mode, type World,
 } from "./sim";
 
@@ -163,13 +163,6 @@ export function buildSteps(): Step<World>[] {
   }, {
     focus: ["console", "guest", "A", "B", "C"],
     voice: "А если что-то пошло не так, мы так же, за секунды, выключаем её обратно. Такой аварийный выключатель называют kill switch, и именно на него мы будем надеяться дальше.",
-  });
-  d.shot("", (w) => {
-    crash(w, "B");
-    w.podSay = { by: "B", text: "Обновили библиотеку…" };
-  }, {
-    focus: ["console", "B"],
-    voice: "Но у флага есть граница, и лучше сказать о ней сразу. Он защищает только то, что стоит за условием. Если под падает раньше, чем доберётся до проверки флага, например при запуске или из-за обновлённой библиотеки, пульт ему уже не поможет. Так что флаг дополняет аккуратный деплой, а не заменяет его.",
   });
 
   // КЕЙС 1 — кому показывать: монетка на запрос → бакет гостя по хэшу → рост процента → соль.
