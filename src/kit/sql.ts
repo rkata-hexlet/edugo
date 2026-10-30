@@ -3,7 +3,7 @@ import { SQL_COLOR } from "./theme";
 
 const KEYWORDS = new Set(
   ("select from where and or not in is null update set insert into values delete returning begin commit rollback " +
-    "order by limit for skip locked nowait as on join with " +
+    "order by limit offset for skip locked nowait as on join with " +
     // Команды Redis — в той же панели, что и SQL.
     "get del ex publish").split(" "),
 );
@@ -35,4 +35,46 @@ export function highlightSql(text: string): Span[] {
 /** Позиция внутри строкового литерала '…'? */
 function inString(text: string, at: number): boolean {
   return (text.slice(0, at).match(/'/g)?.length ?? 0) % 2 === 1;
+}
+
+/** Часть SQL, о которой говорит голос: ярко (и своим цветом, если задан), остальное окно приглушено. */
+export interface SqlMark {
+  text: string;
+  color?: string;
+}
+
+/** Приглушённая часть SQL-окна. */
+export const SQL_DIM = 0.4;
+
+/**
+ * Подсветить в раскрашенных строках части `marks` (первое вхождение в строке, каждая часть — в своей строке);
+ * остальной текст — `fill-opacity` SQL_DIM. Без marks строки не меняются.
+ */
+export function markSql(lines: Span[][], marks: SqlMark[]): Span[][] {
+  if (!marks.length) return lines;
+  return lines.map((line) => {
+    const text = line.map((s) => s.text).join("");
+    const hits = marks.flatMap((m) => {
+      const at = text.indexOf(m.text);
+      return at >= 0 && m.text ? [{ from: at, to: at + m.text.length, color: m.color }] : [];
+    });
+    const out: Span[] = [];
+    let pos = 0;
+    for (const s of line) {
+      // Режем кусок по границам подсвеченных частей.
+      const cuts = new Set([0, s.text.length]);
+      for (const h of hits) [h.from - pos, h.to - pos].forEach((c) => c > 0 && c < s.text.length && cuts.add(c));
+      const sorted = [...cuts].sort((a, b) => a - b);
+      for (let i = 0; i + 1 < sorted.length; i++) {
+        const piece = s.text.slice(sorted[i], sorted[i + 1]);
+        const hit = hits.find((h) => pos + sorted[i] >= h.from && pos + sorted[i] < h.to);
+        const attrs = hit
+          ? { ...s.attrs, ...(hit.color ? { fill: hit.color, "font-weight": 700 } : {}) }
+          : { ...s.attrs, "fill-opacity": SQL_DIM };
+        out.push({ text: piece, attrs });
+      }
+      pos += s.text.length;
+    }
+    return out;
+  });
 }

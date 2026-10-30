@@ -82,14 +82,13 @@ function drawTable(pen: Pen, w: World): void {
 function drawRedis(pen: Pen, w: World): void {
   const r = w.redis;
   if (!r) return;
-  const [key, fx] = once("redis", w.frame, happened(w, "reshard") ? "fx-pop" : null);
-  pen.group(key, 0, 0, () => {
+  pen.group("redis", 0, 0, () => {
     panel(pen, "redis:box", { x: REDIS.x, y: REDIS.y, w: REDIS.w, h: REDIS.h, stroke: COLOR.redis });
     pen.text("redis:title", { x: REDIS.x + 18, y: REDIS.y + 30, ...SANS, "font-size": SIZE.say, "font-weight": 700, fill: COLOR.redis },
       r.nodes > 1 ? `Redis · кластер из ${r.nodes} узлов` : "Redis");
     if (r.nodes > 1) drawNodes(pen, w);
     else drawEntry(pen, w);
-  }, { ...fade(w, "redis"), ...fx });
+  }, fade(w, "redis"));
 }
 
 /** Одиночный Redis: запись горячего ключа с полосой TTL; удалённая — зачёркнута. */
@@ -105,7 +104,7 @@ function drawEntry(pen: Pen, w: World): void {
         pen.text("redis:gone:t", { x, y, ...MONO, fill: COLOR.muted, "text-decoration": "line-through" }, HOT);
         icon(pen, "redis:gone:i", "trash", x + 70, y - 18, 22, COLOR.warn);
       }, { class: "fx-pop" });
-    } else pen.text("redis:empty", { x, y, ...SANS, fill: COLOR.faint }, "пусто");
+    } else pen.text("redis:empty", { x, y, ...SANS, fill: COLOR.muted }, "пусто");
     return;
   }
   const isNew = ACTORS.some((id) => did(w.actors[id], "set"));
@@ -135,14 +134,26 @@ function drawNodes(pen: Pen, w: World): void {
     const y = REDIS.y + 46;
     const hot = i + 1 === r.hotNode;
     const over = loads[i] > 1;
-    const [k, fx] = once(`node:${i}`, w.frame, hot && over && happened(w, "overload") ? "fx-shake" : null);
+    const fresh = happened(w, "reshard") && i >= r.nodes - 2;
+    const [k, fx] = once(`node:${i}`, w.frame, hot && over && happened(w, "overload") ? "fx-shake" : fresh ? "fx-pop" : null);
     pen.group(k, 0, 0, () => {
       panel(pen, `${k}:box`, { x, y, w: tw, h: 74, rx: 10, fill: over ? COLOR.alarmBg : COLOR.surface2, stroke: over ? COLOR.error : COLOR.line, shadow: false });
       pen.text(`${k}:n`, { x: x + 8, y: y + 24, ...SANS, fill: COLOR.muted }, r.nodes > 4 ? `${i + 1}` : `узел ${i + 1}`);
       if (hot && entry(w)) pen.text(`${k}:key`, { x: x + 8, y: y + 48, ...MONO, fill: COLOR.ink, "font-weight": 700 }, HOT);
       meter(pen, `${k}:m`, { x: x + 8, y: y + 58, w: tw - 26, h: 8, load: loads[i] });
+      if (over) nodeFace(pen, `${k}:face`, x + tw - 40, y + 8, "drown");
+      else if (r.nodes <= 4 && loads.some((l) => l > 1)) nodeFace(pen, `${k}:face`, x + tw - 40, y + 8, "bored");
     }, fx);
   }
+}
+
+/** Лицо узла кластера: тонет — круглые глаза и рот «о», скучает — глаза-чёрточки. */
+function nodeFace(pen: Pen, key: string, x: number, y: number, mood: "drown" | "bored"): void {
+  const c = mood === "drown" ? COLOR.error : COLOR.muted;
+  [0, 18].forEach((ex, i) => mood === "drown"
+    ? pen.rect(`${key}:e${i}`, { x: x + ex, y, width: 9, height: 13, rx: 4.5, fill: c })
+    : pen.line(`${key}:e${i}`, { x1: x + ex, y1: y + 8, x2: x + ex + 10, y2: y + 8, stroke: c, "stroke-width": 3, "stroke-linecap": "round" }));
+  if (mood === "drown") pen.rect(`${key}:m`, { x: x + 7, y: y + 17, width: 12, height: 10, rx: 5, fill: "none", stroke: c, "stroke-width": 3 });
 }
 
 /** Точка, куда стрелка пода упирается в Redis: запись или горячий узел. */
@@ -196,7 +207,7 @@ function drawPocket(pen: Pen, w: World, a: Actor): void {
   pen.rect(`pod:${a.id}:l1:bg`, { x, y, width: 168, height: 26, rx: 8, fill: COLOR.surface2, stroke: dropped ? COLOR.warn : COLOR.line, "stroke-width": 1.5 });
   pen.text(`pod:${a.id}:l1:k`, { x: x + 8, y: y + 19, ...MONO, fill: COLOR.muted }, "L1");
   if (!p) {
-    pen.text(`pod:${a.id}:l1:v`, { x: x + 36, y: y + 19, ...SANS, fill: COLOR.faint }, dropped ? "сброшен" : "пусто");
+    pen.text(`pod:${a.id}:l1:v`, { x: x + 36, y: y + 19, ...SANS, fill: COLOR.muted }, dropped ? "сброшен" : "пусто");
     return;
   }
   pen.text(`pod:${a.id}:l1:v`, { x: x + 36, y: y + 19, ...MONO, fill: p.value === w.links[0].url ? COLOR.ink : COLOR.error, "font-weight": 700 }, path(p.value));
@@ -217,7 +228,8 @@ function drawPodArrows(pen: Pen, w: World): void {
     if (toDb) {
       pen.line(`arr:${id}:db`, {
         x1: from.x, y1: from.y - 8, x2: TABLE_END + 40, y2: rowMid(0),
-        stroke: toDb === "write" ? color : COLOR.muted, "stroke-width": toDb === "write" ? 3.5 : 2.5, "stroke-linecap": "round", marker: "arrow", opacity: op, ...DRAW,
+        // Под перегрузкой чтения в базу — тревожные: это и есть поток, от которого база тонет (хук).
+        stroke: toDb === "write" ? color : dbLoad(w) > 1 ? COLOR.error : COLOR.muted, "stroke-width": toDb === "write" || dbLoad(w) > 1 ? 3.5 : 2.5, "stroke-linecap": "round", marker: "arrow", opacity: op, ...DRAW,
       });
     }
     if (!w.redis) continue;
@@ -226,7 +238,7 @@ function drawPodArrows(pen: Pen, w: World): void {
     const get = a.acts.find((x): x is Extract<Act, { kind: "get" }> => x.kind === "get");
     const kind = delAct ? "del" : did(a, "set") ? "set" : get ? (get.hit ? "hit" : "miss") : null;
     if (!kind) continue;
-    const y2 = t.y + (ACTORS.indexOf(id) - 1) * 10;
+    const y2 = t.y + (ACTORS.indexOf(id) - 1) * 14;
     const style: Attrs = kind === "miss"
       ? { stroke: COLOR.muted, "stroke-width": 2.5, "stroke-dasharray": "7 6" }
       : kind === "del" ? { stroke: COLOR.warn, "stroke-width": 3, ...DRAW } : { stroke: color, "stroke-width": 3, ...DRAW };
@@ -290,9 +302,16 @@ function drawBrowserArrows(pen: Pen, w: World): void {
   });
 }
 
+/** Слон-Postgres: под нагрузкой хмурится и потеет, говоря — смотрит на поды. */
+function drawDb(pen: Pen, w: World, key = "db:face"): void {
+  const sweat = dbLoad(w) > 1;
+  elephant(pen, key, { x: TABLE.x + 4, y: 8, talking: !!w.db, scale: 1.08, frown: sweat, look: w.db ? { x: 1, y: 0 } : undefined });
+  if (sweat) pen.path(`${key}:sweat`, { d: "M 47 10 Q 42 18 47 21 Q 52 18 47 10 Z", fill: COLOR.browser });
+}
+
 function drawHeader(pen: Pen, w: World): void {
   const [dbKey, dbFx] = once("db:nod", w.frame, happened(w, "commit") ? "fx-nod" : null);
-  pen.group(dbKey, 0, 0, () => elephant(pen, "db:face", { x: TABLE.x + 4, y: 8, talking: !!w.db, scale: 1.08 }), dbFx);
+  pen.group(dbKey, 0, 0, () => drawDb(pen, w), dbFx);
   panel(pen, "db", { x: DB.x, y: 20, w: DB.w, h: 46, rx: 14, fill: COLOR.surface2, stroke: dbLoad(w) > 1 ? COLOR.error : COLOR.postgres });
   pen.text("db:name", { x: DB.x + 16, y: 50, ...SANS, "font-size": SIZE.say, "font-weight": 700, fill: COLOR.ink }, "Postgres");
   if (w.chapter) pill(pen, "chapter", `КЕЙС ${w.chapter}`, { x: POD.x, y: 22, fill: "none", color: COLOR.ink, stroke: COLOR.ink });
@@ -319,6 +338,7 @@ export function render(pen: Pen, w: World): void {
     if (w.plate) {
       const [head, ...rest] = w.plate.split("\n");
       plate(pen, "plate", head, rest.join("\n"), STAGE);
+      if (w.db) drawDb(pen, w, "db:over"); // говорящий виден над затемнением, иначе реплика висит ничья
     }
     if (w.stamp) stamp(pen, w.stamp, { left: DB.x + DB.w + 12, right: POD.x - 12 });
     if (w.db) bubble(pen, "db:say", w.db, { x: DB.x + DB.w + 10, y: 43, tail: "left", attrs: { class: "fx-pop" } });

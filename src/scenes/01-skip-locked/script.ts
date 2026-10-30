@@ -57,7 +57,7 @@ export const PRONOUNCE: Record<string, string> = {
 
 const rows = (n: number) => `→ ${n} ${n === 1 ? "строка" : "строк"}`;
 
-/** Время кадра: база + чтение всего текста в кадре (правило «Текст в кадре» в CLAUDE.md). */
+/** Время кадра: база + чтение всего текста в кадре (правило «Текст в кадре» в docs/series-style.md). */
 export function holdFor(caption: string, w: World): number {
   const says = Object.values(w.actors).map((a) => a.say ?? "");
   const text = [caption, w.card ?? "", w.plate ?? "", w.stamp ?? "", w.db ?? "", w.mail ?? "", ...says, ...w.sql].join("");
