@@ -41,8 +41,8 @@
 - Суфлёр (`engine/recorder.ts`, `?record`, только dev) — кадр и текст крупно, пробел — дубль и сразу
   следующий; запись уходит `POST /__voice/<сцена>/<ключ>` в плагин `vite.config.ts`, тот зовёт
   `scripts/voice.mjs` (ffmpeg: щелчки, тишина, шум, громкость) и раздаёт `/voice/…` с диска.
-- `scripts/ep.mjs` (`npm run ep -- NN`) — эпизод в своей папке без переключения веток: ветка `episode/NN-*` →
-  git worktree `../<репо>-NN`, dev-сервер на порту `51NN`, суфлёр `?scene=NN&record`.
+- `scripts/ep.mjs` (`npm run ep -- NN`) — переключает эту папку на ветку `episode/NN-*` (с незакоммиченным
+  откажет), dev-сервер, суфлёр `?scene=NN&record`. Копий-папок нет: работаем в одной.
 - `scripts/mic.mjs` (`npm run mic`) — телефон Android как микрофон: scrcpy по USB → виртуальный микрофон
   PhoneMic в PulseAudio по умолчанию; Ctrl+C возвращает прежний (docs/recording.md, раздел 2а).
 - Расход токенов (`npm run tokens`) — скрипт вне репо `~/.claude/scripts/tokens.py`: сводка каждой сессии Claude
@@ -120,7 +120,7 @@
 scripts/render.mjs ──(puppeteer, ?capture&render)──► страница плеера
 scripts/shots.mjs ──(puppeteer, ?capture#step=N; montage)──► dev-сервер, снимки кадров
 vite.config.ts (dev) ──► scripts/voice.mjs ──► ffmpeg
-scripts/ep.mjs ──(git worktree)──► vite в папке эпизода
+scripts/ep.mjs ──(git switch)──► vite
 main.ts ──► engine/takes ──► engine/contract (тип Step)
    ├──► engine/recorder ──► engine/pen, engine/takes
    └──► engine/player ──► engine/pen ──► engine/contract
