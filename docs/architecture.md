@@ -26,8 +26,8 @@
   префиксом пода `podSql`, штамп перемотки `stamp`, `iconText`, разовый эффект `once`, плашка главы),
   `director` (режиссёр серии, см. `script.ts` ниже; типы `Board`, `Lamp`, `Verdict`), `sql`
   (`highlightSql` → `Span[]`), `characters` (под-«боб» с эмоцией `Mood` и взглядом `Look`,
-  слон-Postgres, лицо Почты), `widgets.meter` (полоса нагрузки с потолком), `props` (предметы мира: кружка, покупатель, кнопка, замок `lock`, бирка замка `lockTag`, корона лидера `crown`), `code` (окно кода на Go `codeWindow`, подсветка `highlightGo`; SQL внутри `…` — как SQL), `motion.css` (словарь движений `fx-*`: pop, slide, rise,
-  stamp, draw, hop, shake, jolt, nod, pulse, cascade — всё в первые 450 мс кадра). Kit не знает ни
+  слон-Postgres, лицо Почты), `widgets.meter` (полоса нагрузки с потолком), `props` (предметы мира: кружка, покупатель, кнопка, замок `lock`, бирка замка `lockTag`, корона лидера `crown`, банка-копилка `jar`), `code` (окно кода на Go `codeWindow`, подсветка `highlightGo`; SQL внутри `…` — как SQL), `motion.css` (словарь движений `fx-*`: pop, slide, rise,
+  stamp, draw, hop, shake, jolt, nod, pulse, cascade, drop (клик падает в копилку), bounce (отскок от цели) — всё в первые 450 мс кадра; `.tw` — плавная смена размера рамки между кадрами). Kit не знает ни
   плеера, ни моделей эпизодов: эмоцию, взгляд и эффект выбирает `view.ts` по состоянию кадра и
   `World.events`. Разовый эффект — новый ключ узла (`World.frame` в ключе), свежий стол — `World.scene`.
 - `SceneMeta` (`Scene.meta`) — номер, название, подзаголовок, финальная фраза эпизода: заголовок
@@ -41,8 +41,13 @@
 - Суфлёр (`engine/recorder.ts`, `?record`, только dev) — кадр и текст крупно, пробел — дубль и сразу
   следующий; запись уходит `POST /__voice/<сцена>/<ключ>` в плагин `vite.config.ts`, тот зовёт
   `scripts/voice.mjs` (ffmpeg: щелчки, тишина, шум, громкость) и раздаёт `/voice/…` с диска.
-- `scripts/ep.mjs` (`npm run ep -- NN`) — эпизод в своей папке без переключения веток: ветка `episode/NN-*` →
-  git worktree `../<репо>-NN`, dev-сервер на порту `51NN`, суфлёр `?scene=NN&record`.
+- `scripts/ep.mjs` (`npm run ep -- NN`) — переключает эту папку на ветку `episode/NN-*` (с незакоммиченным
+  откажет), dev-сервер, суфлёр `?scene=NN&record`. Копий-папок нет: работаем в одной.
+- `scripts/mic.mjs` (`npm run mic`) — телефон Android как микрофон: scrcpy по USB → виртуальный микрофон
+  PhoneMic в PulseAudio по умолчанию; Ctrl+C возвращает прежний (docs/recording.md, раздел 2а).
+- Расход токенов (`npm run tokens`) — скрипт вне репо `~/.claude/scripts/tokens.py`: сводка каждой сессии Claude
+  Code в архив `~/.claude/token-stats/`, отчёт по неделям, веткам, агентам. Архив пополняет хук `SessionEnd`
+  (`.claude/settings.json`), там же строка статуса с размером контекста (`~/.claude/scripts/statusline.py`).
 - `Narrator` (`engine/narrator.ts`) — закадровый голос: дубль из `Takes`, без дубля — Web Speech API. Закадр режется на куски
   `phrases` (предложения, длинные — по паузе, ≤ `MAX_PHRASE` знаков = строка субтитра); `speechParts`
   читает кусок одним русским голосом (синтез — черновик, озвучивает пользователь; решение 23.10), словарь сцены
@@ -64,6 +69,9 @@
 - Рендер в mp4 (`?capture&render`, `exposeRender` в `player.ts` → `window.__edugo`; `scripts/render.mjs`):
   перемотка на момент t с остановкой анимаций, звук через `WebAudioSound.offline(OfflineAudioContext)`
   + дубли диктора в той же дорожке, WAV кусками, склейка ffmpeg (ADR-0003, ADR-0004, docs/recording.md).
+  Готовый ролик — `releases/episode-NN.mp4` (в git не идёт), звук рендера — `out/`.
+- Снимки кадров (`scripts/shots.mjs`, `npm run shots`): `?capture#step=N` в headless Chrome с dev-сервера, анимации
+  доведены до конца, PNG 1280×720 в `out/shots/NN/`, `--sheet` — контактные листы 2×3 (`montage`).
 - Оболочка (`engine/shell.ts`, стили `engine/player.css`) — только DOM: кадр 16:9 по окну,
   подпись кадра оверлеем внутри кадра (попадает в запись), субтитры диктора по CC (только в плеере), панель (play, прогресс
   сегментами по актам, скорость, CC, звук, полный экран), которая прячется при проигрывании без
@@ -139,8 +147,9 @@ RR — 40001). Предикаты табло: `overloaded` (коробок у к
 ## Граф зависимостей
 ```
 scripts/render.mjs ──(puppeteer, ?capture&render)──► страница плеера
+scripts/shots.mjs ──(puppeteer, ?capture#step=N; montage)──► dev-сервер, снимки кадров
 vite.config.ts (dev) ──► scripts/voice.mjs ──► ffmpeg
-scripts/ep.mjs ──(git worktree)──► vite в папке эпизода
+scripts/ep.mjs ──(git switch)──► vite
 main.ts ──► engine/takes ──► engine/contract (тип Step)
    ├──► engine/recorder ──► engine/pen, engine/takes
    └──► engine/player ──► engine/pen ──► engine/contract

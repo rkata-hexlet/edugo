@@ -78,6 +78,26 @@
   animation: fx-draw 0.35s cubic-bezier(0.4, 0, 0.2, 1) both;
 }
 
+/* Падение в копилку: клик сверху ныряет в прорезь и пропадает. */
+@keyframes fx-drop {
+  0% { translate: 0 -14px; opacity: 1; }
+  80% { opacity: 1; }
+  100% { translate: 0 0; opacity: 0; }
+}
+.stage .fx-drop {
+  animation: fx-drop 0.3s ease-in both;
+}
+
+/* Отскок: плашка долетела до цели, ударилась и отлетела назад — «не принято, уже было». */
+@keyframes fx-bounce {
+  0% { translate: 24px 0; }
+  45% { translate: -6px 0; }
+  100% { translate: 30px 0; }
+}
+.stage .fx-bounce {
+  animation: fx-bounce 0.36s cubic-bezier(0.3, 0.7, 0.4, 1) both;
+}
+
 /* Персонажи. Выиграл — подпрыгнул; проиграл — тряска; проснулся — вздрогнул; кивок — слон на COMMIT. */
 @keyframes fx-hop {
   0%, 100% { translate: 0 0; }
@@ -192,6 +212,11 @@
 .stage .fx-cascade > g:nth-child(5) { animation-delay: 0.12s; }
 .stage .fx-cascade > g:nth-child(6) { animation-delay: 0.15s; }
 
+/* Рамка меняет размер между кадрами (панель вытягивается, заливка ползунка): плавно, как переезд группы .mv. */
+.stage .tw {
+  transition: height 0.6s ease-in-out, width 0.6s ease-in-out, y 0.6s ease-in-out;
+}
+
 /* Перемотка и прыжки по кадрам — без движения. */
 .stage.no-anim *,
 .stage.no-anim *::before {
@@ -203,6 +228,9 @@
   .stage [class*="fx-"],
   .stage .fx-cascade > g {
     animation: none !important;
+  }
+  .stage .tw {
+    transition: none;
   }
 }
 
