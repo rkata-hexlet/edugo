@@ -118,10 +118,10 @@ describe("сценарий не врёт", () => {
     expect(JSON.stringify(buildSteps())).toBe(JSON.stringify(steps));
   });
 
-  it("34 кадра; вставка эпизода 05 — кадр, где B ждёт у запертой строки", () => {
-    expect(steps).toHaveLength(34);
+  it("35 кадров; вставка эпизода 05 — кадр, где B ждёт у запертой строки", () => {
+    expect(steps).toHaveLength(35);
     expect(RECALL).toBeGreaterThanOrEqual(0);
-    expect(steps[0].state.flashback).toBe(RECALL);
+    expect(steps[1].state.flashback).toBe(RECALL);
   });
 
   it("хук на READ COMMITTED: кольцо, 40P01 у B при полном складе, Аня принята", () => {
