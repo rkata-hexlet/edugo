@@ -69,6 +69,7 @@
 - Рендер в mp4 (`?capture&render`, `exposeRender` в `player.ts` → `window.__edugo`; `scripts/render.mjs`):
   перемотка на момент t с остановкой анимаций, звук через `WebAudioSound.offline(OfflineAudioContext)`
   + дубли диктора в той же дорожке, WAV кусками, склейка ffmpeg (ADR-0003, ADR-0004, docs/recording.md).
+  Готовый ролик — `releases/episode-NN.mp4` (в git не идёт), звук рендера — `out/`.
 - Снимки кадров (`scripts/shots.mjs`, `npm run shots`): `?capture#step=N` в headless Chrome с dev-сервера, анимации
   доведены до конца, PNG 1280×720 в `out/shots/NN/`, `--sheet` — контактные листы 2×3 (`montage`).
 - Оболочка (`engine/shell.ts`, стили `engine/player.css`) — только DOM: кадр 16:9 по окну,
