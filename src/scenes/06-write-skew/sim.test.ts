@@ -166,11 +166,12 @@ describe("сценарий не врёт", () => {
     expect(JSON.stringify(buildSteps())).toBe(JSON.stringify(steps));
   });
 
-  it("вставки эпизода 05: 40001 — в начале и в 2.1 (что сверяет RR), атомарный UPDATE — перед 2.3", () => {
+  it("вставки эпизода 05: 40001 — вторым кадром (после контекста) и в 2.1 (что сверяет RR), атомарный UPDATE — перед 2.3", () => {
     expect(RECALL.rr).toBeGreaterThanOrEqual(0);
     expect(RECALL.atomic).toBeGreaterThanOrEqual(0);
-    expect(steps[0].state.flashback).toBe(RECALL.rr);
-    expect(steps.filter((s) => s.state.flashback !== null).map((s) => [s.act, s.state.flashback])).toEqual([[ACT.recall, RECALL.rr], [ACT.rr, RECALL.rr], [ACT.counter, RECALL.atomic]]);
+    expect(steps[0].state.flashback).toBeNull();
+    expect(steps[1].state.flashback).toBe(RECALL.rr);
+    expect(steps.filter((s) => s.state.flashback !== null).map((s) => [s.act, s.state.flashback])).toEqual([[ACT.intro, RECALL.rr], [ACT.rr, RECALL.rr], [ACT.counter, RECALL.atomic]]);
   });
 
   it("хук на REPEATABLE READ: никто не ждал и не упал, оба получили подтверждение, коробок четыре", () => {
