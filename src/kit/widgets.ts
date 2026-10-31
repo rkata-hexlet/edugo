@@ -1,7 +1,7 @@
-import type { Attrs, Pen, Span, TextContent } from "../engine/contract";
+import { LINE_HEIGHT, type Attrs, type Pen, type Span, type TextContent } from "../engine/contract";
 import type { Board } from "./director";
 import { icon, type IconName } from "./icons";
-import { highlightSql } from "./sql";
+import { highlightSql, markSql, type SqlMark } from "./sql";
 import { ACTOR, COLOR, FONT, SIZE } from "./theme";
 
 // Виджеты серии: панель, пузырь реплики с хвостом, пилюля, лампа, табло, окно SQL, штамп перемотки,
@@ -114,40 +114,46 @@ export function lamp(pen: Pen, key: string, x: number, y: number, state: LampSta
 }
 
 /**
- * Табло главы: критерии в шапке, строка на попытку с двумя лампами. Ярко — только попытка, о которой речь;
+ * Табло главы: критерии в шапке, строка на попытку с лампой на критерий (обычно две). Ярко — только попытка, о которой речь;
  * прошлые — фоном (learning-designer: 4×2 ламп не читают). `lampX` — центры ламп от левого края табло.
  */
 export function board(
   pen: Pen, b: Board,
-  o: { x: number; y: number; w: number; rowH: number; lampX: [number, number]; attrs?: Attrs },
+  o: { x: number; y: number; w: number; rowH: number; lampX: number[]; lampR?: number; dimIdle?: boolean; attrs?: Attrs },
 ): void {
   const font = { "font-family": FONT.sans, "font-size": SIZE.body };
   const lampX = o.lampX.map((dx) => o.x + dx);
   pen.group("board", 0, 0, () => {
     const height = 46 + b.attempts.length * o.rowH + 8;
     panel(pen, "board:box", { x: o.x, y: o.y, w: o.w, h: height });
+    // dimIdle: критерий, который ещё ни разу не проверяли, — фоном, чтобы взгляд шёл к проверенным.
+    const r = o.lampR ?? 10;
+    const idle = (j: number) => o.dimIdle && b.attempts.every((t) => !t.lamps?.[j]);
     b.criteria.forEach((c, i) =>
-      pen.text(`board:h${i}`, { x: lampX[i], y: o.y + 30, ...font, fill: COLOR.muted, "text-anchor": "middle" }, c));
+      pen.text(`board:h${i}`, { x: lampX[i], y: o.y + 30, ...font, fill: COLOR.muted, "text-anchor": "middle", opacity: idle(i) ? 0.45 : 1 }, c));
     b.attempts.forEach((t, i) => {
       const y = o.y + 46 + i * o.rowH;
       const current = i === (b.focus ?? b.attempts.length - 1);
       pen.group(`board:a${i}`, 0, 0, () => {
         pen.text(`board:n${i}`, { x: o.x + 18, y: y + 18, ...font, fill: current ? COLOR.ink : COLOR.muted, "font-weight": current ? 700 : 400 }, t.name);
         // Критерий с пустым именем ещё не введён голосом — его ламп нет.
-        lampX.forEach((x, j) => b.criteria[j] && lamp(pen, `board:l${i}:${j}`, x, y + 12, t.lamps?.[j] ?? null, 10));
+        lampX.forEach((x, j) => b.criteria[j] && lamp(pen, `board:l${i}:${j}`, x, y + 2 + r, t.lamps?.[j] ?? null, r));
       }, { opacity: current ? 1 : 0.45 });
     });
   }, o.attrs);
 }
 
-/** Окно редактора с SQL: строки — уже раскрашенные куски. Возвращает размер окна. */
+/**
+ * Окно редактора с SQL: строки — уже раскрашенные куски. `mark` — части, о которых говорит голос: ярко, остальное приглушено
+ * (`markSql`). Возвращает размер окна.
+ */
 export function sqlWindow(
   pen: Pen, key: string, lines: Span[][],
-  o: { x: number; bottom: number; size?: number; attrs?: Attrs },
+  o: { x: number; bottom: number; size?: number; mark?: SqlMark[]; attrs?: Attrs },
 ): { w: number; h: number } {
   const size = o.size ?? SIZE.body;
   const font = { "font-size": size, "font-family": FONT.mono };
-  const spans = lines.flatMap((line, i) => (i === 0 ? line : [{ text: "\n" }, ...line]));
+  const spans = markSql(lines, o.mark ?? []).flatMap((line, i) => (i === 0 ? line : [{ text: "\n" }, ...line]));
   const m = pen.measure(spans, font);
   const top = 28;
   const w = Math.ceil(m.width) + 36;
@@ -205,7 +211,9 @@ export function once(key: string, frame: number, fx: string | null): [string, At
 
 /** Полноэкранная плашка главы: надзаголовок и вопрос. */
 export function plate(pen: Pen, key: string, head: string, question: string, stage: { w: number; h: number }): void {
-  pen.group(key, 0, 0, () => {
+  // Вопрос в несколько строк (`\n`) поднимается на половину лишних строк: блок остаётся по центру кадра.
+  const lift = (question.split("\n").length - 1) * SIZE.plate * LINE_HEIGHT / 2;
+  pen.group(key, 0, -lift, () => {
     pen.rect(`${key}:bg`, { x: 0, y: 0, width: stage.w, height: stage.h, fill: COLOR.bg, opacity: 0.96 });
     pen.text(`${key}:head`, {
       x: stage.w / 2, y: stage.h / 2 - 50, "font-size": SIZE.title, "font-family": FONT.sans, "font-weight": 600,

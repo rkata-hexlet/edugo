@@ -9,7 +9,10 @@
     "render": "node scripts/render.mjs",
     "narration": "node scripts/narration.mjs",
     "voice": "node scripts/voice.mjs",
-    "ep": "node scripts/ep.mjs"
+    "ep": "node scripts/ep.mjs",
+    "mic": "node scripts/mic.mjs",
+    "shots": "node scripts/shots.mjs",
+    "tokens": "python3 ~/.claude/scripts/tokens.py report"
   },
   "type": "module",
   "devDependencies": {

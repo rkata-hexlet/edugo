@@ -1,8 +1,9 @@
-import type { Attrs, Pen } from "../engine/contract";
+import type { Attrs, Pen, TextContent } from "../engine/contract";
 import { COLOR, FONT, SIZE } from "./theme";
+import { pill } from "./widgets";
 
 // Предметы мира серии (motion-designer, эпизод 05): кружка, покупатель, навес витрины, кнопка «Купить»,
-// замок с дужкой; эпизод 09 — бирка замка, корона лидера. Только примитивы Pen; (x, y) — левый верхний угол; анимацию вешает эпизод классом fx-*.
+// замок с дужкой; эпизод 09 — бирка замка, корона лидера; эпизод 13 — флажок закладки; эпизод 03 — банка-копилка. Только примитивы Pen; (x, y) — левый верхний угол; анимацию вешает эпизод классом fx-*.
 
 /** Размер кружки без пара: корпус и ручка. */
 export const MUG = { w: 54, h: 36 };
@@ -115,5 +116,45 @@ export function crown(pen: Pen, key: string, o: { x: number; y: number; color: s
     pen.path(`${key}:b`, { d: "M2 26 L0 6 L12 14 L24 2 L36 14 L48 6 L46 26 Z", fill: o.color, stroke: COLOR.bg, "stroke-width": 2 });
     [[0, 6], [24, 2], [48, 6]].forEach(([cx, cy], i) =>
       pen.rect(`${key}:p${i}`, { x: cx - 4, y: cy - 4, width: 8, height: 8, rx: 4, fill: o.color, stroke: COLOR.bg, "stroke-width": 1.5 }));
+  }, o.attrs);
+}
+
+/** Флажок закладки: ножка BOOKMARK.h, вымпел, от ножки до пилюли — BOOKMARK.gap. */
+export const BOOKMARK = { h: 30, flag: 24, gap: 32 };
+
+/**
+ * Закладка (эпизод 13: «запомнили, на чём остановились»): флажок у строки и пилюля со значением справа; (x, y) — основание
+ * ножки по x и середина строки по y. Ключ один на всю сцену — при смене y флажок переезжает. `label` — кусками, если частей
+ * несколько (цена ярко, id тусклее). `fresh` — только что воткнули: ножка прорисовывается, вымпел и пилюля выскакивают.
+ */
+export function bookmark(
+  pen: Pen, key: string,
+  o: { x: number; y: number; label: TextContent; color?: string; fill?: string; fresh?: boolean; attrs?: Attrs },
+): void {
+  const color = o.color ?? COLOR.ok;
+  const top = -BOOKMARK.h / 2;
+  pen.group(key, o.x, o.y, () => {
+    pen.line(`${key}:pole`, { x1: 0, y1: -top, x2: 0, y2: top, stroke: color, "stroke-width": 3, "stroke-linecap": "round", ...(o.fresh ? { pathLength: 1, class: "fx-draw" } : {}) });
+    pen.path(`${key}:flag`, { d: `M 0 ${top} L ${BOOKMARK.flag} ${top + 8} L 0 ${top + 16} Z`, fill: color, ...(o.fresh ? { class: "fx-pop d1" } : {}) });
+    const h = Math.round(SIZE.body * 1.8);
+    pill(pen, `${key}:t`, o.label, { x: BOOKMARK.gap, y: -h / 2, fill: o.fill ?? COLOR.doneBg, color, stroke: color, mono: true, attrs: o.fresh ? { class: "fx-pop d1" } : {} });
+  }, o.attrs);
+}
+
+/** Размер банки-копилки: крышка с прорезью и корпус. */
+export const JAR = { w: 34, h: 32 };
+
+/**
+ * Банка-копилка (эпизод 03: под копит клики и сбрасывает их пачкой): корпус, крышка с прорезью, уровень `fill` 0…1
+ * цветом `color`. Уровень меняется плавно (`.tw`): сброс — заливка уходит вниз. (x, y) — левый верхний угол крышки.
+ */
+export function jar(pen: Pen, key: string, o: { x: number; y: number; fill: number; color?: string; attrs?: Attrs }): void {
+  const level = Math.max(0, Math.min(1, o.fill));
+  const h = 18 * level;
+  pen.group(key, o.x, o.y, () => {
+    pen.rect(`${key}:f`, { x: 5, y: 28 - h, width: 24, height: h, rx: 2, fill: o.color ?? COLOR.warn, class: "tw" });
+    pen.path(`${key}:b`, { d: "M 2 8 h 30 v 18 q 0 5 -5 5 h -20 q -5 0 -5 -5 z", fill: "none", stroke: COLOR.ink, "stroke-width": 2, "stroke-linejoin": "round" });
+    pen.rect(`${key}:lid`, { x: 0, y: 2, width: 34, height: 6, rx: 3, fill: COLOR.ink });
+    pen.line(`${key}:slot`, { x1: 10, y1: 5, x2: 24, y2: 5, stroke: COLOR.bg, "stroke-width": 2, "stroke-linecap": "round" });
   }, o.attrs);
 }
