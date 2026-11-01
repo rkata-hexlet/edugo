@@ -353,7 +353,7 @@ export interface Level {
   title: string;
   params: Params;
   phases: readonly Phase[];
-  failures: Record<Rule, { text: string; why: string; frame: number }>;
+  failures: Record<Rule, { text: string; why: string }>;
 }
 
 /** «Запуск»: беды по порядку, прогон встаёт на первом провале. Победа — все беды без провалов. */

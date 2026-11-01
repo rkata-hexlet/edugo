@@ -10,7 +10,6 @@ html, body { margin: 0; background: #0e1325; color: #eef1ff; font-family: Inter,
 .cx-card.win { border-color: #3ddc97; background: #163a33; }
 .cx-fail, .cx-win { font-size: 18px; font-weight: 600; margin: 0 0 8px; }
 .cx-why { font-size: 15px; line-height: 1.35; margin: 0 0 10px; }
-.cx-ref { display: inline-block; font-size: 15px; padding: 4px 12px; border-radius: 99px; background: #242e55; color: #eef1ff; }
 .cx-note { font-size: 14px; color: #8f9ac4; margin: 8px 0 0; }
 .cx-board { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .cx-score { display: flex; flex-direction: column; gap: 2px; }
