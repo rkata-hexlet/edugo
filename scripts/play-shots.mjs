@@ -1,6 +1,6 @@
 // Снимки конструктора в портрете (телефон 390×844): итог прогона по наборам кирпичей (`?bricks=…&end`)
 // и кадр посреди прогона. Нужен `npm run dev`.
-//   node scripts/play-shots.mjs [--sets ",T,TO,TOR,TORJ,OB,TOB,TORKJB"] [--out out/shots/play]
+//   node scripts/play-shots.mjs [--sets ",T,TO,TOR,TORJ,OB,TOB,TOBK,TORKJB"] [--out out/shots/play]
 import { mkdirSync, rmSync } from "node:fs";
 import puppeteer from "puppeteer-core";
 
@@ -10,7 +10,7 @@ const arg = (name, def) => {
 };
 const url = arg("url", "http://localhost:5173/play.html");
 const out = arg("out", "out/shots/play");
-const sets = arg("sets", ",T,TO,TOR,TORJ,TORKJ,OB,TOB,TORKJB").split(",");
+const sets = arg("sets", ",T,TO,TOR,TORJ,TORKJ,OB,TOB,TOBK,TORKJB").split(",");
 rmSync(out, { recursive: true, force: true });
 mkdirSync(out, { recursive: true });
 const browser = await puppeteer.launch({
@@ -30,8 +30,8 @@ for (const s of sets) {
   await shot(`end-${s || "empty"}`);
 }
 // посреди прогона: беда B у экономного решения
-await page.goto(`${url}?bricks=TOB`, { waitUntil: "networkidle0" });
+await page.goto(`${url}?bricks=TOBK`, { waitUntil: "networkidle0" });
 await page.click(".cx-run");
 await new Promise((r) => setTimeout(r, 7000));
-await shot("mid-TOB");
+await shot("mid-TOBK");
 await browser.close();

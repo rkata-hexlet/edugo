@@ -30,9 +30,9 @@ export const SWITCHES: { brick: Brick; name: string; hint: string }[] = [
   { brick: "O", name: "Вне транзакции", hint: "пока ждём ответа, соединение свободно" },
   { brick: "T", name: "Таймаут 3 с", hint: "не ждать поставщика дольше 3 с" },
   { brick: "B", name: "Circuit breaker", hint: "много ошибок — перестать звать на 10 с" },
-  { brick: "R", name: "Ретрай ×3", hint: "при неудаче повторить, до 3 попыток" },
+  { brick: "R", name: "Ретрай", hint: "при неудаче повторить, до 3 попыток" },
   { brick: "J", name: "Backoff + jitter", hint: "паузы между повторами растут, вразброс" },
-  { brick: "K", name: "Идемпотентность", hint: "ключ: повтор несёт тот же номер брони" },
+  { brick: "K", name: "Идемпотентность", hint: "наш номер брони: по нему найдём бронь, повтор не создаст вторую" },
 ];
 const GAP = 27; // стрелка между блоками
 const G_H = 136; // карточка гостей
@@ -166,7 +166,7 @@ export function render(pen: Pen, s: ViewState): void {
   // Поставщик
   node(pen, "sup", SUP_Y, SUP_H, "Поставщик", red("supplier"));
   if (s.snap) {
-    const st = s.snap.supplierDown ? "лежит" : s.phase === "D1" ? "тормозит" : "работает";
+    const st = s.snap.supplierDown ? "завис" : s.phase === "D1" ? "тормозит" : "работает";
     pen.text("sup:st", { x: VIEW.w - 32, y: SUP_Y + 26, "text-anchor": "end", ...T(16, s.snap.supplierDown ? COLOR.error : s.phase === "D1" ? COLOR.warn : COLOR.ok, 600) }, st);
     const orphans = s.snap.calls.filter((c) => c.orphan).length;
     pen.text("sup:n", { x: 32, y: SUP_Y + 50, ...T(16, COLOR.muted) }, [

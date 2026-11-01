@@ -7,7 +7,7 @@ import { render, VIEW, type ViewState } from "./view";
 type Frame = { phase: "D1" | "D2"; snap: Snapshot };
 type Outcome = ReturnType<typeof play>;
 
-const PHASE: Record<"D1" | "D2", string> = { D1: "Беда A: поставщик тормозит", D2: "Беда B: поставщик лёг на минуту" };
+const PHASE: Record<"D1" | "D2", string> = { D1: "Беда A: завис сервер поставщика", D2: "Беда B: поставщик завис на минуту" };
 /** Скорость показа, тиков модели в секунду (тик = 100 мс): начало беды почти вживую — видно, как копится беда;
  *  последние секунды перед провалом — медленно; спокойная середина проматывается. */
 const SPEED = { start: 10, startTicks: 80, nearFail: 8, nearFailTicks: 50, cruise: 120 };
@@ -33,7 +33,7 @@ export function mountGame(root: HTMLElement, level: Level, makePen: (svg: SVGSVG
   root.className = "cx";
   const head = el("header", "cx-head");
   head.append(el("h1", "cx-title", level.title), el("p", "cx-goal",
-    "У каждого гостя — одна бронь или честный отказ за 10 с, поиск по сайту работает. Поставщик то тормозит, то падает."));
+    "У каждого гостя — одна бронь или честный отказ за 10 с, поиск по сайту работает. Поставщик то тормозит, то зависает."));
   const status = el("div", "cx-status", HOWTO);
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   svg.setAttribute("viewBox", `0 0 ${VIEW.w} ${VIEW.h}`);

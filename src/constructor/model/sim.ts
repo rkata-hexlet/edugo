@@ -4,7 +4,7 @@
  *
  * Мир: гости волнами жмут «Забронировать», поиск идёт постоянным потоком; оба берут слоты общего пула. Бронь —
  * заявка у нас в базе + вызов поставщика. Поставщик в беде D1 часть запросов держит ~30 с (и всё равно их
- * обрабатывает), в D2 лежит: запросы висят без ответа.
+ * обрабатывает), в D2 завис: запросы висят без ответа, после подъёма висевшие соединения рвутся.
  */
 
 /** T таймаут, O вызов вне транзакции, R ретрай, K ключ идемпотентности, J backoff + jitter, B circuit breaker. */
@@ -12,7 +12,7 @@ export type Brick = "T" | "O" | "R" | "K" | "J" | "B";
 export const BRICKS: readonly Brick[] = ["T", "O", "R", "K", "J", "B"];
 
 /** Правила провала, номера — как в таблице level-01.md. */
-export type Rule = "P1" | "P2" | "P3" | "P4" | "P5" | "P6" | "P7";
+export type Rule = "P1" | "P2" | "P3" | "P4" | "P5" | "P6" | "P7" | "P8";
 
 /** Что увидел гость: бронь, «проверяем, подтвердим письмом», «попробуйте позже», страница ошибки через 10 с. */
 export type Answer = "confirmed" | "checking" | "refused" | "error";
@@ -26,7 +26,7 @@ export interface Phase {
   /** Волны гостей: с тика 0 каждые `every` тиков, до `until` (не включая); первые волны — размером из `ramp`
    *  (нагрузка нарастает — видно, как копится беда), дальше `size`. */
   waves: { every: number; size: number; until: number; ramp?: number[] };
-  /** Поставщик лежит в [from, to): запросы, пришедшие в это время, висят без ответа. */
+  /** Поставщик завис в [from, to): запросы, пришедшие в это время, висят без ответа; в `to` их соединения рвутся. */
   down?: { from: number; to: number };
   /** Задержка ответа поставщика, тиков. */
   latency: (guest: Guest, attempt: number) => number;
@@ -132,6 +132,8 @@ interface Call {
   booking: Booking;
   doneAt: number; // Infinity — висит
   abandoned: boolean;
+  /** Соединение порвалось при подъёме поставщика: ответа не будет. */
+  dropped?: boolean;
   generation: number;
   startedAt: number;
 }
@@ -210,6 +212,9 @@ export function run(p: Params, phase: Phase, bricks: ReadonlySet<Brick>): RunRes
     b.answer = a;
     b.answeredAt = t;
     answers[a]++;
+    // «проверяем, подтвердим письмом» без нашего номера брони у поставщика: найти бронь нечем
+    // (с ретраем без K та же беда раньше видна двумя бронями — П3)
+    if (a === "checking" && !has("K") && !has("R") && perGuestBookings.has(b.id)) fail("P8", t, b.id);
     if (a !== "confirmed" && phase.down && b.start >= phase.down.from && b.start < phase.down.to) {
       if (t - b.start > p.slowRefusal.after && ++slowRefusals > p.slowRefusal.max) fail(has("R") ? "P5" : "P7", t, b.id);
     }
@@ -228,6 +233,10 @@ export function run(p: Params, phase: Phase, bricks: ReadonlySet<Brick>): RunRes
   for (let t = 0; t < phase.ticks; t++) {
     const down = isDown(t);
 
+    // 0. поставщик поднялся: висевшие соединения рвутся — у него больше ничего не «в работе»; кого ещё ждали,
+    // того бросит таймаут (без T гостю покажет ошибку его страница)
+    if (phase.down && t === phase.down.to) for (const c of calls) if (c.doneAt === Infinity) c.dropped = true;
+
     // 1. ответы поставщика, потом таймауты: ответ ровно в срок — успел
     for (const c of calls) {
       if (c.doneAt !== t) continue;
@@ -237,6 +246,7 @@ export function run(p: Params, phase: Phase, bricks: ReadonlySet<Brick>): RunRes
         perGuestBookings.set(g, n);
         if (c.abandoned || !!c.booking.answer) {
           orphanBookings++;
+          if (c.booking.answer === "checking" && !has("K") && !has("R")) fail("P8", t, g);
           landed.push({ age: t - c.startedAt, doneAt: t, dupe: n > 1 });
         }
         if (n === 2) dupes++;
@@ -289,7 +299,8 @@ export function run(p: Params, phase: Phase, bricks: ReadonlySet<Brick>): RunRes
         const st = breaker as BreakerState; // меняется и в record() — сужение типа tsc тут неверно
         const reject = st === "open" || (st === "half" && probeInFlight);
         if (reject) {
-          answer(b, "refused", t); // ошибку открытого выключателя не повторяем
+          // ошибку открытого выключателя не повторяем; после брошенной попытки бронь могла состояться — не «отказ»
+          answer(b, b.attempt > 1 ? "checking" : "refused", t);
           continue;
         }
         if (st === "half") probeInFlight = true;
@@ -329,7 +340,7 @@ export function run(p: Params, phase: Phase, bricks: ReadonlySet<Brick>): RunRes
       supplierDown: down,
       breaker: has("B") ? breaker : "closed",
       retries: retryArrivals.length,
-      atSupplier: calls.filter((c) => c.doneAt > t).length,
+      atSupplier: calls.filter((c) => c.doneAt > t && !c.dropped).length,
       answers: { confirmed: answers.confirmed, checking: answers.checking, refused: answers.refused, error: answers.error },
       dupes,
       waits: bookings
@@ -338,7 +349,7 @@ export function run(p: Params, phase: Phase, bricks: ReadonlySet<Brick>): RunRes
       orphanBookings,
       calls: [
         ...landed.filter((l) => t - l.doneAt < 10).map((l) => ({ age: l.age, orphan: true, landed: true, dupe: l.dupe })),
-        ...calls.filter((c) => c.doneAt > t)
+        ...calls.filter((c) => c.doneAt > t && !c.dropped)
           .map((c) => ({ age: t - c.startedAt, orphan: c.abandoned || c.booking.call !== c || !!c.booking.answer })),
       ].slice(0, SHOWN),
     });

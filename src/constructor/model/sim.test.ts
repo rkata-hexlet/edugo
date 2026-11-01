@@ -9,15 +9,17 @@ const rules = (s: string, phase: number) =>
 // Таблица «кирпичи × беды → исход» из docs/constructor/level-01.md: все сработавшие правила каждой беды.
 const table: [string, Rule[], Rule[]][] = [
   ["", ["P1", "P2"], ["P1", "P2"]],
-  ["T", ["P1"], ["P1", "P7"]],
-  ["TO", [], ["P7"]],
+  ["T", ["P1", "P8"], ["P1", "P7", "P8"]],
+  ["TO", ["P8"], ["P7"]],
+  ["TOK", [], ["P7"]],
   ["TOR", ["P3", "P4"], ["P4", "P5"]],
   ["TORK", ["P4"], ["P4", "P5"]],
   ["TORKJ", [], ["P5"]],
   ["TORJ", ["P3"], ["P5"]],
   ["TORKB", ["P4"], []],
   ["OB", ["P2"], ["P2", "P6"]],
-  ["TOB", [], []],
+  ["TOB", ["P8"], []],
+  ["TOBK", [], []],
   ["TORKJB", [], []],
 ];
 
@@ -33,18 +35,19 @@ describe("уровень 1: кирпичи × беды", () => {
     expect(play(level, set("TORJ")).failure?.rule).toBe("P3"); // главная ловушка: две брони
     expect(play(level, set("TORKJ")).failure).toMatchObject({ rule: "P5", phase: "D2" });
     expect(play(level, set("OB")).failure).toMatchObject({ rule: "P2", phase: "D1" });
+    expect(play(level, set("TOB")).failure).toMatchObject({ rule: "P8", phase: "D1" }); // «проверяем» без ключа
   });
 
-  test("победа ровно у T+O+B, а ретрай — только с ключом и разбросом", () => {
+  test("победа ровно у T+O+B+K, а ретрай — только с ключом и разбросом", () => {
     for (let m = 0; m < 64; m++) {
       const s = new Set(BRICKS.filter((_, i) => m & (1 << i)));
-      const want = s.has("T") && s.has("O") && s.has("B") && (!s.has("R") || (s.has("K") && s.has("J")));
+      const want = s.has("T") && s.has("O") && s.has("B") && s.has("K") && (!s.has("R") || s.has("J"));
       expect(!play(level, s).failure, [...s].join("")).toBe(want);
     }
   });
 
   test("два решения — разный счёт: полное подтверждает больше, но грузит поставщика", () => {
-    const lean = play(level, set("TOB")).score!;
+    const lean = play(level, set("TOBK")).score!;
     const full = play(level, set("TORKJB")).score!;
     expect(full.confirmed).toBeGreaterThan(lean.confirmed);
     expect(full.requests).toBeGreaterThan(lean.requests);
@@ -53,9 +56,10 @@ describe("уровень 1: кирпичи × беды", () => {
 
   test("поставщик встал — пробный запрос замыкает выключатель, брони снова идут", () => {
     const d2 = level.phases[1];
-    const r = run(level.params, d2, set("TOB"));
+    const r = run(level.params, d2, set("TOBK"));
     expect(r.snapshots.at(-1)!.breaker).toBe("closed");
     expect(r.guests.some((g) => g.start >= d2.down!.to && g.answer === "confirmed")).toBe(true);
+    expect(r.snapshots.at(-1)!.atSupplier).toBe(0); // висевшие соединения порвались при подъёме
   });
 
   test("брошенный запрос поставщик доделывает: бронь создана, в стоп-кадре П3 видна вторая", () => {
@@ -64,8 +68,8 @@ describe("уровень 1: кирпичи × беды", () => {
     const snap = r.snapshots[p3.tick];
     expect(snap.calls.some((c) => c.landed && c.dupe)).toBe(true);
     expect(snap.orphanBookings).toBeGreaterThan(0);
-    // без ретрая брошенные тоже доделываются — гость слышит «проверяем», а бронь у поставщика есть
-    expect(run(level.params, level.phases[0], set("TOB")).snapshots.at(-1)!.orphanBookings).toBeGreaterThan(0);
+    // без ретрая брошенные тоже доделываются — гость слышит «проверяем», бронь находим по нашему номеру (K)
+    expect(run(level.params, level.phases[0], set("TOBK")).snapshots.at(-1)!.orphanBookings).toBeGreaterThan(0);
   });
 
   test("детерминирована", () => {
