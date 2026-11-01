@@ -3,7 +3,7 @@ import { COLOR, FONT, SIZE } from "./theme";
 import { pill } from "./widgets";
 
 // Предметы мира серии (motion-designer, эпизод 05): кружка, покупатель, навес витрины, кнопка «Купить»,
-// замок с дужкой; эпизод 09 — бирка замка, корона лидера; эпизод 13 — флажок закладки; эпизод 03 — банка-копилка. Только примитивы Pen; (x, y) — левый верхний угол; анимацию вешает эпизод классом fx-*.
+// замок с дужкой; эпизод 09 — бирка замка, корона лидера; эпизод 13 — флажок закладки; эпизод 03 — банка-копилка; эпизод 10 — рубильник. Только примитивы Pen; (x, y) — левый верхний угол; анимацию вешает эпизод классом fx-*.
 
 /** Размер кружки без пара: корпус и ручка. */
 export const MUG = { w: 54, h: 36 };
@@ -156,5 +156,33 @@ export function jar(pen: Pen, key: string, o: { x: number; y: number; fill: numb
     pen.path(`${key}:b`, { d: "M 2 8 h 30 v 18 q 0 5 -5 5 h -20 q -5 0 -5 -5 z", fill: "none", stroke: COLOR.ink, "stroke-width": 2, "stroke-linejoin": "round" });
     pen.rect(`${key}:lid`, { x: 0, y: 2, width: 34, height: 6, rx: 3, fill: COLOR.ink });
     pen.line(`${key}:slot`, { x1: 10, y1: 5, x2: 24, y2: 5, stroke: COLOR.bg, "stroke-width": 2, "stroke-linecap": "round" });
+  }, o.attrs);
+}
+
+export type SwitchState = "closed" | "open" | "half";
+
+/** Размер рубильника: контакты по краям, ножик между ними. */
+export const SWITCH = { w: 64, h: 32 };
+
+/**
+ * Рубильник (эпизод 10: circuit breaker на пути вызова): два контакта и ножик от левого. `closed` — ножик лежит на
+ * правом контакте, зелёный, цепь замкнута; `open` — поднят на 28°, красный, цепь разорвана; `half` — приподнят на 12°,
+ * жёлтый пунктир (пропускает один пробный вызов). Провод входит в левый контакт (0, 24), выходит из правого (64, 24).
+ * (x, y) — левый верхний угол.
+ */
+export function knifeSwitch(pen: Pen, key: string, o: { x: number; y: number; state: SwitchState; attrs?: Attrs }): void {
+  const KNIFE = { closed: { deg: 0, color: COLOR.ok }, open: { deg: 28, color: COLOR.error }, half: { deg: 12, color: COLOR.warn } }[o.state];
+  const rad = (KNIFE.deg * Math.PI) / 180;
+  const pivot = { x: 8, y: 24 }, len = 48;
+  const tip = { x: pivot.x + len * Math.cos(rad), y: pivot.y - len * Math.sin(rad) };
+  pen.group(key, o.x, o.y, () => {
+    for (const [i, cx] of [8, 56].entries()) {
+      pen.rect(`${key}:c${i}`, { x: cx - 6, y: 18, width: 12, height: 12, rx: 6, fill: COLOR.surface2, stroke: KNIFE.color, "stroke-width": 2.5 });
+    }
+    pen.line(`${key}:knife`, {
+      x1: pivot.x, y1: pivot.y, x2: tip.x, y2: tip.y, stroke: KNIFE.color, "stroke-width": 5, "stroke-linecap": "round",
+      ...(o.state === "half" ? { "stroke-dasharray": "8 5" } : {}),
+    });
+    pen.rect(`${key}:knob`, { x: tip.x - 4, y: tip.y - 4, width: 8, height: 8, rx: 4, fill: KNIFE.color });
   }, o.attrs);
 }
