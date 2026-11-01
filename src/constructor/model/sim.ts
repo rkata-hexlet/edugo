@@ -71,6 +71,8 @@ export interface Violation {
 export interface Snapshot {
   tick: number;
   poolUsed: number;
+  /** Из них заняты бронями (остальные — поиском). */
+  poolBookings: number;
   searchWaiting: number;
   bookingsWaiting: number;
   guestsWaiting: number;
@@ -149,7 +151,7 @@ export function run(p: Params, phase: Phase, bricks: ReadonlySet<Brick>): RunRes
   const bookings: Booking[] = [];
   const calls: Call[] = [];
   const queue: Waiter[] = [];
-  const leases: number[] = []; // тик освобождения коротких слотов (поиск, запись заявки при O)
+  const leases: { until: number; booking: boolean }[] = []; // короткие слоты: поиск, запись заявки при O
   let held = 0; // слоты, удерживаемые бронями на время вызова (без O)
   const perGuestBookings = new Map<number, number>();
   const keyed = new Set<number>(); // брони у поставщика по нашему номеру (K)
@@ -251,11 +253,11 @@ export function run(p: Params, phase: Phase, bricks: ReadonlySet<Brick>): RunRes
     if (t % p.search.every === 0) queue.push({ kind: "search", since: t });
 
     // 3. пул: короткие слоты освобождаются, очередь — по порядку
-    for (let i = leases.length - 1; i >= 0; i--) if (leases[i] <= t) leases.splice(i, 1);
+    for (let i = leases.length - 1; i >= 0; i--) if (leases[i].until <= t) leases.splice(i, 1);
     while (queue.length && leases.length + held < p.pool) {
       const q = queue.shift()!;
-      if (q.kind === "search") leases.push(t + p.search.hold);
-      else if (has("O")) (leases.push(t + 1), (q.b.phase = "ready"));
+      if (q.kind === "search") leases.push({ until: t + p.search.hold, booking: false });
+      else if (has("O")) (leases.push({ until: t + 1, booking: true }), (q.b.phase = "ready"));
       else ((q.b.holdsSlot = true), held++, (q.b.phase = "ready"));
     }
 
@@ -301,6 +303,7 @@ export function run(p: Params, phase: Phase, bricks: ReadonlySet<Brick>): RunRes
     snapshots.push({
       tick: t,
       poolUsed: leases.length + held,
+      poolBookings: held + leases.filter((l) => l.booking).length,
       searchWaiting: sw.length,
       bookingsWaiting: queue.length - sw.length,
       guestsWaiting: bookings.filter((b) => !b.answer).length,

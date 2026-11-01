@@ -41,6 +41,9 @@ const SUP_Y = SVC_Y + SVC_H + 56;
 const F = { "font-family": FONT.sans };
 const T = (size: number, fill: string = COLOR.ink, weight = 400) => ({ ...F, "font-size": size, fill, "font-weight": weight });
 const MID = 120; // ось стрелок
+/** Кто держит соединение пула. */
+const BOOKING = COLOR.mug;
+const SEARCH = COLOR.mail;
 
 function node(pen: Pen, key: string, y: number, h: number, title: string, red: boolean) {
   pen.rect(`${key}:bg`, {
@@ -76,15 +79,20 @@ export function render(pen: Pen, s: ViewState): void {
   // Сервис отеля: пул соединений, общий с поиском
   node(pen, "svc", SVC_Y, SVC_H, "Сервис отеля", false);
   const used = s.snap?.poolUsed ?? 0;
+  const forBooking = s.snap?.poolBookings ?? 0;
   pen.text("svc:pool", { x: 32, y: 214, ...T(16, red("pool") ? COLOR.error : COLOR.muted, red("pool") ? 600 : 400) },
     `пул соединений ${used}/${s.pool}`);
+  // занятые: сначала брони, потом поиск — цвет = кто держит соединение
   for (let i = 0; i < s.pool; i++) {
-    const busy = i < used;
+    const fill = i < forBooking ? BOOKING : i < used ? SEARCH : COLOR.bg2;
     pen.rect(`svc:cell${i}`, {
-      x: 32 + i * 38, y: 224, width: 30, height: 30, rx: 6,
-      fill: busy ? (red("pool") ? COLOR.error : COLOR.postgres) : COLOR.bg2, stroke: COLOR.line, "stroke-width": 1.5,
+      x: 32 + i * 33, y: 224, width: 27, height: 30, rx: 6, fill,
+      stroke: red("pool") && i < used ? COLOR.error : COLOR.line, "stroke-width": red("pool") && i < used ? 3 : 1.5,
     });
   }
+  pen.text("svc:legend", { x: VIEW.w - 32, y: 246, "text-anchor": "end", ...T(14, COLOR.muted) }, [
+    { text: "■", attrs: { fill: BOOKING } }, { text: " бронь  " }, { text: "■", attrs: { fill: SEARCH } }, { text: " поиск" },
+  ]);
   if (s.snap) {
     const sw = s.snap.searchWaiting;
     pen.text("svc:search", { x: VIEW.w - 32, y: 214, "text-anchor": "end", ...T(16, sw ? COLOR.warn : COLOR.muted) },
@@ -107,7 +115,7 @@ export function render(pen: Pen, s: ViewState): void {
         fill: on ? COLOR.surface2 : "transparent",
       });
       pen.rect(`${k}:track`, { x: 8, y: 11, width: 40, height: 24, rx: 12, "pointer-events": "none",
-        fill: on ? COLOR.mail : COLOR.bg2, stroke: on ? COLOR.mail : COLOR.faint, "stroke-width": 1.5 });
+        fill: on ? COLOR.ok : COLOR.bg2, stroke: on ? COLOR.ok : COLOR.faint, "stroke-width": 1.5 });
       pen.rect(`${k}:knob`, { x: on ? 28 : 12, y: 15, width: 16, height: 16, rx: 8, "pointer-events": "none",
         fill: on ? COLOR.ink : COLOR.faint });
       pen.text(`${k}:name`, { x: 60, y: 20, "pointer-events": "none", ...T(16, on ? COLOR.ink : COLOR.muted, 600) }, sw.name);
