@@ -113,7 +113,8 @@
 без тревоги (`sound(s, w, replay)`).
 
 ## Конструктор (`src/constructor/`, ADR-0007, план — `docs/constructor/plan.md`)
-Прикладная зона, сцен не импортирует. Пока есть только модель (этап 2); `play.html` → `main.ts` — этап 3.
+Прикладная зона, сцен не импортирует. Точка входа `play.html` → `constructor/main.ts` (composition root: уровень, `SvgPen`,
+`mountGame`); в сборке — второй вход `vite.config.ts`.
 - `model/sim.ts` — мир уровня в тиках (100 мс), детерминирован (хэш `unit` вместо случайности, разброс jitter —
   последовательность Вейля). `run(params, phase, bricks)` — одна беда: пул слотов (поиск + брони), гости волнами,
   поставщик (задержка `Phase.latency`, `down` — запросы висят), кирпичи T O R K J B как правила; итог — первые
@@ -122,6 +123,12 @@
   беды по порядку, стоп на первом провале (текст поломки и кадр ролика из `Level.failures`), иначе — сумма счёта.
 - `levels/01-booking.ts` — числа уровня 1 и две беды; `model/sim.test.ts` — таблица «кирпичи × беды» из
   `docs/constructor/level-01.md`, перебор всех 64 наборов (кто побеждает), счёт двух решений.
+- `ui/view.ts` — серая схема в портрете (viewBox 400×600) через `Pen` и `kit/theme`: Гости → Сервис отеля [пул] →
+  Поставщик, гнёзда кирпичей (`data-slot`) на стрелках, стоп-кадр красит поломку (`Rule` → узел), а не кирпич.
+- `ui/game.ts` — DOM-контроллер: кирпич касанием гнезда или кнопки палитры, «Запуск» — `play()` целиком, затем показ
+  срезов (120 тиков/с, заголовок каждой беды), карточка провала (текст, кадр ролика 10) или табло победы.
+  `?bricks=TOB` — набор заранее, `&end` — сразу итог (для снимков).
+- `scripts/play-shots.mjs` — снимки в портрете 390×844 по наборам кирпичей → `out/shots/play/` (нужен `npm run dev`).
 
 ## Порядок сборки (main.ts)
 1. Импорт сцен → реестр (`Record<string, Scene<any>>`: у каждой сцены свой тип состояния). 2. Выбор сцены (`?scene=01`). 3. `loadTakes(scene.id)` — справочник дублей.
@@ -144,6 +151,8 @@ main.ts ──► engine/takes ──► engine/contract (тип Step)
 scenes/* ──► engine/contract (только типы)
 scenes/* ──► kit ──► engine/contract   (с этапа 3; kit не знает сцен и плеера)
    sim ──► kit/director (только типы Board, Verdict); script ──► kit/director (Director)
-constructor/levels ──► constructor/model/sim   (без engine, kit и сцен)
+constructor/main ──► constructor/ui/game ──► constructor/ui/view ──► kit/theme, engine/contract
+              │                        └──► constructor/model/sim
+              ├──► engine/pen   └──► constructor/levels ──► constructor/model/sim   (model — без engine, kit и сцен)
 ```
 Сцены не импортируют друг друга. Циклов нет.

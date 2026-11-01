@@ -35,6 +35,8 @@ const voice = (): Plugin => ({
 
 export default defineConfig({
   plugins: [voice()],
+  // две точки входа: плеер эпизодов и конструктор (ADR-0007)
+  build: { rollupOptions: { input: { main: "index.html", play: "play.html" } } },
   // Новый дубль — не повод перезагружать страницу суфлёра.
   server: { watch: { ignored: ["**/voice/**", "**/public/voice/**"] } },
 });

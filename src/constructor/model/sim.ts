@@ -77,6 +77,12 @@ export interface Snapshot {
   breaker: BreakerState;
   /** Повторов к поставщику за окно storm. */
   retries: number;
+  /** Запросов в работе у поставщика, включая брошенные по таймауту (он их всё равно доделает). */
+  atSupplier: number;
+  /** Ответы гостям с начала беды. */
+  answers: Record<Answer, number>;
+  /** Гостей с двумя бронями у поставщика. */
+  dupes: number;
 }
 
 export interface Score {
@@ -150,6 +156,8 @@ export function run(p: Params, phase: Phase, bricks: ReadonlySet<Brick>): RunRes
   const snapshots: Snapshot[] = [];
   let requests = 0;
   let slowRefusals = 0;
+  let dupes = 0;
+  const answers: Record<Answer, number> = { confirmed: 0, checking: 0, refused: 0, error: 0 };
 
   // circuit breaker: окно последних исходов, поколение — исходы вызовов прошлого состояния не считаются
   let breaker: BreakerState = "closed";
@@ -183,6 +191,7 @@ export function run(p: Params, phase: Phase, bricks: ReadonlySet<Brick>): RunRes
     if (b.answer) return; // страница ошибки уже показана, сервис доработал впустую
     b.answer = a;
     b.answeredAt = t;
+    answers[a]++;
     if (a !== "confirmed" && phase.down && b.start >= phase.down.from && b.start < phase.down.to) {
       if (t - b.start > p.slowRefusal.after && ++slowRefusals > p.slowRefusal.max) fail(has("R") ? "P5" : "P7", t, b.id);
     }
@@ -208,6 +217,7 @@ export function run(p: Params, phase: Phase, bricks: ReadonlySet<Brick>): RunRes
       if (!(has("K") && keyed.has(g))) {
         const n = (perGuestBookings.get(g) ?? 0) + 1;
         perGuestBookings.set(g, n);
+        if (n === 2) dupes++;
         if (n > 1) fail("P3", t, g);
         if (has("K")) keyed.add(g);
       }
@@ -281,6 +291,7 @@ export function run(p: Params, phase: Phase, bricks: ReadonlySet<Brick>): RunRes
       if (b.answer || t - b.start < p.guestWait) continue;
       b.answer = "error";
       b.answeredAt = t;
+      answers.error++;
       fail(has("B") && !has("T") && down ? "P6" : "P2", t, b.id);
     }
     while (retryArrivals.length && retryArrivals[0] <= t - p.storm.window) retryArrivals.shift();
@@ -295,6 +306,9 @@ export function run(p: Params, phase: Phase, bricks: ReadonlySet<Brick>): RunRes
       supplierDown: down,
       breaker: has("B") ? breaker : "closed",
       retries: retryArrivals.length,
+      atSupplier: calls.filter((c) => c.doneAt > t).length,
+      answers: { confirmed: answers.confirmed, checking: answers.checking, refused: answers.refused, error: answers.error },
+      dupes,
     });
   }
 
