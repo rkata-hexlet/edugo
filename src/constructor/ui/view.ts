@@ -4,7 +4,7 @@ import type { Pen } from "../../engine/contract";
 import { COLOR, FONT } from "../../kit/theme";
 import { SHOWN, type Brick, type Rule, type Snapshot } from "../model/sim";
 
-export const VIEW = { w: 400, h: 880 } as const;
+export const VIEW = { w: 400, h: 624 } as const;
 
 /** Что красить красным на стоп-кадре: поломку, а не кирпич. */
 type Culprit = "guest" | "pool" | "wire" | "supplier";
@@ -21,24 +21,28 @@ export interface ViewState {
   failed?: Rule;
   /** Можно ставить кирпичи (не идёт прогон). */
   editable: boolean;
+  /** Последний тронутый переключатель — его пояснение под сеткой. */
+  focus?: Brick;
 }
 
 /** Переключатели внутри «Сервиса отеля» — все шесть кирпичей живут в его коде вызова поставщика. Порядок — по ходу вызова. */
 export const SWITCHES: { brick: Brick; name: string; hint: string }[] = [
-  { brick: "O", name: "Вызов вне транзакции", hint: "пока ждём ответа, соединение свободно" },
+  { brick: "O", name: "Вне транзакции", hint: "пока ждём ответа, соединение свободно" },
   { brick: "T", name: "Таймаут 3 с", hint: "не ждать поставщика дольше 3 с" },
   { brick: "B", name: "Circuit breaker", hint: "много ошибок — перестать звать на 10 с" },
   { brick: "R", name: "Ретрай ×3", hint: "при неудаче повторить, до 3 попыток" },
   { brick: "J", name: "Backoff + jitter", hint: "паузы между повторами растут, вразброс" },
-  { brick: "K", name: "Ключ идемпотентности", hint: "повтор несёт тот же номер брони" },
+  { brick: "K", name: "Идемпотентность", hint: "ключ: повтор несёт тот же номер брони" },
 ];
-const G_H = 160; // карточка гостей
-const SVC_Y = 12 + G_H + 60;
-const SW_Y = SVC_Y + 136; // первый переключатель
-const SW_H = 50;
-const SVC_H = SW_Y + SWITCHES.length * SW_H + 4 - SVC_Y;
-const SUP_Y = SVC_Y + SVC_H + 56;
-const SUP_H = 130;
+const GAP = 36; // стрелка между блоками
+const G_H = 136; // карточка гостей
+const SVC_Y = 12 + G_H + GAP;
+const SW_Y = SVC_Y + 104; // сетка переключателей 2×3
+const SW_H = 42;
+const SW_W = (VIEW.w - 64 - 8) / 2;
+const SVC_H = SW_Y + 3 * SW_H + 30 - SVC_Y;
+const SUP_Y = SVC_Y + SVC_H + GAP;
+const SUP_H = 124;
 /** Шкалы столбиков: гость ждёт до страницы ошибки (10 с), поставщик тормозит до 30 с. */
 const GUEST_MAX = 100;
 const SUP_MAX = 300;
@@ -79,17 +83,17 @@ export function render(pen: Pen, s: ViewState): void {
   // Гости
   node(pen, "guest", 12, G_H, "Гости", red("guest"));
   if (s.snap && a) {
-    pen.text("guest:wait", { x: VIEW.w - 32, y: 38, "text-anchor": "end", ...T(16, COLOR.muted) }, `ждут ответа: ${s.snap.guestsWaiting}`);
-    pen.text("guest:ans1", { x: 32, y: 62, ...T(16) }, [
+    pen.text("guest:wait", { x: VIEW.w - 32, y: 36, "text-anchor": "end", ...T(16, COLOR.muted) }, `ждут ответа: ${s.snap.guestsWaiting}`);
+    pen.text("guest:ans1", { x: 32, y: 58, ...T(16) }, [
       { text: `бронь ${a.confirmed}`, attrs: { fill: COLOR.ok } },
       { text: ` · проверяем ${a.checking}`, attrs: { fill: COLOR.warn } },
     ]);
-    pen.text("guest:ans2", { x: 32, y: 88, ...T(16) }, [
+    pen.text("guest:ans2", { x: 32, y: 82, ...T(16) }, [
       { text: `отказ ${a.refused}` },
       { text: ` · ошибка ${a.error}`, attrs: { fill: a.error ? COLOR.error : COLOR.ink } },
       ...(s.snap.dupes ? [{ text: ` · 2 брони: ${s.snap.dupes}`, attrs: { fill: COLOR.error, "font-weight": 600 } }] : []),
     ]);
-    bars(pen, "guest:bars", 114, s.snap.waits.map((age) => ({
+    bars(pen, "guest:bars", 104, s.snap.waits.map((age) => ({
       h: Math.min(age / GUEST_MAX, 1),
       fill: age >= GUEST_MAX ? COLOR.error : age >= GUEST_MAX / 2 ? COLOR.warn : BOOKING,
     })), "10 с — страница ошибки");
@@ -124,33 +128,32 @@ export function render(pen: Pen, s: ViewState): void {
   }
 
   // Переключатели: касание по всей строке
-  pen.text("svc:how", { x: 32, y: SW_Y - 12, ...T(15, COLOR.muted) }, "Как сервис вызывает поставщика:");
-  pen.line("svc:sep", { x1: 32, y1: SW_Y - 34, x2: VIEW.w - 32, y2: SW_Y - 34, stroke: COLOR.line, "stroke-width": 1 });
+  pen.line("svc:sep", { x1: 32, y1: SW_Y - 10, x2: VIEW.w - 32, y2: SW_Y - 10, stroke: COLOR.line, "stroke-width": 1 });
   SWITCHES.forEach((sw, i) => {
     const on = s.bricks.has(sw.brick);
     const k = `sw:${sw.brick}`;
-    let state = "";
-    if (sw.brick === "B" && on && s.snap) state = s.snap.breaker === "open" ? "открыт" : s.snap.breaker === "half" ? "проба" : "";
-    pen.group(k, 24, SW_Y + i * SW_H, () => {
+    pen.group(k, 32 + (i % 2) * (SW_W + 8), SW_Y + Math.floor(i / 2) * SW_H, () => {
       pen.rect(`${k}:hit`, {
-        width: VIEW.w - 48, height: SW_H - 4, rx: 8, "data-slot": sw.brick, cursor: s.editable ? "pointer" : "default",
-        fill: on ? COLOR.surface2 : "transparent",
+        width: SW_W, height: SW_H - 6, rx: 8, "data-slot": sw.brick, cursor: s.editable ? "pointer" : "default",
+        fill: on ? COLOR.surface2 : "transparent", stroke: on ? COLOR.ok : COLOR.faint, "stroke-width": 1.5,
       });
-      pen.rect(`${k}:track`, { x: 8, y: 11, width: 40, height: 24, rx: 12, "pointer-events": "none",
-        fill: on ? COLOR.ok : COLOR.bg2, stroke: on ? COLOR.ok : COLOR.faint, "stroke-width": 1.5 });
-      pen.rect(`${k}:knob`, { x: on ? 28 : 12, y: 15, width: 16, height: 16, rx: 8, "pointer-events": "none",
-        fill: on ? COLOR.ink : COLOR.faint });
-      pen.text(`${k}:name`, { x: 60, y: 20, "pointer-events": "none", ...T(16, on ? COLOR.ink : COLOR.muted, 600) }, sw.name);
-      pen.text(`${k}:hint`, { x: 60, y: 39, "pointer-events": "none", ...T(13, COLOR.muted) }, sw.hint);
-      if (state) pen.text(`${k}:state`, { x: VIEW.w - 60, y: 20, "text-anchor": "end", "pointer-events": "none",
-        ...T(15, COLOR.warn, 600) }, state);
+      pen.rect(`${k}:dot`, { x: 10, y: 11, width: 14, height: 14, rx: 4, "pointer-events": "none",
+        fill: on ? COLOR.ok : "transparent", stroke: on ? COLOR.ok : COLOR.faint, "stroke-width": 1.5 });
+      pen.text(`${k}:name`, { x: 32, y: 24, "pointer-events": "none", ...T(14, on ? COLOR.ink : COLOR.muted, 600) }, sw.name);
     });
   });
+  // строка под сеткой: в прогоне — состояние выключателя, до него — что делает тронутый переключатель
+  const br = s.snap && s.bricks.has("B") && s.snap.breaker !== "closed" ? s.snap.breaker : undefined;
+  const focus = SWITCHES.find((w) => w.brick === s.focus);
+  const line = br ? [{ text: br === "open" ? "Circuit breaker открыт: вызовы не идут" : "Circuit breaker: пробный вызов", attrs: { fill: COLOR.warn } }]
+    : s.snap ? [] : focus ? [{ text: focus.hint, attrs: { fill: s.bricks.has(focus.brick) ? COLOR.ok : COLOR.muted } }]
+    : [{ text: "Касание включает и выключает защиту" }];
+  if (line.length) pen.text("svc:hint", { x: 32, y: SW_Y + 3 * SW_H + 14, ...T(14, COLOR.muted) }, line);
 
   // Стрелка сервис → поставщик
   const wireColor = red("wire") ? COLOR.error : COLOR.faint;
   pen.line("w2", { x1: MID, y1: SVC_Y + SVC_H, x2: MID, y2: SUP_Y - 4, stroke: wireColor, "stroke-width": red("wire") ? 5 : 3, marker: "arrow" });
-  if (s.snap?.retries) pen.text("w2:retries", { x: MID + 14, y: SVC_Y + SVC_H + 34, ...T(16, red("wire") ? COLOR.error : COLOR.warn, 600) },
+  if (s.snap?.retries) pen.text("w2:retries", { x: MID + 14, y: SVC_Y + SVC_H + 24, ...T(16, red("wire") ? COLOR.error : COLOR.warn, 600) },
     `повторы: ${s.snap.retries}`);
 
   // Поставщик
@@ -159,11 +162,11 @@ export function render(pen: Pen, s: ViewState): void {
     const st = s.snap.supplierDown ? "лежит" : s.phase === "D1" ? "тормозит" : "работает";
     pen.text("sup:st", { x: VIEW.w - 32, y: SUP_Y + 26, "text-anchor": "end", ...T(16, s.snap.supplierDown ? COLOR.error : s.phase === "D1" ? COLOR.warn : COLOR.ok, 600) }, st);
     const orphans = s.snap.calls.filter((c) => c.orphan).length;
-    pen.text("sup:n", { x: 32, y: SUP_Y + 52, ...T(16, COLOR.muted) }, [
+    pen.text("sup:n", { x: 32, y: SUP_Y + 50, ...T(16, COLOR.muted) }, [
       { text: `в работе: ${s.snap.atSupplier}` },
       ...(orphans ? [{ text: ` · никто не ждёт: ${orphans}`, attrs: { fill: COLOR.warn } }] : []),
     ]);
-    bars(pen, "sup:bars", SUP_Y + 76, s.snap.calls.map((c) => ({
+    bars(pen, "sup:bars", SUP_Y + 78, s.snap.calls.map((c) => ({
       h: Math.min(c.age / SUP_MAX, 1), fill: BOOKING, hollow: c.orphan,
     })), s.snap.supplierDown ? "молчит — ответа нет" : "30 с — ответ поставщика");
   }

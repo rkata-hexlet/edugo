@@ -27,6 +27,7 @@ const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, text = "
 export function mountGame(root: HTMLElement, level: Level, makePen: (svg: SVGSVGElement) => Pen & { frame(d: () => void, o?: { instant?: boolean }): void }, query: URLSearchParams) {
   const bricks = new Set<Brick>([...(query.get("bricks") ?? "")].filter((c): c is Brick => BRICKS.includes(c as Brick)));
   let running = false;
+  let focus: Brick | undefined;
   let view: Omit<ViewState, "bricks" | "pool" | "editable"> = {};
 
   root.className = "cx";
@@ -41,19 +42,21 @@ export function mountGame(root: HTMLElement, level: Level, makePen: (svg: SVGSVG
   card.hidden = true;
   const start = el("button", "cx-run", "Запуск");
   start.onclick = () => launch(query.has("end"));
-  root.append(head, status, svg, card, start);
+  root.append(head, card, status, svg, start);
 
   const pen = makePen(svg);
   const draw = () => {
-    pen.frame(() => render(pen, { ...view, bricks, pool: level.params.pool, editable: !running }), { instant: true });
+    pen.frame(() => render(pen, { ...view, bricks, pool: level.params.pool, editable: !running, focus }), { instant: true });
     start.disabled = running;
   };
 
   function toggle(b: Brick) {
     if (running) return;
     bricks.has(b) ? bricks.delete(b) : bricks.add(b);
+    focus = b;
     view = {};
     card.hidden = true;
+    status.hidden = false;
     status.textContent = HOWTO;
     draw();
   }
@@ -69,6 +72,8 @@ export function mountGame(root: HTMLElement, level: Level, makePen: (svg: SVGSVG
       return result.snapshots.slice(0, last + 1).map((snap) => ({ phase: phase.id, snap }));
     });
     card.hidden = true;
+    status.hidden = false;
+    head.hidden = true; // цель прочитана — экран отдаём схеме
     if (skip) return finish(out, frames[frames.length - 1]);
     running = true;
     let i = 0;
@@ -125,7 +130,7 @@ export function mountGame(root: HTMLElement, level: Level, makePen: (svg: SVGSVG
       view = { phase: last.phase, snap: last.snap, failed: f.rule };
       status.textContent = `${PHASE[f.phase]} · ${clock(f.tick)} · провал`;
       card.className = "cx-card fail";
-      card.append(el("p", "cx-fail", f.text), el("p", "cx-why", f.why),
+      card.append(el("p", "cx-phase", `${PHASE[f.phase]} · ${clock(f.tick)}`), el("p", "cx-fail", f.text), el("p", "cx-why", f.why),
         el("p", "cx-note", "Поменяй схему и запусти снова."));
     } else if (out.score) {
       const s = out.score;
@@ -146,6 +151,7 @@ export function mountGame(root: HTMLElement, level: Level, makePen: (svg: SVGSVG
         el("p", "cx-note", "Больше броней, меньше запросов и кирпичей — лучше. Попробуй другое решение."));
     }
     card.hidden = false;
+    status.hidden = !!out.failure; // беда и время — в карточке провала
     draw();
   }
 

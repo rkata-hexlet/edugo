@@ -5,10 +5,11 @@ html, body { margin: 0; background: #0e1325; color: #eef1ff; font-family: Inter,
 .cx-goal { font-size: 15px; line-height: 1.35; color: #8f9ac4; margin: 0 0 10px; }
 .cx-status { font-size: 16px; font-weight: 600; min-height: 22px; margin-bottom: 6px; }
 .cx-scheme { width: 100%; display: block; }
-.cx-card { border-radius: 12px; padding: 12px 14px; margin: 8px 0; background: #1b2342; border: 2px solid #34406e; }
+.cx-card { border-radius: 12px; padding: 10px 14px; margin: 4px 0 8px; background: #1b2342; border: 2px solid #34406e; }
 .cx-card.fail { border-color: #ff5c6c; background: #3a1c2a; }
 .cx-card.win { border-color: #3ddc97; background: #163a33; }
 .cx-fail, .cx-win { font-size: 18px; font-weight: 600; margin: 0 0 8px; }
+.cx-phase { font-size: 14px; color: #8f9ac4; margin: 0 0 4px; }
 .cx-why { font-size: 15px; line-height: 1.35; margin: 0 0 10px; }
 .cx-note { font-size: 14px; color: #8f9ac4; margin: 8px 0 0; }
 .cx-board { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
