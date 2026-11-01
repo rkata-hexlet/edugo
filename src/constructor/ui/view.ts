@@ -34,7 +34,7 @@ export const SWITCHES: { brick: Brick; name: string; hint: string }[] = [
   { brick: "J", name: "Backoff + jitter", hint: "паузы между повторами растут, вразброс" },
   { brick: "K", name: "Идемпотентность", hint: "ключ: повтор несёт тот же номер брони" },
 ];
-const GAP = 36; // стрелка между блоками
+const GAP = 27; // стрелка между блоками
 const G_H = 136; // карточка гостей
 const SVC_Y = 12 + G_H + GAP;
 const SW_Y = SVC_Y + 104; // сетка переключателей 2×3
@@ -42,7 +42,7 @@ const SW_H = 42;
 const SW_W = (VIEW.w - 64 - 8) / 2;
 const SVC_H = SW_Y + 3 * SW_H + 30 - SVC_Y;
 const SUP_Y = SVC_Y + SVC_H + GAP;
-const SUP_H = 124;
+const SUP_H = 142;
 /** Шкалы столбиков: гость ждёт до страницы ошибки (10 с), поставщик тормозит до 30 с. */
 const GUEST_MAX = 100;
 const SUP_MAX = 300;
@@ -166,8 +166,11 @@ export function render(pen: Pen, s: ViewState): void {
       { text: `в работе: ${s.snap.atSupplier}` },
       ...(orphans ? [{ text: ` · никто не ждёт: ${orphans}`, attrs: { fill: COLOR.warn } }] : []),
     ]);
-    bars(pen, "sup:bars", SUP_Y + 78, s.snap.calls.map((c) => ({
-      h: Math.min(c.age / SUP_MAX, 1), fill: BOOKING, hollow: c.orphan,
+    // брошенный запрос поставщик всё равно доделал — бронь у него есть, хотя сервис о ней не знает
+    if (s.snap.orphanBookings) pen.text("sup:landed", { x: 32, y: SUP_Y + 72, ...T(16, COLOR.warn) },
+      `брошенных доделал: ${s.snap.orphanBookings} — брони созданы`);
+    bars(pen, "sup:bars", SUP_Y + 100, s.snap.calls.map((c) => ({
+      h: Math.min(c.age / SUP_MAX, 1), fill: c.dupe ? COLOR.error : c.landed ? COLOR.warn : BOOKING, hollow: c.orphan && !c.landed,
     })), s.snap.supplierDown ? "молчит — ответа нет" : "30 с — ответ поставщика");
   }
 }

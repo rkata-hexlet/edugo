@@ -58,6 +58,16 @@ describe("уровень 1: кирпичи × беды", () => {
     expect(r.guests.some((g) => g.start >= d2.down!.to && g.answer === "confirmed")).toBe(true);
   });
 
+  test("брошенный запрос поставщик доделывает: бронь создана, в стоп-кадре П3 видна вторая", () => {
+    const r = run(level.params, level.phases[0], set("TORJ"));
+    const p3 = r.violations.find((v) => v.rule === "P3")!;
+    const snap = r.snapshots[p3.tick];
+    expect(snap.calls.some((c) => c.landed && c.dupe)).toBe(true);
+    expect(snap.orphanBookings).toBeGreaterThan(0);
+    // без ретрая брошенные тоже доделываются — гость слышит «проверяем», а бронь у поставщика есть
+    expect(run(level.params, level.phases[0], set("TOB")).snapshots.at(-1)!.orphanBookings).toBeGreaterThan(0);
+  });
+
   test("детерминирована", () => {
     const a = play(level, set("TORKJB"));
     expect(play(level, set("TORKJB"))).toEqual(a);

@@ -89,8 +89,12 @@ export interface Snapshot {
   /** Сколько ждёт каждый гость без ответа, тиков; старшие первыми, не больше `SHOWN`. Гость, увидевший страницу
    *  ошибки, ещё секунду стоит в списке с возрастом на момент ошибки — видно, кто упёрся в предел. */
   waits: number[];
-  /** Вызовы в работе у поставщика: возраст, тиков, и «брошен» — его уже никто не ждёт (таймаут или гость ушёл). */
-  calls: { age: number; orphan: boolean }[];
+  /** Брошенных запросов, которые поставщик всё равно доделал и создал по ним бронь (с начала беды). */
+  orphanBookings: number;
+  /** Вызовы у поставщика: возраст, тиков, и «брошен» — его уже никто не ждёт (таймаут или гость ушёл).
+   *  Сначала — брошенные, доделанные за последнюю секунду (`landed`: бронь создана, `dupe` — вторая у гостя),
+   *  возраст на момент ответа; потом — те, что в работе. */
+  calls: { age: number; orphan: boolean; landed?: boolean; dupe?: boolean }[];
 }
 
 /** Сколько гостей и вызовов срез отдаёт поштучно — столько помещается столбиками на схеме. */
@@ -169,6 +173,8 @@ export function run(p: Params, phase: Phase, bricks: ReadonlySet<Brick>): RunRes
   let requests = 0;
   let slowRefusals = 0;
   let dupes = 0;
+  let orphanBookings = 0;
+  const landed: { age: number; doneAt: number; dupe: boolean }[] = []; // брошенные, доделанные поставщиком
   const answers: Record<Answer, number> = { confirmed: 0, checking: 0, refused: 0, error: 0 };
 
   // circuit breaker: окно последних исходов, поколение — исходы вызовов прошлого состояния не считаются
@@ -229,6 +235,10 @@ export function run(p: Params, phase: Phase, bricks: ReadonlySet<Brick>): RunRes
       if (!(has("K") && keyed.has(g))) {
         const n = (perGuestBookings.get(g) ?? 0) + 1;
         perGuestBookings.set(g, n);
+        if (c.abandoned || !!c.booking.answer) {
+          orphanBookings++;
+          landed.push({ age: t - c.startedAt, doneAt: t, dupe: n > 1 });
+        }
         if (n === 2) dupes++;
         if (n > 1) fail("P3", t, g);
         if (has("K")) keyed.add(g);
@@ -325,8 +335,12 @@ export function run(p: Params, phase: Phase, bricks: ReadonlySet<Brick>): RunRes
       waits: bookings
         .filter((b) => !b.answer || (b.answer === "error" && t - b.answeredAt! < 10))
         .slice(0, SHOWN).map((b) => (b.answer ? b.answeredAt! : t) - b.start),
-      calls: calls.filter((c) => c.doneAt > t).slice(0, SHOWN)
-        .map((c) => ({ age: t - c.startedAt, orphan: c.abandoned || c.booking.call !== c || !!c.booking.answer })),
+      orphanBookings,
+      calls: [
+        ...landed.filter((l) => t - l.doneAt < 10).map((l) => ({ age: l.age, orphan: true, landed: true, dupe: l.dupe })),
+        ...calls.filter((c) => c.doneAt > t)
+          .map((c) => ({ age: t - c.startedAt, orphan: c.abandoned || c.booking.call !== c || !!c.booking.answer })),
+      ].slice(0, SHOWN),
     });
   }
 
