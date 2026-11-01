@@ -62,7 +62,7 @@
 ## Открытые вопросы
 - Нарезка в Shorts/вертикаль для соцсетей школы — нужна ли (основной формат сейчас — 16:9 mp4).
 - Интерактив вырос в конструктор задач системного дизайна из кирпичиков эпизодов — ADR-0007 (01.11). План MVP —
-  `docs/constructor/plan.md`, состояние — `docs/constructor/state.md` (ветка `constructor/mvp`); серый интерфейс готов (`/play.html`), дальше этап 4 — показ пользователю.
+  `docs/constructor/plan.md`, состояние — `docs/constructor/state.md` (ветка `constructor/mvp`); механика уровня 1 утверждена пользователем 01.11 (`/play.html`), дальше этап 5 — разборы tech-expert, level-designer, learning-designer.
 - Позже: музыка.
 
 ## Что понял за сессию
