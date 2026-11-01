@@ -54,7 +54,7 @@ const MID = 120; // ось стрелок
 const BOOKING = COLOR.mug;
 const SEARCH = COLOR.mail;
 
-/** Столбики ожидания: высота — доля шкалы, черта сверху — предел; полый — запрос, которого никто не ждёт. */
+/** Столбики ожидания: высота — доля шкалы, черта сверху — предел; полый — запрос, брошенный сервисом. */
 function bars(pen: Pen, key: string, y: number, items: { h: number; fill: string; hollow?: boolean }[], limit: string) {
   const H = 36;
   pen.line(`${key}:limit`, { x1: 32, y1: y, x2: 32 + SHOWN * 14 - 4, y2: y, stroke: COLOR.faint, "stroke-width": 1, "stroke-dasharray": "4 3" });
@@ -171,7 +171,7 @@ export function render(pen: Pen, s: ViewState): void {
     const orphans = s.snap.calls.filter((c) => c.orphan).length;
     pen.text("sup:n", { x: 32, y: SUP_Y + 50, ...T(16, COLOR.muted) }, [
       { text: `в работе: ${s.snap.atSupplier}` },
-      ...(orphans ? [{ text: ` · никто не ждёт: ${orphans}`, attrs: { fill: COLOR.warn } }] : []),
+      ...(orphans ? [{ text: ` · из них брошено: ${orphans}`, attrs: { fill: COLOR.warn } }] : []),
     ]);
     // брошенный запрос поставщик всё равно доделал — бронь у него есть, хотя сервис о ней не знает
     // П8: этих броней без нашего ключа не найти — красным
@@ -185,7 +185,7 @@ export function render(pen: Pen, s: ViewState): void {
     pen.text("sup:legend", { x: 32, y: SUP_Y + 50, ...T(14, COLOR.muted) }, "столбик — запрос, высота — сколько он идёт");
     pen.text("sup:legend2", { x: 32, y: SUP_Y + 72, ...T(14, COLOR.muted) }, [
       { text: "■", attrs: { fill: BOOKING } }, { text: " сервис ждёт ответа · " },
-      { text: "□", attrs: { fill: BOOKING } }, { text: " брошен, никто не ждёт" },
+      { text: "□", attrs: { fill: BOOKING } }, { text: " сервис бросил ждать" },
     ]);
     bars(pen, "sup:bars", SUP_Y + 100, [0.2, 0.4, 0.6, 0.8].map((h, i) => ({ h, fill: BOOKING, hollow: i % 2 === 1 })),
       "30 с — ответ поставщика");
