@@ -37,4 +37,7 @@ await page.goto(`${url}?bricks=TOBK`, { waitUntil: "networkidle0" });
 await page.click(".cx-run");
 await new Promise((r) => setTimeout(r, 7000));
 await shot("mid-TOBK");
+// пауза на заголовке беды B: первый кадр беды, а не легенда до запуска
+await page.waitForFunction(() => /^Беда B: [^·]+$/.test(document.querySelector(".cx-status")?.textContent ?? ""), { timeout: 60000, polling: 50 });
+await shot("intro-B");
 await browser.close();

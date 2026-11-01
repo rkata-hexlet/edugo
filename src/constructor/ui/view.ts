@@ -131,7 +131,7 @@ export function render(pen: Pen, s: ViewState): void {
     pen.text("svc:search", { x: VIEW.w - 32, y: SVC_Y + 50, "text-anchor": "end", ...T(16, sw ? COLOR.warn : COLOR.muted) },
       sw ? `поиск ждёт: ${sw}` : "поиск работает");
     if (s.snap.bookingsWaiting) pen.text("svc:q", { x: VIEW.w - 32, y: SVC_Y + 26, "text-anchor": "end", ...T(16, COLOR.muted) },
-      `брони ждут соединения: ${s.snap.bookingsWaiting}`);
+      `ждут соединения: ${s.snap.bookingsWaiting}`);
   }
 
   // Переключатели: касание по всей строке

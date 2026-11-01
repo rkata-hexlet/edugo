@@ -107,7 +107,7 @@ export function mountGame(root: HTMLElement, level: Level, makePen: (svg: SVGSVG
         phase = frames[i].phase;
         first = i;
         t0 = now + INTRO_MS;
-        view = { phase };
+        view = { phase, snap: frames[i].snap }; // пауза на заголовке беды — её первый кадр, а не легенда до запуска
         status.textContent = PHASE[phase];
       }
       if (now >= t0) {
