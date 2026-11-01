@@ -112,6 +112,17 @@
 стрелки (к Redis, к строке базы мимо Redis, ответ браузеру, рассылка). `World.replay` — кадр итога: звук тише и
 без тревоги (`sound(s, w, replay)`).
 
+## Конструктор (`src/constructor/`, ADR-0007, план — `docs/constructor/plan.md`)
+Прикладная зона, сцен не импортирует. Пока есть только модель (этап 2); `play.html` → `main.ts` — этап 3.
+- `model/sim.ts` — мир уровня в тиках (100 мс), детерминирован (хэш `unit` вместо случайности, разброс jitter —
+  последовательность Вейля). `run(params, phase, bricks)` — одна беда: пул слотов (поиск + брони), гости волнами,
+  поставщик (задержка `Phase.latency`, `down` — запросы висят), кирпичи T O R K J B как правила; итог — первые
+  срабатывания правил П1–П7 (`Violation`), счёт `Score`, срезы `Snapshot` на тик для отрисовки. Порядок обёрток:
+  ретрай → выключатель → таймаут; отказ открытого выключателя не повторяется. `play(level, bricks)` — «Запуск»:
+  беды по порядку, стоп на первом провале (текст поломки и кадр ролика из `Level.failures`), иначе — сумма счёта.
+- `levels/01-booking.ts` — числа уровня 1 и две беды; `model/sim.test.ts` — таблица «кирпичи × беды» из
+  `docs/constructor/level-01.md`, перебор всех 64 наборов (кто побеждает), счёт двух решений.
+
 ## Порядок сборки (main.ts)
 1. Импорт сцен → реестр (`Record<string, Scene<any>>`: у каждой сцены свой тип состояния). 2. Выбор сцены (`?scene=01`). 3. `loadTakes(scene.id)` — справочник дублей.
 4. `mountPlayer(host, scene, takes)` или `mountRecorder(…)` при `?record` — сами создают SVG и `SvgPen`.
@@ -133,5 +144,6 @@ main.ts ──► engine/takes ──► engine/contract (тип Step)
 scenes/* ──► engine/contract (только типы)
 scenes/* ──► kit ──► engine/contract   (с этапа 3; kit не знает сцен и плеера)
    sim ──► kit/director (только типы Board, Verdict); script ──► kit/director (Director)
+constructor/levels ──► constructor/model/sim   (без engine, kit и сцен)
 ```
 Сцены не импортируют друг друга. Циклов нет.
