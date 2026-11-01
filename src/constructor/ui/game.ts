@@ -8,8 +8,9 @@ type Frame = { phase: "D1" | "D2"; snap: Snapshot };
 type Outcome = ReturnType<typeof play>;
 
 const PHASE: Record<"D1" | "D2", string> = { D1: "Беда A: поставщик тормозит", D2: "Беда B: поставщик лёг на минуту" };
-/** Скорость показа: тиков модели в секунду (тик = 100 мс → ×12). */
-const TICKS_PER_S = 120;
+/** Скорость показа, тиков модели в секунду (тик = 100 мс): начало беды почти вживую — видно, как копится беда;
+ *  последние секунды перед провалом — медленно; спокойная середина проматывается. */
+const SPEED = { start: 10, startTicks: 80, nearFail: 8, nearFailTicks: 50, cruise: 120 };
 /** Пауза на заголовке беды перед её прогоном. */
 const INTRO_MS = 1200;
 
@@ -78,6 +79,20 @@ export function mountGame(root: HTMLElement, level: Level, makePen: (svg: SVGSVG
       while (k + 1 < frames.length && frames[k + 1].phase === frames[k].phase) k++;
       return k;
     };
+    // at[k] — когда показать срез k, мс от начала его беды
+    const at: number[] = [];
+    frames.forEach((f, k) => {
+      if (k === 0 || frames[k - 1].phase !== f.phase) return void (at[k] = 0);
+      const dt = f.snap.tick - frames[k - 1].snap.tick;
+      const sinceStart = k - lastStart(k);
+      const toFail = out.failure?.phase === f.phase ? out.failure.tick - f.snap.tick : Infinity;
+      const tps = toFail <= SPEED.nearFailTicks ? SPEED.nearFail : sinceStart <= SPEED.startTicks ? SPEED.start : SPEED.cruise;
+      at[k] = at[k - 1] + (dt * 1000) / tps;
+    });
+    function lastStart(k: number) {
+      while (k > 0 && frames[k - 1].phase === frames[k].phase) k--;
+      return k;
+    }
     const step = (now: number) => {
       if (frames[i].phase !== phase) {
         phase = frames[i].phase;
@@ -88,7 +103,7 @@ export function mountGame(root: HTMLElement, level: Level, makePen: (svg: SVGSVG
       }
       if (now >= t0) {
         const end = lastOf(first);
-        i = Math.min(end, first + Math.floor(((now - t0) * TICKS_PER_S) / 1000));
+        while (i < end && at[i + 1] <= now - t0) i++;
         const cur = frames[i];
         view = { phase, snap: cur.snap };
         status.textContent = `${PHASE[phase]} · ${clock(cur.snap.tick)}`;
