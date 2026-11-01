@@ -23,8 +23,9 @@ export interface Phase {
   id: "D1" | "D2";
   /** Длина прогона, тиков. */
   ticks: number;
-  /** Волны гостей: с тика 0 каждые `every` тиков, до `until` (не включая). */
-  waves: { every: number; size: number; until: number };
+  /** Волны гостей: с тика 0 каждые `every` тиков, до `until` (не включая); первые волны — размером из `ramp`
+   *  (нагрузка нарастает — видно, как копится беда), дальше `size`. */
+  waves: { every: number; size: number; until: number; ramp?: number[] };
   /** Поставщик лежит в [from, to): запросы, пришедшие в это время, висят без ответа. */
   down?: { from: number; to: number };
   /** Задержка ответа поставщика, тиков. */
@@ -238,7 +239,7 @@ export function run(p: Params, phase: Phase, bricks: ReadonlySet<Brick>): RunRes
     const w = phase.waves;
     if (t % w.every === 0 && t < w.until) {
       const wave = t / w.every;
-      for (let seat = 0; seat < w.size; seat++) {
+      for (let seat = 0; seat < (w.ramp?.[wave] ?? w.size); seat++) {
         const b: Booking = {
           id: bookings.length, wave, seat, start: t, attempt: 1, phase: "slot",
           holdsSlot: false, deadline: Infinity, readyAt: t,

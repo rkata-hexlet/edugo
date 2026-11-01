@@ -17,12 +17,14 @@ const params: Level["params"] = {
 
 const FAST = 5;
 const SLOW = 300;
+/** Беда A нарастает: первые волны малы, пул занимается на глазах (показ 01.11: «беды A не понять»). */
+const RAMP = [1, 2, 3, 4, 6];
 
 const phases: Level["phases"] = [
   {
     id: "D1",
     ticks: 400,
-    waves: { every: 20, size: 8, until: 300 },
+    waves: { every: 20, size: 8, until: 300, ramp: RAMP },
     // первая попытка: ровно половина волны застревает в очереди поставщика; повторы — как повезёт
     latency: (g, attempt) =>
       (attempt === 1 ? (g.seat + g.wave) % 2 === 0 : unit(g.id, attempt) < 0.5) ? SLOW : FAST,
