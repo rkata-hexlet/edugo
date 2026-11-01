@@ -37,6 +37,13 @@ for (let n = from; n <= to; n++) {
   await page.goto("about:blank");
   await page.goto(`${url}?scene=${sceneId}&capture#step=${n}`, { waitUntil: "networkidle0" });
   await new Promise((r) => setTimeout(r, 400));
+  // Сцена не загрузилась (ошибка модуля, устаревший кэш vite после смены веток): плеер не смонтирован, номер
+  // никто не поправит — без этой проверки цикл снимал пустые кадры до --to.
+  if (!(await page.$("#app svg"))) {
+    await browser.close();
+    console.error(`кадр ${n}: плеер не смонтировался — смотри ошибки страницы выше; если «does not provide an export» — перезапусти npm run dev`);
+    process.exit(1);
+  }
   // Плеер сам поправляет номер за последним кадром — значит, кадры кончились.
   if (!(await page.evaluate((n) => location.hash === `#step=${n}`, n))) break;
   await page.evaluate(() => document.getAnimations().forEach((a) => { try { a.finish(); } catch {} }));
