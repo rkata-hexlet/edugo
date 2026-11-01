@@ -32,7 +32,7 @@ export const SWITCHES: { brick: Brick; name: string; hint: string }[] = [
   { brick: "B", name: "Circuit breaker", hint: "много ошибок — перестать звать на 10 с" },
   { brick: "R", name: "Ретрай", hint: "при неудаче повторить, до 3 попыток" },
   { brick: "J", name: "Backoff + jitter", hint: "паузы между повторами растут, вразброс" },
-  { brick: "K", name: "Идемпотентность", hint: "наш номер брони: по нему найдём бронь, повтор не создаст вторую" },
+  { brick: "K", name: "Идемпотентность", hint: "наш номер брони: найдём, дубля не будет" },
 ];
 const GAP = 27; // стрелка между блоками
 const G_H = 136; // карточка гостей
