@@ -97,7 +97,14 @@ export function render(pen: Pen, s: ViewState): void {
       h: Math.min(age / GUEST_MAX, 1),
       fill: age >= GUEST_MAX ? COLOR.error : age >= GUEST_MAX / 2 ? COLOR.warn : BOOKING,
     })), "10 с — страница ошибки");
-  } else pen.text("guest:hint", { x: 32, y: 60, ...T(16, COLOR.muted) }, "жмут «Забронировать»");
+  } else {
+    // до запуска — легенда: образец столбиков на их месте и в их цветах
+    pen.text("guest:hint", { x: 32, y: 58, ...T(16, COLOR.muted) }, "жмут «Забронировать» и ждут ответа");
+    pen.text("guest:legend", { x: 32, y: 80, ...T(14, COLOR.muted) }, "столбик — гость, высота — сколько он ждёт");
+    bars(pen, "guest:bars", 104, [0.15, 0.3, 0.45, 0.6, 0.8, 1].map((h) => ({
+      h, fill: h >= 1 ? COLOR.error : h >= 0.5 ? COLOR.warn : BOOKING,
+    })), "10 с — страница ошибки");
+  }
 
   // Стрелка гость → сервис
   pen.line("w1", { x1: MID, y1: 12 + G_H, x2: MID, y2: SVC_Y - 4, stroke: COLOR.faint, "stroke-width": 3, marker: "arrow" });
@@ -172,5 +179,13 @@ export function render(pen: Pen, s: ViewState): void {
     bars(pen, "sup:bars", SUP_Y + 100, s.snap.calls.map((c) => ({
       h: Math.min(c.age / SUP_MAX, 1), fill: c.dupe ? COLOR.error : c.landed ? COLOR.warn : BOOKING, hollow: c.orphan && !c.landed,
     })), s.snap.supplierDown ? "молчит — ответа нет" : "30 с — ответ поставщика");
+  } else {
+    pen.text("sup:legend", { x: 32, y: SUP_Y + 50, ...T(14, COLOR.muted) }, "столбик — запрос, высота — сколько он идёт");
+    pen.text("sup:legend2", { x: 32, y: SUP_Y + 72, ...T(14, COLOR.muted) }, [
+      { text: "■", attrs: { fill: BOOKING } }, { text: " сервис ждёт ответа · " },
+      { text: "□", attrs: { fill: BOOKING } }, { text: " брошен, никто не ждёт" },
+    ]);
+    bars(pen, "sup:bars", SUP_Y + 100, [0.2, 0.4, 0.6, 0.8].map((h, i) => ({ h, fill: BOOKING, hollow: i % 2 === 1 })),
+      "30 с — ответ поставщика");
   }
 }

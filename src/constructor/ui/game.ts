@@ -14,7 +14,7 @@ const SPEED = { start: 10, startTicks: 80, nearFail: 8, nearFailTicks: 50, cruis
 /** Пауза на заголовке беды перед её прогоном. */
 const INTRO_MS = 1200;
 
-const HOWTO = "Включай защиты в сервисе отеля и жми «Запуск»";
+const HOWTO = "Включай защиты в сервисе отеля и жми «Запуск»: придут две беды подряд, прогон встанет на первой поломке";
 const clock = (tick: number) => `${(tick / 10).toFixed(1).replace(".", ",")} с`;
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, text = "") => {
