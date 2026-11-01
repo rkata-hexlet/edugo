@@ -25,6 +25,9 @@ const shot = async (name) => {
   await page.screenshot({ path: `${out}/${name}.png`, fullPage: true });
   console.log(`${out}/${name}.png`);
 };
+// первый экран: до запуска, ничего не тронуто
+await page.goto(url, { waitUntil: "networkidle0" });
+await shot("start");
 for (const s of sets) {
   await page.goto(`${url}?bricks=${s}&end`, { waitUntil: "networkidle0" });
   await shot(`end-${s || "empty"}`);
