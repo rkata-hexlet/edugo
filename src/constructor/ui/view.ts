@@ -1,10 +1,10 @@
-// Серая схема уровня 1 (MVP, без полировки): Гости → Сервис отеля [пул] → Поставщик, гнёзда на стрелках.
-// Рисует только через Pen; гнёзда помечены data-slot — касание ловит контроллер.
+// Серая схема уровня 1 (MVP, без полировки): Гости → Сервис отеля [пул, переключатели кирпичей] → Поставщик.
+// Рисует только через Pen; переключатели помечены data-slot — касание ловит контроллер.
 import type { Pen } from "../../engine/contract";
 import { COLOR, FONT } from "../../kit/theme";
 import type { Brick, Rule, Snapshot } from "../model/sim";
 
-export const VIEW = { w: 400, h: 600 } as const;
+export const VIEW = { w: 400, h: 752 } as const;
 
 /** Что красить красным на стоп-кадре: поломку, а не кирпич. */
 type Culprit = "guest" | "pool" | "wire" | "supplier";
@@ -23,15 +23,20 @@ export interface ViewState {
   editable: boolean;
 }
 
-/** Гнёзда: где на схеме, что в пустом, что в занятом. Порядок на стрелке — порядок обёрток (ретрай → выключатель → таймаут). */
-export const SLOTS: { brick: Brick; empty: string; full: string; y: number }[] = [
-  { brick: "K", empty: "запрос гостя", full: "ключ идемпотентности", y: 118 },
-  { brick: "O", empty: "вызов: в транзакции", full: "вызов вне транзакции", y: 276 },
-  { brick: "R", empty: "при неудаче", full: "ретрай ×3", y: 352 },
-  { brick: "J", empty: "пауза между попытками", full: "backoff + jitter", y: 390 },
-  { brick: "B", empty: "перед вызовом", full: "circuit breaker", y: 428 },
-  { brick: "T", empty: "вызов поставщика", full: "таймаут 3 с", y: 466 },
+/** Переключатели внутри «Сервиса отеля» — все шесть кирпичей живут в его коде вызова поставщика. Порядок — по ходу вызова. */
+export const SWITCHES: { brick: Brick; name: string; hint: string }[] = [
+  { brick: "O", name: "Вызов вне транзакции", hint: "пока ждём ответа, соединение свободно" },
+  { brick: "T", name: "Таймаут 3 с", hint: "не ждать поставщика дольше 3 с" },
+  { brick: "B", name: "Circuit breaker", hint: "много ошибок — перестать звать на 10 с" },
+  { brick: "R", name: "Ретрай ×3", hint: "при неудаче повторить, до 3 попыток" },
+  { brick: "J", name: "Backoff + jitter", hint: "паузы между повторами растут, вразброс" },
+  { brick: "K", name: "Ключ идемпотентности", hint: "повтор несёт тот же номер брони" },
 ];
+const SW_Y = 300; // первый переключатель
+const SW_H = 50;
+const SVC_Y = 164;
+const SVC_H = SW_Y + SWITCHES.length * SW_H + 4 - SVC_Y;
+const SUP_Y = SVC_Y + SVC_H + 56;
 
 const F = { "font-family": FONT.sans };
 const T = (size: number, fill: string = COLOR.ink, weight = 400) => ({ ...F, "font-size": size, fill, "font-weight": weight });
@@ -69,7 +74,7 @@ export function render(pen: Pen, s: ViewState): void {
   pen.line("w1", { x1: MID, y1: 104, x2: MID, y2: 160, stroke: COLOR.faint, "stroke-width": 3, marker: "arrow" });
 
   // Сервис отеля: пул соединений, общий с поиском
-  node(pen, "svc", 164, 150, "Сервис отеля", false);
+  node(pen, "svc", SVC_Y, SVC_H, "Сервис отеля", false);
   const used = s.snap?.poolUsed ?? 0;
   pen.text("svc:pool", { x: 32, y: 214, ...T(16, red("pool") ? COLOR.error : COLOR.muted, red("pool") ? 600 : 400) },
     `пул соединений ${used}/${s.pool}`);
@@ -84,38 +89,45 @@ export function render(pen: Pen, s: ViewState): void {
     const sw = s.snap.searchWaiting;
     pen.text("svc:search", { x: VIEW.w - 32, y: 214, "text-anchor": "end", ...T(16, sw ? COLOR.warn : COLOR.muted) },
       sw ? `поиск ждёт: ${sw}` : "поиск работает");
-    if (s.snap.bookingsWaiting) pen.text("svc:q", { x: 32, y: 298, ...T(16, COLOR.muted) },
-      `в очереди: ${s.snap.bookingsWaiting}`);
+    if (s.snap.bookingsWaiting) pen.text("svc:q", { x: VIEW.w - 32, y: SVC_Y + 26, "text-anchor": "end", ...T(16, COLOR.muted) },
+      `броней в очереди: ${s.snap.bookingsWaiting}`);
   }
+
+  // Переключатели: касание по всей строке
+  pen.text("svc:how", { x: 32, y: SW_Y - 12, ...T(15, COLOR.muted) }, "Как сервис вызывает поставщика:");
+  pen.line("svc:sep", { x1: 32, y1: SW_Y - 34, x2: VIEW.w - 32, y2: SW_Y - 34, stroke: COLOR.line, "stroke-width": 1 });
+  SWITCHES.forEach((sw, i) => {
+    const on = s.bricks.has(sw.brick);
+    const k = `sw:${sw.brick}`;
+    let state = "";
+    if (sw.brick === "B" && on && s.snap) state = s.snap.breaker === "open" ? "открыт" : s.snap.breaker === "half" ? "проба" : "";
+    pen.group(k, 24, SW_Y + i * SW_H, () => {
+      pen.rect(`${k}:hit`, {
+        width: VIEW.w - 48, height: SW_H - 4, rx: 8, "data-slot": sw.brick, cursor: s.editable ? "pointer" : "default",
+        fill: on ? COLOR.surface2 : "transparent",
+      });
+      pen.rect(`${k}:track`, { x: 8, y: 11, width: 40, height: 24, rx: 12, "pointer-events": "none",
+        fill: on ? COLOR.mail : COLOR.bg2, stroke: on ? COLOR.mail : COLOR.faint, "stroke-width": 1.5 });
+      pen.rect(`${k}:knob`, { x: on ? 28 : 12, y: 15, width: 16, height: 16, rx: 8, "pointer-events": "none",
+        fill: on ? COLOR.ink : COLOR.faint });
+      pen.text(`${k}:name`, { x: 60, y: 20, "pointer-events": "none", ...T(16, on ? COLOR.ink : COLOR.muted, 600) }, sw.name);
+      pen.text(`${k}:hint`, { x: 60, y: 39, "pointer-events": "none", ...T(13, COLOR.muted) }, sw.hint);
+      if (state) pen.text(`${k}:state`, { x: VIEW.w - 60, y: 20, "text-anchor": "end", "pointer-events": "none",
+        ...T(15, COLOR.warn, 600) }, state);
+    });
+  });
 
   // Стрелка сервис → поставщик
   const wireColor = red("wire") ? COLOR.error : COLOR.faint;
-  pen.line("w2", { x1: MID, y1: 314, x2: MID, y2: 508, stroke: wireColor, "stroke-width": red("wire") ? 5 : 3, marker: "arrow" });
-  if (s.snap?.retries) pen.text("w2:retries", { x: MID - 10, y: 344, "text-anchor": "end", ...T(16, red("wire") ? COLOR.error : COLOR.warn, 600) },
+  pen.line("w2", { x1: MID, y1: SVC_Y + SVC_H, x2: MID, y2: SUP_Y - 4, stroke: wireColor, "stroke-width": red("wire") ? 5 : 3, marker: "arrow" });
+  if (s.snap?.retries) pen.text("w2:retries", { x: MID + 14, y: SVC_Y + SVC_H + 34, ...T(16, red("wire") ? COLOR.error : COLOR.warn, 600) },
     `повторы: ${s.snap.retries}`);
 
-  // Гнёзда
-  for (const slot of SLOTS) {
-    const on = s.bricks.has(slot.brick);
-    const x = 140;
-    const w = VIEW.w - 32 - x;
-    let label = on ? slot.full : slot.empty;
-    if (slot.brick === "B" && on && s.snap) label += s.snap.breaker === "open" ? " · открыт" : s.snap.breaker === "half" ? " · проба" : "";
-    pen.group(`slot:${slot.brick}`, x, slot.y, () => {
-      pen.rect(`slot:${slot.brick}:bg`, {
-        width: w, height: 32, rx: 8, "data-slot": slot.brick, cursor: s.editable ? "pointer" : "default",
-        fill: on ? COLOR.surface2 : "transparent", stroke: on ? COLOR.muted : COLOR.faint,
-        "stroke-width": 1.5, "stroke-dasharray": on ? "none" : "5 4",
-      });
-      pen.text(`slot:${slot.brick}:t`, { x: 12, y: 22, "pointer-events": "none", ...T(16, on ? COLOR.ink : COLOR.faint, on ? 600 : 400) }, label);
-    });
-  }
-
   // Поставщик
-  node(pen, "sup", 512, 76, "Поставщик", red("supplier"));
+  node(pen, "sup", SUP_Y, 76, "Поставщик", red("supplier"));
   if (s.snap) {
     const st = s.snap.supplierDown ? "лежит" : s.phase === "D1" ? "тормозит" : "работает";
-    pen.text("sup:st", { x: VIEW.w - 32, y: 538, "text-anchor": "end", ...T(16, s.snap.supplierDown ? COLOR.error : s.phase === "D1" ? COLOR.warn : COLOR.ok, 600) }, st);
-    pen.text("sup:n", { x: 32, y: 572, ...T(16, COLOR.muted) }, `запросов в работе: ${s.snap.atSupplier}`);
+    pen.text("sup:st", { x: VIEW.w - 32, y: SUP_Y + 26, "text-anchor": "end", ...T(16, s.snap.supplierDown ? COLOR.error : s.phase === "D1" ? COLOR.warn : COLOR.ok, 600) }, st);
+    pen.text("sup:n", { x: 32, y: SUP_Y + 60, ...T(16, COLOR.muted) }, `запросов в работе: ${s.snap.atSupplier}`);
   }
 }

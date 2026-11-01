@@ -1,4 +1,4 @@
-// Контроллер уровня (MVP): кирпич касанием в гнездо, «Запуск» проигрывает срезы модели, стоп-кадр провала, табло победы.
+// Контроллер уровня (MVP): кирпич — переключатель в «Сервисе отеля», «Запуск» проигрывает срезы модели, стоп-кадр провала, табло победы.
 // Время прогона — кадры браузера, модель уже просчитана целиком (`play`); здесь только показ.
 import type { Pen } from "../../engine/contract";
 import { BRICKS, play, type Brick, type Level, type Snapshot } from "../model/sim";
@@ -7,15 +7,13 @@ import { render, VIEW, type ViewState } from "./view";
 type Frame = { phase: "D1" | "D2"; snap: Snapshot };
 type Outcome = ReturnType<typeof play>;
 
-const NAME: Record<Brick, string> = {
-  T: "Таймаут 3 с", O: "Вызов вне транзакции", R: "Ретрай ×3", K: "Ключ идемпотентности", J: "Backoff + jitter", B: "Circuit breaker",
-};
 const PHASE: Record<"D1" | "D2", string> = { D1: "Беда A: поставщик тормозит", D2: "Беда B: поставщик лёг на минуту" };
 /** Скорость показа: тиков модели в секунду (тик = 100 мс → ×12). */
 const TICKS_PER_S = 120;
 /** Пауза на заголовке беды перед её прогоном. */
 const INTRO_MS = 1200;
 
+const HOWTO = "Включай защиты в сервисе отеля и жми «Запуск»";
 const clock = (tick: number) => `${(tick / 10).toFixed(1).replace(".", ",")} с`;
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, text = "") => {
@@ -34,31 +32,19 @@ export function mountGame(root: HTMLElement, level: Level, makePen: (svg: SVGSVG
   const head = el("header", "cx-head");
   head.append(el("h1", "cx-title", level.title), el("p", "cx-goal",
     "У каждого гостя — одна бронь или честный отказ за 10 с, поиск по сайту работает. Поставщик то тормозит, то падает."));
-  const status = el("div", "cx-status", "Собери схему и жми «Запуск»");
+  const status = el("div", "cx-status", HOWTO);
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   svg.setAttribute("viewBox", `0 0 ${VIEW.w} ${VIEW.h}`);
   svg.classList.add("cx-scheme");
   const card = el("section", "cx-card");
   card.hidden = true;
-  const palette = el("div", "cx-palette");
-  const buttons = new Map<Brick, HTMLButtonElement>();
-  for (const b of BRICKS) {
-    const btn = el("button", "cx-brick", NAME[b]);
-    btn.onclick = () => toggle(b);
-    buttons.set(b, btn);
-    palette.append(btn);
-  }
   const start = el("button", "cx-run", "Запуск");
   start.onclick = () => launch(query.has("end"));
-  root.append(head, status, svg, card, palette, start);
+  root.append(head, status, svg, card, start);
 
   const pen = makePen(svg);
   const draw = () => {
     pen.frame(() => render(pen, { ...view, bricks, pool: level.params.pool, editable: !running }), { instant: true });
-    for (const [b, btn] of buttons) {
-      btn.classList.toggle("on", bricks.has(b));
-      btn.disabled = running;
-    }
     start.disabled = running;
   };
 
@@ -67,7 +53,7 @@ export function mountGame(root: HTMLElement, level: Level, makePen: (svg: SVGSVG
     bricks.has(b) ? bricks.delete(b) : bricks.add(b);
     view = {};
     card.hidden = true;
-    status.textContent = "Собери схему и жми «Запуск»";
+    status.textContent = HOWTO;
     draw();
   }
   svg.addEventListener("click", (e) => {

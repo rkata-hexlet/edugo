@@ -15,9 +15,6 @@ html, body { margin: 0; background: #0e1325; color: #eef1ff; font-family: Inter,
 .cx-score { display: flex; flex-direction: column; gap: 2px; }
 .cx-score b { font-size: 26px; }
 .cx-score span { font-size: 13px; color: #8f9ac4; line-height: 1.25; }
-.cx-palette { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 10px 0; }
-.cx-brick, .cx-run { font: inherit; font-size: 15px; border-radius: 10px; padding: 10px 8px; cursor: pointer;
-  background: transparent; color: #8f9ac4; border: 1.5px dashed #5d6894; }
-.cx-brick.on { background: #242e55; color: #eef1ff; border: 1.5px solid #8f9ac4; font-weight: 600; }
-.cx-run { width: 100%; font-size: 18px; font-weight: 600; background: #4da3ff; color: #0e1325; border: none; }
+.cx-run { font: inherit; width: 100%; font-size: 18px; font-weight: 600; padding: 10px 8px; border-radius: 10px;
+  cursor: pointer; margin-top: 10px; background: #4da3ff; color: #0e1325; border: none; }
 button:disabled { opacity: 0.5; cursor: default; }
