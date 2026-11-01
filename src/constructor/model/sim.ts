@@ -378,7 +378,8 @@ export interface Level {
   title: string;
   params: Params;
   phases: readonly Phase[];
-  failures: Record<Rule, { text: string; why: string }>;
+  /** `alt` — другое «почему», если включён кирпич: тот же провал читается иначе (первый подходящий по порядку `BRICKS`). */
+  failures: Record<Rule, { text: string; why: string; alt?: Partial<Record<Brick, string>> }>;
 }
 
 /** «Запуск»: беды по порядку, прогон встаёт на первом провале. Победа — все беды без провалов. */
@@ -388,11 +389,16 @@ export function play(level: Level, bricks: ReadonlySet<Brick>) {
     const result = run(level.params, phase, bricks);
     runs.push({ phase, result });
     const first = result.violations[0];
-    if (first) return { runs, failure: { ...first, phase: phase.id, ...level.failures[first.rule] } };
+    if (first) {
+      const { text, why, alt } = level.failures[first.rule];
+      const b = BRICKS.find((x) => bricks.has(x) && alt?.[x]);
+      return { runs, failure: { ...first, phase: phase.id, text, why: b ? alt![b]! : why } };
+    }
   }
   const total = (k: keyof Score) => runs.reduce((n, r) => n + r.result.score[k], 0);
   return {
     runs,
-    score: { guests: total("guests"), confirmed: total("confirmed"), requests: total("requests"), bricks: bricks.size },
+    score: { guests: total("guests"), confirmed: total("confirmed"), checking: total("checking"), refused: total("refused"),
+      requests: total("requests"), bricks: bricks.size },
   };
 }

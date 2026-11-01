@@ -9,7 +9,7 @@ export const VIEW = { w: 400, h: 624 } as const;
 /** Что красить красным на стоп-кадре: поломку, а не кирпич. */
 type Culprit = "guest" | "pool" | "wire" | "supplier";
 const CULPRIT: Record<Rule, Culprit> = {
-  P1: "pool", P2: "guest", P3: "guest", P4: "wire", P5: "guest", P6: "wire", P7: "guest",
+  P1: "pool", P2: "guest", P3: "guest", P4: "wire", P5: "guest", P6: "wire", P7: "guest", P8: "supplier",
 };
 
 export interface ViewState {
@@ -131,7 +131,7 @@ export function render(pen: Pen, s: ViewState): void {
     pen.text("svc:search", { x: VIEW.w - 32, y: SVC_Y + 50, "text-anchor": "end", ...T(16, sw ? COLOR.warn : COLOR.muted) },
       sw ? `поиск ждёт: ${sw}` : "поиск работает");
     if (s.snap.bookingsWaiting) pen.text("svc:q", { x: VIEW.w - 32, y: SVC_Y + 26, "text-anchor": "end", ...T(16, COLOR.muted) },
-      `броней в очереди: ${s.snap.bookingsWaiting}`);
+      `брони ждут соединения: ${s.snap.bookingsWaiting}`);
   }
 
   // Переключатели: касание по всей строке
@@ -161,12 +161,12 @@ export function render(pen: Pen, s: ViewState): void {
   const wireColor = red("wire") ? COLOR.error : COLOR.faint;
   pen.line("w2", { x1: MID, y1: SVC_Y + SVC_H, x2: MID, y2: SUP_Y - 4, stroke: wireColor, "stroke-width": red("wire") ? 5 : 3, marker: "arrow" });
   if (s.snap?.retries) pen.text("w2:retries", { x: MID + 14, y: SVC_Y + SVC_H + 24, ...T(16, red("wire") ? COLOR.error : COLOR.warn, 600) },
-    `повторы: ${s.snap.retries}`);
+    `повторы за 0,3 с: ${s.snap.retries}`);
 
   // Поставщик
   node(pen, "sup", SUP_Y, SUP_H, "Поставщик", red("supplier"));
   if (s.snap) {
-    const st = s.snap.supplierDown ? "завис" : s.phase === "D1" ? "тормозит" : "работает";
+    const st = s.snap.supplierDown ? "молчит" : s.phase === "D1" ? "часть ответов 30 с" : "работает";
     pen.text("sup:st", { x: VIEW.w - 32, y: SUP_Y + 26, "text-anchor": "end", ...T(16, s.snap.supplierDown ? COLOR.error : s.phase === "D1" ? COLOR.warn : COLOR.ok, 600) }, st);
     const orphans = s.snap.calls.filter((c) => c.orphan).length;
     pen.text("sup:n", { x: 32, y: SUP_Y + 50, ...T(16, COLOR.muted) }, [
@@ -174,10 +174,12 @@ export function render(pen: Pen, s: ViewState): void {
       ...(orphans ? [{ text: ` · никто не ждёт: ${orphans}`, attrs: { fill: COLOR.warn } }] : []),
     ]);
     // брошенный запрос поставщик всё равно доделал — бронь у него есть, хотя сервис о ней не знает
-    if (s.snap.orphanBookings) pen.text("sup:landed", { x: 32, y: SUP_Y + 72, ...T(16, COLOR.warn) },
-      `брошенных доделал: ${s.snap.orphanBookings} — брони созданы`);
+    // П8: этих броней без нашего ключа не найти — красным
+    const lost = s.failed === "P8";
+    if (s.snap.orphanBookings) pen.text("sup:landed", { x: 32, y: SUP_Y + 72, ...T(16, lost ? COLOR.error : COLOR.warn, lost ? 600 : 400) },
+      lost ? `брони без нашего ключа: ${s.snap.orphanBookings}` : `бросили ждать, а бронь есть: ${s.snap.orphanBookings}`);
     bars(pen, "sup:bars", SUP_Y + 100, s.snap.calls.map((c) => ({
-      h: Math.min(c.age / SUP_MAX, 1), fill: c.dupe ? COLOR.error : c.landed ? COLOR.warn : BOOKING, hollow: c.orphan && !c.landed,
+      h: Math.min(c.age / SUP_MAX, 1), fill: c.dupe || (c.landed && lost) ? COLOR.error : c.landed ? COLOR.warn : BOOKING, hollow: c.orphan && !c.landed,
     })), s.snap.supplierDown ? "молчит — ответа нет" : "30 с — ответ поставщика");
   } else {
     pen.text("sup:legend", { x: 32, y: SUP_Y + 50, ...T(14, COLOR.muted) }, "столбик — запрос, высота — сколько он идёт");

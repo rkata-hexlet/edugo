@@ -7,14 +7,14 @@ import { render, VIEW, type ViewState } from "./view";
 type Frame = { phase: "D1" | "D2"; snap: Snapshot };
 type Outcome = ReturnType<typeof play>;
 
-const PHASE: Record<"D1" | "D2", string> = { D1: "Беда A: завис сервер поставщика", D2: "Беда B: поставщик завис на минуту" };
+const PHASE: Record<"D1" | "D2", string> = { D1: "Беда A: часть ответов идёт 30 с", D2: "Беда B: поставщик молчит минуту" };
 /** Скорость показа, тиков модели в секунду (тик = 100 мс): начало беды почти вживую — видно, как копится беда;
  *  последние секунды перед провалом — медленно; спокойная середина проматывается. */
 const SPEED = { start: 10, startTicks: 80, nearFail: 8, nearFailTicks: 50, cruise: 120 };
 /** Пауза на заголовке беды перед её прогоном. */
 const INTRO_MS = 1200;
 
-const HOWTO = "Включай защиты в сервисе отеля и жми «Запуск»: придут две беды подряд, прогон встанет на первой поломке";
+const HOWTO = "Включай защиты и жми «Запуск»: две беды подряд, стоп на первой поломке";
 const clock = (tick: number) => `${(tick / 10).toFixed(1).replace(".", ",")} с`;
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, text = "") => {
@@ -29,11 +29,15 @@ export function mountGame(root: HTMLElement, level: Level, makePen: (svg: SVGSVG
   let running = false;
   let focus: Brick | undefined;
   let view: Omit<ViewState, "bricks" | "pool" | "editable"> = {};
+  /** Прошлый запуск — повод сравнить: докуда дошёл провал, счёт прошлой победы. */
+  let lastReach: number | undefined;
+  let lastWin: string | undefined;
+  const totalTicks = level.phases.reduce((n, p) => n + p.ticks, 0);
 
   root.className = "cx";
   const head = el("header", "cx-head");
   head.append(el("h1", "cx-title", level.title), el("p", "cx-goal",
-    "У каждого гостя — одна бронь или честный отказ за 10 с, поиск по сайту работает. Поставщик то тормозит, то зависает."));
+    "За 10 с гость получает бронь, отказ или «проверяем» с номером брони. Поиску нужны те же 6 соединений с БД. Поставщик то тянет часть ответов до 30 с, то молчит."));
   const status = el("div", "cx-status", HOWTO);
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   svg.setAttribute("viewBox", `0 0 ${VIEW.w} ${VIEW.h}`);
@@ -128,14 +132,20 @@ export function mountGame(root: HTMLElement, level: Level, makePen: (svg: SVGSVG
     if (out.failure) {
       const f = out.failure;
       view = { phase: last.phase, snap: last.snap, failed: f.rule };
-      status.textContent = `${PHASE[f.phase]} · ${clock(f.tick)} · провал`;
       card.className = "cx-card fail";
-      card.append(el("p", "cx-phase", `${PHASE[f.phase]} · ${clock(f.tick)}`), el("p", "cx-fail", f.text), el("p", "cx-why", f.why),
-        el("p", "cx-note", "Поменяй схему и запусти снова."));
+      // докуда дошёл прогон из всего — продвижение между запусками видно числом
+      const before = level.phases.slice(0, level.phases.findIndex((p) => p.id === f.phase)).reduce((n, p) => n + p.ticks, 0);
+      const reach = before + f.tick;
+      const sec = (t: number) => `${Math.round(t / 10)} с`;
+      const prev = lastReach === undefined ? "" : ` (было ${Math.round(lastReach / 10)})`;
+      lastReach = reach;
+      // беда — буквой: её описание игрок видел в прогоне, а экран телефона кончается на 844 px
+      card.append(el("p", "cx-phase", `Беда ${f.phase === "D1" ? "A" : "B"} · продержались ${sec(reach)} из ${Math.round(totalTicks / 10)}${prev}`),
+        el("p", "cx-fail", f.text), el("p", "cx-why", f.why));
     } else if (out.score) {
       const s = out.score;
-      view = { phase: last.phase, snap: last.snap };
-      status.textContent = "Обе беды пройдены";
+      // панель гостей — за обе беды, как табло (иначе «отказ 267» беды B рядом со «112 из 456» читается как поражение)
+      view = { phase: last.phase, snap: { ...last.snap, answers: { confirmed: s.confirmed, checking: s.checking, refused: s.refused, error: 0 } } };
       card.className = "cx-card win";
       const board = el("div", "cx-board");
       for (const [n, label] of [
@@ -147,11 +157,15 @@ export function mountGame(root: HTMLElement, level: Level, makePen: (svg: SVGSVG
         cell.append(el("b", "", n), el("span", "", label));
         board.append(cell);
       }
+      const now = `${s.confirmed} · ${s.requests} · ${s.bricks}`;
+      const prev = lastWin && lastWin !== now ? ` Прошлая победа: ${lastWin}.` : "";
+      lastWin = now;
+      lastReach = undefined;
       card.append(el("p", "cx-win", "Победа"), board,
-        el("p", "cx-note", "Больше броней, меньше запросов и кирпичей — лучше. Попробуй другое решение."));
+        el("p", "cx-note", `Отказы честные: брони нет, и гость узнавал это сразу, а не через 10 с. Больше броней, меньше запросов и кирпичей — лучше.${prev} Решений несколько.`));
     }
     card.hidden = false;
-    status.hidden = !!out.failure; // беда и время — в карточке провала
+    status.hidden = true; // беда и время — в карточке провала, победа — в своей
     draw();
   }
 
