@@ -126,7 +126,7 @@ export function mountGame(root: HTMLElement, level: Level, makePen: (svg: SVGSVG
       status.textContent = `${PHASE[f.phase]} · ${clock(f.tick)} · провал`;
       card.className = "cx-card fail";
       card.append(el("p", "cx-fail", f.text), el("p", "cx-why", f.why),
-        el("p", "cx-note", "Поменяй схему и запусти снова — прогон начнётся с беды A."));
+        el("p", "cx-note", "Поменяй схему и запусти снова."));
     } else if (out.score) {
       const s = out.score;
       view = { phase: last.phase, snap: last.snap };
