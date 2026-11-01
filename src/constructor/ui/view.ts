@@ -2,9 +2,9 @@
 // Рисует только через Pen; переключатели помечены data-slot — касание ловит контроллер.
 import type { Pen } from "../../engine/contract";
 import { COLOR, FONT } from "../../kit/theme";
-import type { Brick, Rule, Snapshot } from "../model/sim";
+import { SHOWN, type Brick, type Rule, type Snapshot } from "../model/sim";
 
-export const VIEW = { w: 400, h: 752 } as const;
+export const VIEW = { w: 400, h: 880 } as const;
 
 /** Что красить красным на стоп-кадре: поломку, а не кирпич. */
 type Culprit = "guest" | "pool" | "wire" | "supplier";
@@ -32,11 +32,16 @@ export const SWITCHES: { brick: Brick; name: string; hint: string }[] = [
   { brick: "J", name: "Backoff + jitter", hint: "паузы между повторами растут, вразброс" },
   { brick: "K", name: "Ключ идемпотентности", hint: "повтор несёт тот же номер брони" },
 ];
-const SW_Y = 300; // первый переключатель
+const G_H = 160; // карточка гостей
+const SVC_Y = 12 + G_H + 60;
+const SW_Y = SVC_Y + 136; // первый переключатель
 const SW_H = 50;
-const SVC_Y = 164;
 const SVC_H = SW_Y + SWITCHES.length * SW_H + 4 - SVC_Y;
 const SUP_Y = SVC_Y + SVC_H + 56;
+const SUP_H = 130;
+/** Шкалы столбиков: гость ждёт до страницы ошибки (10 с), поставщик тормозит до 30 с. */
+const GUEST_MAX = 100;
+const SUP_MAX = 300;
 
 const F = { "font-family": FONT.sans };
 const T = (size: number, fill: string = COLOR.ink, weight = 400) => ({ ...F, "font-size": size, fill, "font-weight": weight });
@@ -44,6 +49,20 @@ const MID = 120; // ось стрелок
 /** Кто держит соединение пула. */
 const BOOKING = COLOR.mug;
 const SEARCH = COLOR.mail;
+
+/** Столбики ожидания: высота — доля шкалы, черта сверху — предел; полый — запрос, которого никто не ждёт. */
+function bars(pen: Pen, key: string, y: number, items: { h: number; fill: string; hollow?: boolean }[], limit: string) {
+  const H = 36;
+  pen.line(`${key}:limit`, { x1: 32, y1: y, x2: 32 + SHOWN * 14 - 4, y2: y, stroke: COLOR.faint, "stroke-width": 1, "stroke-dasharray": "4 3" });
+  pen.text(`${key}:label`, { x: 32 + SHOWN * 14 - 4, y: y - 5, "text-anchor": "end", ...T(13, COLOR.muted) }, limit);
+  items.forEach((b, i) => {
+    const h = Math.max(2, b.h * H);
+    pen.rect(`${key}:${i}`, {
+      x: 32 + i * 14, y: y + H - h, width: 10, height: h, rx: 2,
+      fill: b.hollow ? "transparent" : b.fill, stroke: b.fill, "stroke-width": b.hollow ? 1.5 : 0,
+    });
+  });
+}
 
 function node(pen: Pen, key: string, y: number, h: number, title: string, red: boolean) {
   pen.rect(`${key}:bg`, {
@@ -58,7 +77,7 @@ export function render(pen: Pen, s: ViewState): void {
   const a = s.snap?.answers;
 
   // Гости
-  node(pen, "guest", 12, 92, "Гости", red("guest"));
+  node(pen, "guest", 12, G_H, "Гости", red("guest"));
   if (s.snap && a) {
     pen.text("guest:wait", { x: VIEW.w - 32, y: 38, "text-anchor": "end", ...T(16, COLOR.muted) }, `ждут ответа: ${s.snap.guestsWaiting}`);
     pen.text("guest:ans1", { x: 32, y: 62, ...T(16) }, [
@@ -68,34 +87,37 @@ export function render(pen: Pen, s: ViewState): void {
     pen.text("guest:ans2", { x: 32, y: 88, ...T(16) }, [
       { text: `отказ ${a.refused}` },
       { text: ` · ошибка ${a.error}`, attrs: { fill: a.error ? COLOR.error : COLOR.ink } },
+      ...(s.snap.dupes ? [{ text: ` · 2 брони: ${s.snap.dupes}`, attrs: { fill: COLOR.error, "font-weight": 600 } }] : []),
     ]);
-    if (s.snap.dupes) pen.text("guest:dupes", { x: VIEW.w - 32, y: 88, "text-anchor": "end", ...T(18, COLOR.error, 600) },
-      `2 брони: ${s.snap.dupes}`);
+    bars(pen, "guest:bars", 114, s.snap.waits.map((age) => ({
+      h: Math.min(age / GUEST_MAX, 1),
+      fill: age >= GUEST_MAX ? COLOR.error : age >= GUEST_MAX / 2 ? COLOR.warn : BOOKING,
+    })), "10 с — страница ошибки");
   } else pen.text("guest:hint", { x: 32, y: 60, ...T(16, COLOR.muted) }, "жмут «Забронировать»");
 
   // Стрелка гость → сервис
-  pen.line("w1", { x1: MID, y1: 104, x2: MID, y2: 160, stroke: COLOR.faint, "stroke-width": 3, marker: "arrow" });
+  pen.line("w1", { x1: MID, y1: 12 + G_H, x2: MID, y2: SVC_Y - 4, stroke: COLOR.faint, "stroke-width": 3, marker: "arrow" });
 
   // Сервис отеля: пул соединений, общий с поиском
   node(pen, "svc", SVC_Y, SVC_H, "Сервис отеля", false);
   const used = s.snap?.poolUsed ?? 0;
   const forBooking = s.snap?.poolBookings ?? 0;
-  pen.text("svc:pool", { x: 32, y: 214, ...T(16, red("pool") ? COLOR.error : COLOR.muted, red("pool") ? 600 : 400) },
+  pen.text("svc:pool", { x: 32, y: SVC_Y + 50, ...T(16, red("pool") ? COLOR.error : COLOR.muted, red("pool") ? 600 : 400) },
     `пул соединений ${used}/${s.pool}`);
   // занятые: сначала брони, потом поиск — цвет = кто держит соединение
   for (let i = 0; i < s.pool; i++) {
     const fill = i < forBooking ? BOOKING : i < used ? SEARCH : COLOR.bg2;
     pen.rect(`svc:cell${i}`, {
-      x: 32 + i * 33, y: 224, width: 27, height: 30, rx: 6, fill,
+      x: 32 + i * 33, y: SVC_Y + 60, width: 27, height: 30, rx: 6, fill,
       stroke: red("pool") && i < used ? COLOR.error : COLOR.line, "stroke-width": red("pool") && i < used ? 3 : 1.5,
     });
   }
-  pen.text("svc:legend", { x: VIEW.w - 32, y: 246, "text-anchor": "end", ...T(14, COLOR.muted) }, [
+  pen.text("svc:legend", { x: VIEW.w - 32, y: SVC_Y + 82, "text-anchor": "end", ...T(14, COLOR.muted) }, [
     { text: "■", attrs: { fill: BOOKING } }, { text: " бронь  " }, { text: "■", attrs: { fill: SEARCH } }, { text: " поиск" },
   ]);
   if (s.snap) {
     const sw = s.snap.searchWaiting;
-    pen.text("svc:search", { x: VIEW.w - 32, y: 214, "text-anchor": "end", ...T(16, sw ? COLOR.warn : COLOR.muted) },
+    pen.text("svc:search", { x: VIEW.w - 32, y: SVC_Y + 50, "text-anchor": "end", ...T(16, sw ? COLOR.warn : COLOR.muted) },
       sw ? `поиск ждёт: ${sw}` : "поиск работает");
     if (s.snap.bookingsWaiting) pen.text("svc:q", { x: VIEW.w - 32, y: SVC_Y + 26, "text-anchor": "end", ...T(16, COLOR.muted) },
       `броней в очереди: ${s.snap.bookingsWaiting}`);
@@ -132,10 +154,17 @@ export function render(pen: Pen, s: ViewState): void {
     `повторы: ${s.snap.retries}`);
 
   // Поставщик
-  node(pen, "sup", SUP_Y, 76, "Поставщик", red("supplier"));
+  node(pen, "sup", SUP_Y, SUP_H, "Поставщик", red("supplier"));
   if (s.snap) {
     const st = s.snap.supplierDown ? "лежит" : s.phase === "D1" ? "тормозит" : "работает";
     pen.text("sup:st", { x: VIEW.w - 32, y: SUP_Y + 26, "text-anchor": "end", ...T(16, s.snap.supplierDown ? COLOR.error : s.phase === "D1" ? COLOR.warn : COLOR.ok, 600) }, st);
-    pen.text("sup:n", { x: 32, y: SUP_Y + 60, ...T(16, COLOR.muted) }, `запросов в работе: ${s.snap.atSupplier}`);
+    const orphans = s.snap.calls.filter((c) => c.orphan).length;
+    pen.text("sup:n", { x: 32, y: SUP_Y + 52, ...T(16, COLOR.muted) }, [
+      { text: `в работе: ${s.snap.atSupplier}` },
+      ...(orphans ? [{ text: ` · никто не ждёт: ${orphans}`, attrs: { fill: COLOR.warn } }] : []),
+    ]);
+    bars(pen, "sup:bars", SUP_Y + 76, s.snap.calls.map((c) => ({
+      h: Math.min(c.age / SUP_MAX, 1), fill: BOOKING, hollow: c.orphan,
+    })), s.snap.supplierDown ? "молчит — ответа нет" : "30 с — ответ поставщика");
   }
 }

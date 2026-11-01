@@ -86,7 +86,15 @@ export interface Snapshot {
   answers: Record<Answer, number>;
   /** Гостей с двумя бронями у поставщика. */
   dupes: number;
+  /** Сколько ждёт каждый гость без ответа, тиков; старшие первыми, не больше `SHOWN`. Гость, увидевший страницу
+   *  ошибки, ещё секунду стоит в списке с возрастом на момент ошибки — видно, кто упёрся в предел. */
+  waits: number[];
+  /** Вызовы в работе у поставщика: возраст, тиков, и «брошен» — его уже никто не ждёт (таймаут или гость ушёл). */
+  calls: { age: number; orphan: boolean }[];
 }
+
+/** Сколько гостей и вызовов срез отдаёт поштучно — столько помещается столбиками на схеме. */
+export const SHOWN = 24;
 
 export interface Score {
   guests: number;
@@ -121,6 +129,7 @@ interface Call {
   doneAt: number; // Infinity — висит
   abandoned: boolean;
   generation: number;
+  startedAt: number;
 }
 
 type Waiter = { kind: "search"; since: number } | { kind: "booking"; b: Booking };
@@ -276,7 +285,7 @@ export function run(p: Params, phase: Phase, bricks: ReadonlySet<Brick>): RunRes
         if (st === "half") probeInFlight = true;
       }
       const call: Call = {
-        booking: b, abandoned: false, generation,
+        booking: b, abandoned: false, generation, startedAt: t,
         doneAt: down ? Infinity : t + phase.latency(b, b.attempt),
       };
       calls.push(call);
@@ -313,6 +322,11 @@ export function run(p: Params, phase: Phase, bricks: ReadonlySet<Brick>): RunRes
       atSupplier: calls.filter((c) => c.doneAt > t).length,
       answers: { confirmed: answers.confirmed, checking: answers.checking, refused: answers.refused, error: answers.error },
       dupes,
+      waits: bookings
+        .filter((b) => !b.answer || (b.answer === "error" && t - b.answeredAt! < 10))
+        .slice(0, SHOWN).map((b) => (b.answer ? b.answeredAt! : t) - b.start),
+      calls: calls.filter((c) => c.doneAt > t).slice(0, SHOWN)
+        .map((c) => ({ age: t - c.startedAt, orphan: c.abandoned || c.booking.call !== c || !!c.booking.answer })),
     });
   }
 
@@ -339,7 +353,7 @@ export interface Level {
   title: string;
   params: Params;
   phases: readonly Phase[];
-  failures: Record<Rule, { text: string; frame: number }>;
+  failures: Record<Rule, { text: string; why: string; frame: number }>;
 }
 
 /** «Запуск»: беды по порядку, прогон встаёт на первом провале. Победа — все беды без провалов. */
