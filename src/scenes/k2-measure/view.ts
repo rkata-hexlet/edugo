@@ -133,12 +133,16 @@ function graphs(pen: Pen, w: World): void {
     panel(pen, "graphs:p", { x: 0, y: 0, w: b.w, h: b.h, fill: COLOR.bg2 });
     head(pen, "graphs", "графики", w, null);
     ["ошибки", "время", "очередь"].forEach((name, i) => {
-      const y = 70 + i * 34;
+      // У «очереди» запас высоты сверху: хвост рисуется высоко, не задевая «время».
+      const y = [64, 94, 142][i];
       pen.text(`graphs:n${i}`, { x: 16, y: y + 6, fill: COLOR.muted, ...sans(SIZE.min, 500) }, name);
       const bad = (w.alert && !w.backlog && i < 2) || (w.slow && i === 1);
       const d = bad ? `M 110 ${y} L 150 ${y} L 160 ${y - 16} L 175 ${y - 4} L 185 ${y - 18} L 220 ${y - 16}` : `M 110 ${y} L 220 ${y}`;
       if (i === 2 && w.backlog) {
-        pen.path("graphs:l2:tail", { d: `M 110 ${y} L 130 ${y} L 140 ${y - 22} L 220 ${y - 8}`, fill: "none", stroke: COLOR.warn, "stroke-width": 3, class: "fx-draw" });
+        // Копится — круто вверх до края; хвост — высоко и сползает медленно.
+        const tail = w.backlog === "grow" ? `M 110 ${y} L 140 ${y} L 220 ${y - 36}` : `M 110 ${y - 36} L 220 ${y - 24}`;
+        pen.path(`graphs:l2:${w.backlog}`, { d: tail, fill: "none", stroke: w.backlog === "grow" ? COLOR.error : COLOR.warn, "stroke-width": 3, class: "fx-draw" });
+        pen.text("graphs:l2:t", { x: 110, y: y + 22, fill: COLOR.warn, ...sans(SIZE.min, 700) }, "хвост 30 тыс.");
         return;
       }
       pen.path(`graphs:l${i}:${bad}`, { d, fill: "none", stroke: bad ? COLOR.error : COLOR.ok, "stroke-width": 3, class: "fx-draw" });
@@ -194,15 +198,14 @@ function verdict(pen: Pen, w: World): void {
   }, lit(w, "verdict"));
 }
 
-/** Строка пяти причин под площадкой: встреченные — чипы с названием, остальные — пустые кружки. */
+/** Строка четырёх причин под площадкой: встреченные — чипы, остальные — бледные чипы впереди (дорога эпизода). */
 function shelf(pen: Pen, w: World): void {
   let x = 16;
   CLASSES.forEach((name, i) => {
     const met = w.shelf.met.includes(i as never);
     const active = w.shelf.active === i;
     if (!met) {
-      pen.rect(`shelf:${i}:empty`, { x, y: 434, width: 18, height: 18, rx: 9, fill: "none", stroke: COLOR.faint, "stroke-width": 2, "stroke-dasharray": "4 3", ...lit(w, "shelf") });
-      x += 30;
+      x += pill(pen, `shelf:${i}:ahead`, `${i + 1}. ${name}`, { x, y: 427, size: SIZE.min, fill: COLOR.bg, color: COLOR.faint, stroke: COLOR.faint, attrs: lit(w, "shelf") }) + 12;
       return;
     }
     x += pill(pen, `shelf:${i}:${active}`, `${i + 1}. ${name}`, {
@@ -257,22 +260,35 @@ function picture(pen: Pen, w: World, p: Picture): void {
         pen.rect(`pic:b${i}:bar`, { x: 380, y: by + 8, width: Math.max(8, 300 * b.value), height: 30, rx: 6, fill: b.bad ? COLOR.error : COLOR.ok });
         pen.text(`pic:b${i}:t`, { x: 392 + Math.max(8, 300 * b.value), y: by + 30, fill: b.bad ? COLOR.error : COLOR.ink, ...mono(SIZE.body) }, b.text);
       });
+      if (p.threshold) {
+        const tx = 380 + 300 * p.threshold.value;
+        pen.line("pic:thr", { x1: tx, y1: 52, x2: tx, y2: 50 + p.bars.length * 56, stroke: COLOR.warn, "stroke-width": 3, "stroke-dasharray": "6 5" });
+        pen.text("pic:thr:t", { x: tx + 8, y: 50, fill: COLOR.warn, ...sans(SIZE.min, 700) }, p.threshold.label);
+      }
     } else if (p.kind === "tape") {
+      // 30 с прошлого и 6 с будущего: будущее пустое, отчёт там — призрак.
       const x0 = 30;
       const tw = W - 60;
-      const x = (ago: number) => x0 + tw - (ago / 30) * tw;
-      for (let i = 0; i < 120; i++) pen.rect(`pic:tk${i}`, { x: x0 + i * (tw / 120), y: 58, width: 2, height: 40, fill: COLOR.faint });
-      p.marks.forEach((ago, i) => {
-        pen.rect(`pic:m${i}`, { x: x(ago) - 3, y: 50, width: 6, height: 56, rx: 2, fill: COLOR.ok });
-        pen.text(`pic:m${i}:t`, { x: x(ago), y: 130, "text-anchor": "middle", fill: COLOR.ok, ...sans(SIZE.min, 600) }, p.markLabel);
+      const AHEAD = 6;
+      const x = (ago: number) => x0 + ((30 - ago) / (30 + AHEAD)) * tw;
+      const now = x(0);
+      for (let i = 0; i < 100; i++) pen.rect(`pic:tk${i}`, { x: x0 + i * ((now - x0) / 100), y: 58, width: 2, height: 40, fill: COLOR.faint });
+      pen.line("pic:now:l", { x1: now, y1: 46, x2: now, y2: 110, stroke: COLOR.muted, "stroke-width": 2 });
+      p.marks.forEach((m, i) => {
+        const ghost = m.ago < 0;
+        pen.rect(`pic:m${i}`, { x: x(m.ago) - 3, y: 50, width: 6, height: 56, rx: 2, fill: ghost ? "none" : COLOR.ok, stroke: COLOR.ok, "stroke-width": ghost ? 2 : 0, ...(ghost ? { "stroke-dasharray": "4 3" } : {}) });
+        pen.text(`pic:m${i}:t`, { x: x(m.ago), y: 130, "text-anchor": "middle", fill: COLOR.ok, ...sans(SIZE.min, 600) }, m.label);
       });
       if (p.window) {
-        const wx = x(p.window.from);
-        pen.rect("pic:win", { x: wx, y: 44, width: x0 + tw - wx, height: 68, rx: 4, fill: "none", stroke: COLOR.error, "stroke-width": 3, class: "fx-pop" });
-        pen.text("pic:win:t", { x: x0 + tw, y: 30, "text-anchor": "end", fill: COLOR.error, ...sans(SIZE.min, 700) }, p.window.label);
+        const a = x(p.window.past);
+        const b = x(-p.window.ahead);
+        const box = { y: 44, height: 68, rx: 4, fill: "none", stroke: COLOR.error, "stroke-width": 3 };
+        pen.rect("pic:win:past", { x: a, width: now - a, ...box, class: "fx-pop" });
+        pen.rect("pic:win:ahead", { x: now, width: b - now, ...box, "stroke-dasharray": "6 4", class: "fx-pop" });
+        pen.text("pic:win:t", { x: b, y: 30, "text-anchor": "end", fill: COLOR.error, ...sans(SIZE.min, 700) }, `${p.window.pastLabel} ${p.window.aheadLabel}`);
       }
       pen.text("pic:ago", { x: x0, y: 162, fill: COLOR.muted, ...sans(SIZE.min, 500) }, "30 с назад");
-      pen.text("pic:now", { x: x0 + tw, y: 162, "text-anchor": "end", fill: COLOR.muted, ...sans(SIZE.min, 500) }, "сейчас");
+      pen.text("pic:now", { x: now, y: 162, "text-anchor": "middle", fill: COLOR.muted, ...sans(SIZE.min, 500) }, "сейчас");
     } else {
       const card = (key: string, x: number, head: string, text: string, color: string) => {
         panel(pen, `${key}:p`, { x, y: 46, w: 390, h: 116, fill: COLOR.surface, stroke: color, shadow: false });
@@ -305,13 +321,13 @@ function rule(pen: Pen, w: World, text: string): void {
   }, { class: "fx-pop", ...lit(w, "pic") });
 }
 
-/** Номер подозреваемого у звена. */
+/** Знак подозреваемого у звена: «?», а не номер — номера заняты причинами 1–4. */
 function suspect(pen: Pen, w: World, link: Link, n: number): void {
   const at = SUSPECT[link];
   if (!at) return;
   pen.group(`suspect:${link}`, at.x, at.y, () => {
     pen.rect(`suspect:${link}:r`, { x: 0, y: 0, width: 34, height: 34, rx: 17, fill: COLOR.warn });
-    pen.text(`suspect:${link}:t`, { x: 17, y: 24, "text-anchor": "middle", fill: COLOR.bg, ...sans(SIZE.body, 700) }, String(n));
+    pen.text(`suspect:${link}:t`, { x: 17, y: 24, "text-anchor": "middle", fill: COLOR.bg, ...sans(SIZE.body, 700) }, "?");
   }, { ...(n === w.suspects.length ? { class: "fx-pop" } : {}), ...lit(w, link) });
 }
 
@@ -344,9 +360,10 @@ function tips(pen: Pen, w: World): void {
 }
 
 function moral(pen: Pen, w: World): void {
-  pen.group(`moral:${w.frame}`, 140, 230, () => {
-    pen.rect("moral:under", { x: -10, y: -10, width: 1020, height: 200, rx: 18, fill: COLOR.bg, opacity: 0.95 });
-    panel(pen, "moral:p", { x: 0, y: 0, w: 1000, h: 180, fill: COLOR.bg2, stroke: COLOR.warn });
+  // Под схемой, а не поверх: голос называет звенья «измерения» — рамка должна быть видна целиком.
+  pen.group(`moral:${w.frame}`, 140, 470, () => {
+    pen.rect("moral:under", { x: -10, y: -6, width: 1020, height: 184, rx: 18, fill: COLOR.bg, opacity: 0.95 });
+    panel(pen, "moral:p", { x: 0, y: 0, w: 1000, h: 172, fill: COLOR.bg2, stroke: COLOR.warn });
     pen.text("moral:t", { x: 500, y: 76, "text-anchor": "middle", fill: COLOR.ink, ...sans(SIZE.title, 700) }, w.moral!);
   }, { class: "fx-rise" });
 }

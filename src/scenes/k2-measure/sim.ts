@@ -33,10 +33,12 @@ export type Lamp = "red" | "green" | null;
 /** Картинка примера: график, столбики или «думали / на стенде». */
 export type Picture =
   | { kind: "chart"; title: string; points: number[]; mark: { at: number; label: string } | null; note: string | null; bad: boolean }
-  | { kind: "bars"; title: string; bars: { label: string; value: number; text: string; bad: boolean }[] }
+  | { kind: "bars"; title: string; bars: { label: string; value: number; text: string; bad: boolean }[]; threshold?: { value: number; label: string } }
   | { kind: "vs"; title: string; left: { head: string; text: string }; right: { head: string; text: string; bad: boolean } }
-  /** Лента лога за последние 30 с: строки-след (секунды до «сейчас») среди потока прочих; окно — что видит проверка. */
-  | { kind: "tape"; title: string; marks: number[]; markLabel: string; window: { from: number; label: string } | null };
+  /** Лента лога: 30 с прошлого и несколько секунд будущего. Строки-след — секунды до «сейчас» (отрицательные — ещё
+   * не вышли, рисуются призраком); окно — что видит проверка: часть в прошлом (хвост лога) и часть вперёд (слежение). */
+  | { kind: "tape"; title: string; marks: { ago: number; label: string }[];
+      window: { past: number; pastLabel: string; ahead: number; aheadLabel: string } | null };
 
 export interface World extends Staged<Focus> {
   title: { head: string; text: string } | null;
@@ -50,8 +52,9 @@ export interface World extends Staged<Focus> {
   alert: boolean;
   /** Линия «время» красная без алерта: p95 вырос, а про порог не говорим (глава «шум»). */
   slow: boolean;
-  /** Хвост очереди после поломки: линия «очередь» высоко и медленно сползает (глава «система помнит прошлое»). */
-  backlog: boolean;
+  /** Хвост очереди (глава «система помнит прошлое»): `grow` — копится, пока сервис сломан; `tail` — починка есть,
+   * а линия «очередь» высоко и медленно сползает. */
+  backlog: "grow" | "tail" | null;
   /** Починка из набора, которую сейчас примерили к сервису. */
   card: { right: boolean; name: string } | null;
   /** Что сейчас считает проверка. */
@@ -61,7 +64,7 @@ export interface World extends Staged<Focus> {
   /** Сверка CI видна: в пути задачи вердикт показан без CI, где CI в истории не участвовал. */
   ciOn: boolean;
   loop: { on: boolean; at: number | null; lap: number };
-  /** Номера подозреваемых 1–3 у звеньев (хук). */
+  /** Подозреваемые звенья — знак «?» у звена (хук); номера заняты причинами 1–4. */
   suspects: Link[];
   /** Строка правила главы, 4–6 слов, на месте картинки. */
   rule: string | null;
@@ -86,7 +89,7 @@ export function world(): World {
     fault: true,
     alert: false,
     slow: false,
-    backlog: false,
+    backlog: null,
     card: null,
     check: "ошибки и время ответа",
     verdict: { lamp: null, expect: null },
