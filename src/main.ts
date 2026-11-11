@@ -6,9 +6,11 @@ import { loadTakes } from "./engine/takes";
 import { skipLocked } from "./scenes/01-skip-locked";
 import { cache } from "./scenes/02-cache";
 import { kitchen } from "./scenes/k1-kitchen";
+import { classes, cycle } from "./scenes/k2-measure";
 
 // У каждой сцены свой тип состояния; плееру он не важен — сцена сама рисует своё состояние.
-const scenes: Record<string, Scene<any>> = { [skipLocked.id]: skipLocked, [cache.id]: cache, [kitchen.id]: kitchen };
+const scenes: Record<string, Scene<any>> = { [skipLocked.id]: skipLocked, [cache.id]: cache, [kitchen.id]: kitchen,
+  [cycle.id]: cycle, [classes.id]: classes };
 
 const params = new URLSearchParams(location.search);
 const scene = scenes[params.get("scene") ?? skipLocked.id] ?? skipLocked;
