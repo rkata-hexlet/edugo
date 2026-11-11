@@ -253,6 +253,22 @@ function picture(pen: Pen, w: World, p: Picture): void {
         pen.rect(`pic:b${i}:bar`, { x: 380, y: by + 8, width: Math.max(8, 300 * b.value), height: 30, rx: 6, fill: b.bad ? COLOR.error : COLOR.ok });
         pen.text(`pic:b${i}:t`, { x: 392 + Math.max(8, 300 * b.value), y: by + 30, fill: b.bad ? COLOR.error : COLOR.ink, ...mono(SIZE.body) }, b.text);
       });
+    } else if (p.kind === "tape") {
+      const x0 = 30;
+      const tw = W - 60;
+      const x = (ago: number) => x0 + tw - (ago / 30) * tw;
+      for (let i = 0; i < 120; i++) pen.rect(`pic:tk${i}`, { x: x0 + i * (tw / 120), y: 58, width: 2, height: 40, fill: COLOR.faint });
+      p.marks.forEach((ago, i) => {
+        pen.rect(`pic:m${i}`, { x: x(ago) - 3, y: 50, width: 6, height: 56, rx: 2, fill: COLOR.ok });
+        pen.text(`pic:m${i}:t`, { x: x(ago), y: 130, "text-anchor": "middle", fill: COLOR.ok, ...sans(SIZE.min, 600) }, p.markLabel);
+      });
+      if (p.window) {
+        const wx = x(p.window.from);
+        pen.rect("pic:win", { x: wx, y: 44, width: x0 + tw - wx, height: 68, rx: 4, fill: "none", stroke: COLOR.error, "stroke-width": 3, class: "fx-pop" });
+        pen.text("pic:win:t", { x: x0 + tw, y: 30, "text-anchor": "end", fill: COLOR.error, ...sans(SIZE.min, 700) }, p.window.label);
+      }
+      pen.text("pic:ago", { x: x0, y: 162, fill: COLOR.muted, ...sans(SIZE.min, 500) }, "30 с назад");
+      pen.text("pic:now", { x: x0 + tw, y: 162, "text-anchor": "end", fill: COLOR.muted, ...sans(SIZE.min, 500) }, "сейчас");
     } else {
       const card = (key: string, x: number, head: string, text: string, color: string) => {
         panel(pen, `${key}:p`, { x, y: 46, w: 390, h: 116, fill: COLOR.surface, stroke: color, shadow: false });

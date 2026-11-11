@@ -10,7 +10,7 @@ import type { Staged } from "../../kit/director";
 export const CLASSES = ["данные запаздывают", "шум как сигнал", "нагрузка не та"] as const;
 /** Советы итога — по одному на причину. */
 export const TIPS = [
-  "Ждём и смотрим дольше самой большой задержки",
+  "Смотрим дольше, чем опаздывает след данных",
   "Меряем без соседей и с запасом до порога",
   "Нагрузка как в жизни, раундов — с запасом",
 ];
@@ -33,7 +33,9 @@ export type Lamp = "red" | "green" | null;
 export type Picture =
   | { kind: "chart"; title: string; points: number[]; mark: { at: number; label: string } | null; note: string | null; bad: boolean }
   | { kind: "bars"; title: string; bars: { label: string; value: number; text: string; bad: boolean }[] }
-  | { kind: "vs"; title: string; left: { head: string; text: string }; right: { head: string; text: string; bad: boolean } };
+  | { kind: "vs"; title: string; left: { head: string; text: string }; right: { head: string; text: string; bad: boolean } }
+  /** Лента лога за последние 30 с: строки-след (секунды до «сейчас») среди потока прочих; окно — что видит проверка. */
+  | { kind: "tape"; title: string; marks: number[]; markLabel: string; window: { from: number; label: string } | null };
 
 export interface World extends Staged<Focus> {
   title: { head: string; text: string } | null;
