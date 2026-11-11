@@ -63,15 +63,18 @@ const frames = steps.map((step, i) => {
 });
 
 describe("сценарий кухни", () => {
-  it("голосом звучат только реплики режиссёра, и каждая — в его пузыре", () => {
-    const voiced = steps.filter((s) => s.narration);
-    expect(voiced.map((s) => s.narration)).toEqual(["Забудь.", "На площадку.", "Ещё раз."]);
-    expect(new Set(voiced.map((s) => s.narration))).toEqual(new Set(DIRECTOR_LINES));
-    for (const s of voiced) expect(s.state.crew.director.say).toBe(s.narration);
+  it("диктор ведёт весь ролик: голос в каждом кадре, подписей нет", () => {
+    expect(steps.filter((s) => !s.narration).map((s) => s.act)).toEqual([]);
+    expect(steps.filter((s) => s.caption).map((s) => s.caption)).toEqual([]);
+  });
+
+  it("режиссёр говорит в пузыре ровно три реплики", () => {
+    const lines = steps.map((s) => s.state.crew.director.say).filter(Boolean);
+    expect(lines).toEqual([...DIRECTOR_LINES]);
   });
 
   it("«дубль» — только съёмочный: в тексте про письма его нет", () => {
-    const texts = steps.flatMap((s) => [s.caption, ...CREW.map((k) => s.state.crew[k].say ?? ""), ...(s.state.art?.lines ?? [])]);
+    const texts = steps.flatMap((s) => [s.caption, s.narration ?? "", ...CREW.map((k) => s.state.crew[k].say ?? ""), ...(s.state.art?.lines ?? [])]);
     expect(texts.filter((t) => /письм/i.test(t) && /дубл/i.test(t))).toEqual([]);
   });
 

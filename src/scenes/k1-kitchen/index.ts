@@ -1,5 +1,5 @@
 import type { Scene } from "../../engine/contract";
-import { OUTRO, buildSteps } from "./script";
+import { OUTRO, PRONOUNCE, buildSteps } from "./script";
 import type { World } from "./sim";
 import { sound } from "./sound";
 import { render } from "./view";
@@ -16,4 +16,5 @@ export const kitchen: Scene<World> = {
   steps: buildSteps,
   render,
   sound,
+  pronounce: PRONOUNCE,
 };
