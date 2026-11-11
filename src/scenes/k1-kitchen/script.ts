@@ -409,7 +409,12 @@ export function buildSteps(): Step<World>[] {
     d.say(w, "director", "Ещё раз.");
     d.clap(w, "7", 2);
   });
-  d.v("Чем кончился этот прогон — допишем, когда досчитается.", (w) => d.calm(w, "director"));
+  d.v("Второй дубль прогона досчитался через сорок пять минут: все двадцать два случая сюжета зелёные, провалов ноль. " +
+    "Снято.", (w) => {
+    d.calm(w, "director");
+    w.art = { title: "CI", lines: ["e2e · changed · success · 45 мин", "late-emails: 22 случая из 22"] };
+    w.events.push({ kind: "applause" });
+  }, { focus: ["art"] });
 
   // Титры.
   d.scene(ACT.credits, crewOnly());
