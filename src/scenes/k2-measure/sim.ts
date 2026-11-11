@@ -1,46 +1,60 @@
 import type { Mood } from "../../kit/characters";
 import type { Staged } from "../../kit/director";
 
-// Модель наброска «Врёт не решение, а прибор» (поиск формата кухни, 11.11): не симуляция, а доска объяснения.
-// Цепочка «решение → прибор → вердикт», круг цикла, полка пяти классов, картинка примера, двое у стенда.
+// Модель наброска «Почему верная починка не проходит с первого раза» (поиск формата кухни, 11.11): не симуляция,
+// а доска объяснения. Схема стенда из звеньев — виртуалка с сервисом и базой, нагрузка, графики и алерт, набор
+// починок, проверка, вердикт и CI, площадка вокруг, наши представления у автора. Правки копятся на звеньях.
 // Звук выбирает sound.ts только по `events`.
 
-/** Пять классов: почему верное решение не проходит проверку с первого раза. */
+/** Пять причин: почему верное решение не проходит проверку с первого раза. */
 export const CLASSES = ["окно перехода", "шум как сигнал", "нагрузка не та", "мерим не то", "модель ≠ стенд"] as const;
 export type ClassNo = 0 | 1 | 2 | 3 | 4;
 
-/** Станции цикла. */
-export const STATIONS = ["красное", "почему", "правка", "снова"] as const;
+/** Станции цикла (`kc`). */
+export const STATIONS = ["не сходится", "почему", "правка", "снова"] as const;
 
-export const CREW = ["agent", "author"] as const;
-export type Who = (typeof CREW)[number];
+/** Звенья схемы. `deck` — набор верных и ложных починок; `model` — наши представления о системе. */
+export const LINKS = ["site", "load", "vm", "graphs", "deck", "check", "verdict", "model"] as const;
+export type Link = (typeof LINKS)[number];
+/** Звенья, на которые ложатся правки (в итоге — счёт). Решение (верная починка) правок не получает. */
+export const EDITABLE = ["site", "load", "check", "model"] as const satisfies readonly Link[];
+export type Editable = (typeof EDITABLE)[number];
 
-export type Focus = "chain" | "fix" | "gauge" | "loop" | "shelf" | "pic" | Who;
+export type Focus = Link | "loop" | "shelf" | "pic" | "author";
+export type Lamp = "red" | "green" | null;
 
-/** Картинка примера: график с порогом, столбики или «на бумаге / на стенде». */
+/** Картинка примера: график, столбики или «думали / на стенде». */
 export type Picture =
-  | { kind: "chart"; title: string; points: number[]; limit: number | null; mark: { at: number; label: string } | null; bad: boolean }
+  | { kind: "chart"; title: string; points: number[]; mark: { at: number; label: string } | null; note: string | null; bad: boolean }
   | { kind: "bars"; title: string; bars: { label: string; value: number; text: string; bad: boolean }[] }
   | { kind: "vs"; title: string; left: { head: string; text: string }; right: { head: string; text: string; bad: boolean } };
 
 export interface World extends Staged<Focus> {
   title: { head: string; text: string } | null;
-  /** Цепочка проверки: решение, прибор между ним и вердиктом, вердикт. */
-  chain: {
-    on: boolean;
-    fix: string; // верное решение — не меняется весь ролик
-    fixEdits: number;
-    gauge: string; // что меряет прибор
-    gaugeEdits: number;
-    verdict: "red" | "green" | null;
-  };
-  /** Круг цикла; at — где сейчас метка, lap — номер круга. */
+  on: Record<Link, boolean>;
+  /** Правки звена: отметки копятся, числа — только в итоге (`tally`). */
+  edits: Record<Editable, number>;
+  site: string;
+  load: "steady" | "bursts";
+  /** Поломка в сервисе видна (трещина), пока на сервисе нет починки. */
+  fault: boolean;
+  alert: boolean;
+  /** Починка из набора, которую сейчас примерили к сервису. */
+  card: { right: boolean; name: string } | null;
+  /** Что сейчас считает проверка. */
+  check: string;
+  /** Вердикт проверки и чего мы ждали от этой починки; не совпало — CI красный. */
+  verdict: { lamp: Lamp; expect: Lamp };
+  /** Сверка CI видна: в пути задачи вердикт показан без CI, где CI в истории не участвовал. */
+  ciOn: boolean;
+  /** Что мы думаем о системе — пузырь у автора. */
+  model: string | null;
   loop: { on: boolean; at: number | null; lap: number };
-  /** Полка классов: какие уже встретились, о каком речь; byMeet — гнёзда заполняются по порядку встречи (цикл). */
-  shelf: { on: boolean; met: ClassNo[]; active: ClassNo | null; byMeet: boolean };
+  shelf: { on: boolean; met: ClassNo[]; active: ClassNo | null };
   pic: Picture | null;
-  crew: Record<Who, { on: boolean; mood: Mood; say: string | null }>;
-  /** Итоговая мысль крупно — один кадр. */
+  author: { on: boolean; mood: Mood };
+  /** Итог: счёт правок на звеньях и рамка «измерение» вокруг всего, кроме решения. */
+  tally: boolean;
   moral: string | null;
 }
 
@@ -49,11 +63,28 @@ export function world(): World {
     sql: [], db: null, plate: null, stamp: null, term: null, focus: null, chapter: null, board: null,
     events: [], frame: 0, scene: 0,
     title: null,
-    chain: { on: false, fix: "верная починка", fixEdits: 0, gauge: "", gaugeEdits: 0, verdict: null },
+    on: { site: false, load: false, vm: false, graphs: false, deck: false, check: false, verdict: false, model: false },
+    edits: { site: 0, load: 0, check: 0, model: 0 },
+    site: "ноутбук",
+    load: "steady",
+    fault: true,
+    alert: false,
+    card: null,
+    check: "ошибки и время ответа",
+    verdict: { lamp: null, expect: null },
+    ciOn: true,
+    model: null,
     loop: { on: false, at: null, lap: 0 },
-    shelf: { on: false, met: [], active: null, byMeet: false },
+    shelf: { on: false, met: [], active: null },
     pic: null,
-    crew: { agent: { on: false, mood: "idle", say: null }, author: { on: false, mood: "idle", say: null } },
+    author: { on: false, mood: "idle" },
+    tally: false,
     moral: null,
   };
+}
+
+/** CI сверяет вердикт с ожидаемым: null — сверять нечего. */
+export function ci(w: World): "green" | "red" | null {
+  const { lamp, expect } = w.verdict;
+  return w.ciOn && lamp && expect ? (lamp === expect ? "green" : "red") : null;
 }

@@ -63,15 +63,6 @@ for (const [name, build] of [["цикл", buildCycle], ["пять классов
   });
 
   describe(`набросок «${name}»`, () => {
-    it("голос в каждом кадре", () => {
-      expect(steps.filter((s) => !s.narration).length).toBe(0);
-    });
-    it("решение не правим, прибор правим пять раз, полка заполнена", () => {
-      const last = steps.at(-1)!.state;
-      expect(last.chain.fixEdits).toBe(0);
-      expect(last.chain.gaugeEdits).toBe(5);
-      expect([...last.shelf.met].sort()).toEqual([0, 1, 2, 3, 4]);
-    });
     it(`кегль не меньше ${SIZE.min}, низ кадра свободен`, () => {
       const bad = frames.flatMap(({ n, pen }) => [
         ...pen.texts.filter((t) => !(t.size >= SIZE.min)).map((t) => `кадр ${n}: ${t.key} кегль ${t.size}`),

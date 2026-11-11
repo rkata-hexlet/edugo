@@ -1,165 +1,293 @@
 import { STAGE, type Attrs, type Pen } from "../../engine/contract";
 import { bob } from "../../kit/characters";
-import { ACTOR, COLOR, DIM, FONT, SIZE } from "../../kit/theme";
-import { bubble, panel, pill, plate } from "../../kit/widgets";
-import { CLASSES, CREW, STATIONS, type ClassNo, type Focus, type Picture, type Who, type World } from "./sim";
+import { COLOR, DIM, FONT, SIZE } from "../../kit/theme";
+import { bubble, lamp, panel, pill, plate } from "../../kit/widgets";
+import { CLASSES, STATIONS, ci, type Editable, type Focus, type Picture, type World } from "./sim";
 
-// Отрисовка наброска — серые фигуры фазы 0, без полировки. Раскладка: слева круг цикла и двое у стенда;
-// справа сверху цепочка «решение → прибор → вердикт», под ней картинка примера; внизу полка пяти классов.
+// Отрисовка наброска — серые фигуры фазы 0, без полировки. Раскладка:
+//   сверху — площадка (пунктирная рамка), в ней нагрузка → виртуалка (сервис + база) → графики и алерт;
+//   ниже — набор починок (стрелка в сервис), проверка (стрелка от виртуалки) → вердикт и CI;
+//   справа столбец пяти причин; внизу слева автор и его представления, справа строка цикла и картинка примера.
 
 const sans = (size: number, weight = 600) => ({ "font-family": FONT.sans, "font-size": size, "font-weight": weight });
 const mono = (size: number) => ({ "font-family": FONT.mono, "font-size": size });
 
-const CAST: Record<Who, { letter: string; name: string; color: string; tint: string; x: number }> = {
-  agent: { letter: "А", name: "агент", color: ACTOR.A.color, tint: ACTOR.A.tint, x: 60 },
-  author: { letter: "Р", name: "автор", color: "#ffd166", tint: "#5a4a1c", x: 250 },
-};
-const CREW_Y = 450;
-const LOOP = { x: 210, y: 210, r: 110 };
+const BOX = {
+  site: { x: 16, y: 14, w: 1068, h: 404 },
+  load: { x: 40, y: 56, w: 150, h: 170 },
+  vm: { x: 210, y: 56, w: 320, h: 170 },
+  graphs: { x: 570, y: 56, w: 240, h: 170 },
+  deck: { x: 40, y: 250, w: 490, h: 150 },
+  check: { x: 570, y: 250, w: 240, h: 150 },
+  verdict: { x: 840, y: 250, w: 224, h: 150 },
+} as const;
+const SERVICE = { x: 230, y: 104, w: 140, h: 104 };
+const PIC = { x: 420, y: 470, w: 840, h: 176 };
+const AUTHOR = { x: 40, y: 520 };
+const MODEL = { x: 120, y: 440, w: 280, h: 206 };
 
 function lit(w: World, ...what: Focus[]): Attrs {
   return !w.focus || what.some((f) => w.focus!.includes(f)) ? {} : { opacity: DIM };
 }
 
+const arrow = (pen: Pen, key: string, x1: number, y1: number, x2: number, y2: number, attrs: Attrs = {}) => {
+  const a = Math.atan2(y2 - y1, x2 - x1);
+  const h = (s: number) => `${x2 - 10 * Math.cos(a + s)} ${y2 - 10 * Math.sin(a + s)}`;
+  pen.path(key, { d: `M ${x1} ${y1} L ${x2} ${y2} M ${h(0.5)} L ${x2} ${y2} L ${h(-0.5)}`, fill: "none", stroke: COLOR.muted, "stroke-width": 3, ...attrs });
+};
+
 export function render(pen: Pen, w: World): void {
   pen.rect("bg", { x: 0, y: 0, width: STAGE.w, height: STAGE.h, fill: COLOR.bg });
-  if (w.loop.on) loop(pen, w);
-  if (w.chain.on) chain(pen, w);
-  if (w.pic) picture(pen, w, w.pic);
+  if (w.on.site) site(pen, w);
+  if (w.on.load) load(pen, w);
+  if (w.on.vm) vm(pen, w);
+  if (w.on.graphs) graphs(pen, w);
+  if (w.on.deck) deck(pen, w);
+  if (w.on.check) check(pen, w);
+  if (w.on.verdict) verdict(pen, w);
   if (w.shelf.on) shelf(pen, w);
-  crew(pen, w);
+  if (w.author.on) author(pen, w);
+  if (w.loop.on) loop(pen, w);
+  if (w.pic) picture(pen, w, w.pic);
+  if (w.tally) measure(pen);
   pen.layer("top", () => {
-    if (w.plate) plate(pen, `plate:${w.frame}`, "класс", w.plate, STAGE);
+    if (w.plate) plate(pen, `plate:${w.frame}`, "причина", w.plate, STAGE);
     if (w.moral) moral(pen, w);
     if (w.title) titleCard(pen, w);
   });
 }
 
-/** Круг «красное → почему → правка → снова»; метка — где мы сейчас. */
-function loop(pen: Pen, w: World): void {
-  const { x, y, r } = LOOP;
-  pen.group("loop", x, y, () => {
-    pen.path("loop:ring", { d: `M 0 ${-r} A ${r} ${r} 0 1 1 -0.1 ${-r}`, fill: "none", stroke: COLOR.line, "stroke-width": 4 });
-    STATIONS.forEach((name, i) => {
-      const a = -Math.PI / 2 + (i * Math.PI) / 2;
-      const sx = Math.cos(a) * r;
-      const sy = Math.sin(a) * r;
-      const here = w.loop.at === i;
-      const color = here ? (i === 0 ? COLOR.error : i === 3 && w.chain.verdict === "green" ? COLOR.ok : COLOR.warn) : COLOR.faint;
-      pen.rect(`loop:s${i}`, { x: sx - 9, y: sy - 9, width: 18, height: 18, rx: 9, fill: here ? color : COLOR.bg, stroke: color, "stroke-width": 3 });
-      const lx = sx + (i === 1 ? 20 : i === 3 ? -20 : 0);
-      const ly = sy + (i === 0 ? -22 : i === 2 ? 38 : 6);
-      const anchor = i === 1 ? "start" : i === 3 ? "end" : "middle";
-      pen.text(`loop:t${i}`, { x: lx, y: ly, "text-anchor": anchor, fill: here ? COLOR.ink : COLOR.muted, ...sans(SIZE.body, here ? 700 : 500) }, name);
-    });
-    if (w.loop.lap) pen.text("loop:lap", { x: 0, y: 8, "text-anchor": "middle", fill: COLOR.muted, ...sans(SIZE.accent, 700) }, `круг ${w.loop.lap}`);
-  }, lit(w, "loop"));
+/** Подпись звена и отметки правок (оранжевые точки копятся; в итоге — число). */
+function head(pen: Pen, key: string, text: string, w: World, edit: Editable | null, inline = false): void {
+  pen.text(`${key}:h`, { x: 16, y: 28, fill: COLOR.muted, ...sans(SIZE.min, 500) }, text);
+  if (!edit) return;
+  const n = w.edits[edit];
+  if (w.tally) {
+    pill(pen, `${key}:tally`, `правок: ${n}`, { x: inline ? 26 + pen.measure(text, sans(SIZE.min, 500)).width : 14, y: inline ? 6 : 40, size: SIZE.min, fill: n ? COLOR.draftBg : COLOR.surface2, color: n ? COLOR.warn : COLOR.muted, attrs: { class: "fx-pop" } });
+    return;
+  }
+  for (let i = 0; i < n; i++)
+    pen.rect(`${key}:pip${i}`, { x: 16 + pen.measure(text, sans(SIZE.min, 500)).width + 10 + i * 16, y: 16, width: 12, height: 12, rx: 6, fill: COLOR.warn, ...(i === n - 1 ? { class: "fx-pop" } : {}) });
 }
 
-/** Цепочка проверки: решение не трогаем, правки ложатся на прибор. */
-function chain(pen: Pen, w: World): void {
-  const c = w.chain;
-  const box = (key: string, x: number, width: number, head: string, text: string, edits: number | null, focus: Focus) =>
-    pen.group(key, x, 40, () => {
-      panel(pen, `${key}:p`, { x: 0, y: 0, w: width, h: 150, fill: COLOR.bg2 });
-      pen.text(`${key}:h`, { x: 20, y: 32, fill: COLOR.muted, ...sans(SIZE.min, 500) }, head);
-      pen.text(`${key}:t`, { x: 20, y: 72, fill: COLOR.ink, ...sans(SIZE.accent, 700) }, text);
-      if (edits !== null)
-        pill(pen, `${key}:e${edits}`, `правок: ${edits}`, {
-          x: 20, y: 100, size: SIZE.min, fill: edits ? COLOR.draftBg : COLOR.surface2, color: edits ? COLOR.warn : COLOR.muted,
-          attrs: edits ? { class: "fx-pop" } : {},
-        });
-    }, lit(w, "chain", focus));
-  box("fix", 440, 230, "решение", c.fix, c.fixEdits, "fix");
-  pen.path("chain:a1", { d: "M 680 115 L 708 115 M 700 107 L 708 115 L 700 123", fill: "none", stroke: COLOR.muted, "stroke-width": 3 });
-  box("gauge", 718, 280, "прибор", c.gauge, c.gaugeEdits, "gauge");
-  pen.path("chain:a2", { d: "M 1006 115 L 1034 115 M 1026 107 L 1034 115 L 1026 123", fill: "none", stroke: COLOR.muted, "stroke-width": 3 });
-  pen.group("verdict", 1044, 40, () => {
-    panel(pen, "verdict:p", { x: 0, y: 0, w: 196, h: 150, fill: COLOR.bg2 });
-    pen.text("verdict:h", { x: 20, y: 32, fill: COLOR.muted, ...sans(SIZE.min, 500) }, "вердикт");
-    const color = c.verdict === "red" ? COLOR.error : c.verdict === "green" ? COLOR.ok : COLOR.faint;
-    pen.rect(`verdict:lamp:${c.verdict}`, { x: 20, y: 56, width: 56, height: 56, rx: 28, fill: c.verdict ? color : COLOR.bg, stroke: color, "stroke-width": 3, class: c.verdict ? "fx-pop" : "" });
-    if (c.verdict) pen.text("verdict:t", { x: 90, y: 92, fill: color, ...sans(SIZE.body, 700) }, c.verdict === "red" ? "красное" : "зелёное");
-  }, lit(w, "chain"));
+function site(pen: Pen, w: World): void {
+  const b = BOX.site;
+  pen.group("site", b.x, b.y, () => {
+    pen.rect("site:r", { x: 0, y: 0, width: b.w, height: b.h, rx: 18, fill: "none", stroke: COLOR.faint, "stroke-width": 2, "stroke-dasharray": "10 8" });
+    pen.rect("site:tab", { x: 560, y: -2, width: 500, height: 40, rx: 10, fill: COLOR.bg });
+    pen.group("site:hd", 560, 0, () => head(pen, "site", `площадка: ${w.site}`, w, "site", true));
+  }, lit(w, "site"));
+}
+
+function load(pen: Pen, w: World): void {
+  const b = BOX.load;
+  pen.group("load", b.x, b.y, () => {
+    panel(pen, "load:p", { x: 0, y: 0, w: b.w, h: b.h, fill: COLOR.bg2 });
+    head(pen, "load", "нагрузка", w, "load");
+    // Запросы — точки на шкале времени: ровно или залпами.
+    const xs = w.load === "steady" ? [0, 1, 2, 3, 4, 5, 6, 7].map((i) => 16 + i * 16) : [16, 22, 28, 34, 40, 96, 102, 108, 114, 120];
+    for (const row of [0, 1, 2])
+      xs.forEach((x, i) => pen.rect(`load:d${row}:${i}`, { x: x + (w.load === "steady" ? (row % 2) * 8 : 0), y: 76 + row * 26, width: 8, height: 8, rx: 4, fill: COLOR.ink }));
+    pen.text(`load:mode:${w.load}`, { x: 16, y: 156, fill: w.load === "steady" ? COLOR.muted : COLOR.warn, class: "fx-pop", ...sans(SIZE.min, 600) }, w.load === "steady" ? "ровно" : "залпами");
+  }, lit(w, "load"));
+  arrow(pen, "load:a", b.x + b.w + 2, 141, BOX.vm.x - 4, 141, lit(w, "load", "vm"));
+}
+
+function vm(pen: Pen, w: World): void {
+  const b = BOX.vm;
+  pen.group("vm", b.x, b.y, () => {
+    panel(pen, "vm:p", { x: 0, y: 0, w: b.w, h: b.h, fill: COLOR.bg2 });
+    head(pen, "vm", "виртуалка", w, null);
+  }, lit(w, "vm"));
+  const s = SERVICE;
+  pen.group("svc", s.x, s.y, () => {
+    panel(pen, "svc:p", { x: 0, y: 0, w: s.w, h: s.h, fill: COLOR.surface, shadow: false });
+    pen.text("svc:t", { x: s.w / 2, y: 36, "text-anchor": "middle", fill: COLOR.ink, ...sans(SIZE.body, 700) }, "сервис");
+    if (w.card) {
+      const c = w.card.right ? COLOR.ok : COLOR.error;
+      pen.rect(`svc:patch:${w.card.name}`, { x: 24, y: 52, width: s.w - 48, height: 36, rx: 6, fill: w.card.right ? COLOR.doneBg : COLOR.alarmBg, stroke: c, "stroke-width": 2, class: "fx-pop" });
+      pen.text("svc:patch:t", { x: s.w / 2, y: 77, "text-anchor": "middle", fill: c, ...sans(SIZE.min, 700) }, "починка");
+    } else if (w.fault) {
+      pen.path("svc:crack", { d: "M 50 50 L 66 66 L 58 72 L 76 92", fill: "none", stroke: COLOR.error, "stroke-width": 4 });
+      pen.text("svc:crack:t", { x: 84, y: 82, fill: COLOR.error, ...sans(SIZE.min, 700) }, "поломка");
+    }
+  }, lit(w, "vm", "deck"));
+  // База — цилиндр.
+  pen.group("db", 400, 104, () => {
+    pen.path("db:body", { d: "M 0 14 L 0 90 A 55 14 0 0 0 110 90 L 110 14", fill: COLOR.surface, stroke: COLOR.postgres, "stroke-width": 2 });
+    pen.path("db:top", { d: "M 0 14 A 55 14 0 0 1 110 14 A 55 14 0 0 1 0 14", fill: COLOR.surface2, stroke: COLOR.postgres, "stroke-width": 2 });
+    pen.text("db:t", { x: 55, y: 66, "text-anchor": "middle", fill: COLOR.ink, ...sans(SIZE.body, 700) }, "база");
+  }, lit(w, "vm"));
+}
+
+function graphs(pen: Pen, w: World): void {
+  const b = BOX.graphs;
+  arrow(pen, "graphs:a", BOX.vm.x + BOX.vm.w + 2, 120, b.x - 4, 120, lit(w, "graphs"));
+  pen.group("graphs", b.x, b.y, () => {
+    panel(pen, "graphs:p", { x: 0, y: 0, w: b.w, h: b.h, fill: COLOR.bg2 });
+    head(pen, "graphs", "графики", w, null);
+    ["ошибки", "время", "очередь"].forEach((name, i) => {
+      const y = 70 + i * 34;
+      pen.text(`graphs:n${i}`, { x: 16, y: y + 6, fill: COLOR.muted, ...sans(SIZE.min, 500) }, name);
+      const bad = w.alert && i < 2;
+      const d = bad ? `M 110 ${y} L 150 ${y} L 160 ${y - 16} L 175 ${y - 4} L 185 ${y - 18} L 220 ${y - 16}` : `M 110 ${y} L 220 ${y}`;
+      pen.path(`graphs:l${i}:${bad}`, { d, fill: "none", stroke: bad ? COLOR.error : COLOR.ok, "stroke-width": 3, class: "fx-draw" });
+    });
+    if (w.alert) pill(pen, "graphs:alert", "алерт", { x: 150, y: 10, size: SIZE.min, fill: COLOR.alarmBg, color: COLOR.error, attrs: { class: "fx-pop" } });
+  }, lit(w, "graphs"));
+}
+
+function deck(pen: Pen, w: World): void {
+  const b = BOX.deck;
+  pen.group("deck", b.x, b.y, () => {
+    panel(pen, "deck:p", { x: 0, y: 0, w: b.w, h: b.h, fill: COLOR.bg2 });
+    head(pen, "deck", "набор починок: верные и ложные", w, null);
+    // Карты: верные — зелёный край, ложные — красный. Примеренная поднята.
+    [true, false, false, true, false, false].forEach((right, i) => {
+      const up = w.card && w.card.right === right && i === (right ? 0 : 1);
+      pen.rect(`deck:c${i}`, { x: 16 + i * 30, y: up ? 46 : 58, width: 52, height: 76, rx: 6, fill: COLOR.surface, stroke: right ? COLOR.ok : COLOR.error, "stroke-width": up ? 4 : 2 });
+    });
+    if (w.card) {
+      const c = w.card.right ? COLOR.ok : COLOR.error;
+      pen.text(`deck:kind:${w.frame}`, { x: 240, y: 72, fill: c, class: "fx-pop", ...sans(SIZE.body, 700) }, w.card.right ? "верная" : "ложная");
+      pen.text("deck:name", { x: 240, y: 100, fill: COLOR.ink, ...mono(SIZE.min) }, w.card.name);
+      if (w.tally && w.card.right) pill(pen, "deck:tally", "правок: 0", { x: 236, y: 104, size: SIZE.accent, fill: COLOR.surface2, color: COLOR.muted, attrs: { class: "fx-pop" } });
+    }
+  }, lit(w, "deck"));
+  if (w.card) arrow(pen, "deck:a", 300, BOX.deck.y - 4, 300, SERVICE.y + SERVICE.h + 6, lit(w, "deck", "vm"));
+}
+
+function check(pen: Pen, w: World): void {
+  const b = BOX.check;
+  arrow(pen, "check:a", BOX.vm.x + BOX.vm.w + 2, 200, b.x - 4, b.y + 40, lit(w, "check"));
+  pen.group("check", b.x, b.y, () => {
+    panel(pen, "check:p", { x: 0, y: 0, w: b.w, h: b.h, fill: COLOR.bg2 });
+    head(pen, "check", "проверка", w, "check");
+    if (!w.tally) pen.text(`check:t:${w.check}`, { x: 16, y: 74, fill: COLOR.ink, class: "fx-pop", ...sans(SIZE.body, 600) }, w.check);
+  }, lit(w, "check"));
+  arrow(pen, "verdict:a", b.x + b.w + 2, b.y + 75, BOX.verdict.x - 4, b.y + 75, lit(w, "check", "verdict"));
+}
+
+function verdict(pen: Pen, w: World): void {
+  const b = BOX.verdict;
+  const v = w.verdict;
+  pen.group("verdict", b.x, b.y, () => {
+    panel(pen, "verdict:p", { x: 0, y: 0, w: b.w, h: b.h, fill: COLOR.bg2 });
+    head(pen, "verdict", "вердикт", w, null);
+    lamp(pen, `verdict:lamp:${w.frame}:${v.lamp}`, 40, 62, v.lamp, 20);
+    if (v.lamp) pen.text("verdict:t", { x: 72, y: 69, fill: v.lamp === "red" ? COLOR.error : COLOR.ok, ...sans(SIZE.body, 700) }, v.lamp === "red" ? "красное" : "зелёное");
+    if (v.expect) pen.text("verdict:x", { x: 16, y: 106, fill: COLOR.ink, ...sans(SIZE.body, 600) }, `ждали: ${v.expect === "red" ? "красное" : "зелёное"}`);
+    const c = ci(w);
+    if (c) pill(pen, `verdict:ci:${w.frame}`, `CI ${c === "green" ? "зелёный" : "красный"}`, {
+      x: 14, y: 116, size: SIZE.min, fill: c === "green" ? COLOR.doneBg : COLOR.alarmBg, color: c === "green" ? COLOR.ok : COLOR.error, attrs: { class: "fx-pop" },
+    });
+  }, lit(w, "verdict"));
+}
+
+/** Столбец пяти причин справа: пустые гнёзда — пунктир без текста, встреченные — с названием. */
+function shelf(pen: Pen, w: World): void {
+  CLASSES.forEach((name, i) => {
+    const met = w.shelf.met.includes(i as never);
+    const active = w.shelf.active === i;
+    pen.group(`shelf:${i}`, 1096, 20 + i * 80, () => {
+      pen.rect(`shelf:${i}:r`, {
+        x: 0, y: 0, width: 172, height: 66, rx: 10, fill: met ? COLOR.surface2 : COLOR.bg,
+        stroke: active ? COLOR.warn : met ? COLOR.line : COLOR.faint, "stroke-width": active ? 3 : 1.5, ...(met ? {} : { "stroke-dasharray": "6 5" }),
+      });
+      if (met) {
+        const cut = name.indexOf(" ");
+        const [a, b] = [name.slice(0, cut), name.slice(cut + 1)];
+        pen.text(`shelf:${i}:t`, { x: 86, y: b ? 28 : 40, "text-anchor": "middle", fill: active ? COLOR.warn : COLOR.ink, ...sans(SIZE.min, 700) }, b ? `${a}\n${b}` : a);
+      }
+    }, { ...(active ? { class: "fx-pop" } : {}), ...lit(w, "shelf") });
+  });
+}
+
+/** Автор и его представления о системе — звено «модель». */
+function author(pen: Pen, w: World): void {
+  pen.group("author", AUTHOR.x, AUTHOR.y, () => {
+    bob(pen, "author:b", { x: 0, y: 0, color: "#ffd166", tint: "#5a4a1c", letter: "М", mood: w.author.mood, look: { x: 0.6, y: -0.4 } });
+    pen.text("author:n", { x: 32, y: 92, "text-anchor": "middle", fill: COLOR.muted, ...sans(SIZE.min, 500) }, "мы");
+  }, lit(w, "author", "model"));
+  if (w.on.model) {
+    pen.group("model", MODEL.x, MODEL.y, () => {
+      panel(pen, "model:p", { x: 0, y: 0, w: MODEL.w, h: MODEL.h, fill: COLOR.bg2, stroke: COLOR.faint });
+      head(pen, "model", "что мы думаем", w, "model");
+      if (w.model && !w.tally) pen.text(`model:t:${w.model}`, { x: 16, y: 74, fill: COLOR.ink, class: "fx-pop", ...sans(SIZE.body, 600) }, w.model);
+    }, lit(w, "model"));
+    if (w.model && !w.tally && w.focus?.includes("author")) pen.layer("front", () => bubble(pen, `author:say:${w.frame}`, "хм", { x: AUTHOR.x + 50, y: AUTHOR.y - 4, tail: "down", thought: true }));
+  }
+}
+
+/** Строка цикла над картинкой: «не сходится → почему → правка → снова», номер круга слева. */
+function loop(pen: Pen, w: World): void {
+  pen.group("loop", PIC.x, 424, () => {
+    if (w.loop.lap) pen.text("loop:lap", { x: 0, y: 28, fill: COLOR.muted, ...sans(SIZE.body, 700) }, `круг ${w.loop.lap}`);
+    let x = 110;
+    STATIONS.forEach((name, i) => {
+      const here = w.loop.at === i;
+      const color = here ? (i === 0 ? COLOR.error : COLOR.warn) : COLOR.faint;
+      const pw = pill(pen, `loop:s${i}:${here}`, name, { x, y: 4, size: SIZE.min, fill: here ? COLOR.surface2 : COLOR.bg, color: here ? color : COLOR.muted, stroke: color, attrs: here ? { class: "fx-pop" } : {} });
+      x += pw + 10;
+      if (i < STATIONS.length - 1) {
+        arrow(pen, `loop:a${i}`, x, 20, x + 22, 20, { "stroke-width": 2 });
+        x += 32;
+      }
+    });
+  }, lit(w, "loop"));
 }
 
 /** Картинка примера: то, что увидели на стенде. */
 function picture(pen: Pen, w: World, p: Picture): void {
-  const W = 800;
-  const H = 340;
-  pen.group(`pic:${w.frame}`, 440, 215, () => {
+  const { w: W, h: H } = PIC;
+  pen.group(`pic:${w.frame}`, PIC.x, PIC.y, () => {
     panel(pen, "pic:p", { x: 0, y: 0, w: W, h: H, fill: COLOR.bg2 });
-    pen.text("pic:h", { x: 24, y: 36, fill: COLOR.muted, ...sans(SIZE.body, 500) }, p.title);
+    pen.text("pic:h", { x: 20, y: 30, fill: COLOR.muted, ...sans(SIZE.body, 500) }, p.title);
     if (p.kind === "chart") {
-      const x0 = 40;
-      const y0 = 70;
-      const cw = W - 80;
-      const ch = H - 120;
+      const x0 = 30;
+      const y0 = 50;
+      const cw = (p.note ? 520 : W - 60);
+      const ch = H - 70;
       const step = cw / Math.max(p.points.length - 1, 1);
       const y = (v: number) => y0 + ch - v * ch;
       pen.rect("pic:axis", { x: x0, y: y0 + ch, width: cw, height: 2, fill: COLOR.line });
-      if (p.limit !== null) {
-        pen.line("pic:limit", { x1: x0, y1: y(p.limit), x2: x0 + cw, y2: y(p.limit), stroke: COLOR.error, "stroke-width": 2, "stroke-dasharray": "8 6" });
-        pen.text("pic:limitt", { x: x0 + cw, y: y(p.limit) - 10, "text-anchor": "end", fill: COLOR.error, ...sans(SIZE.min, 500) }, "порог");
-      }
       const d = p.points.map((v, i) => `${i ? "L" : "M"} ${x0 + i * step} ${y(v)}`).join(" ");
       pen.path("pic:line", { d, fill: "none", stroke: p.bad ? COLOR.error : COLOR.ok, "stroke-width": 3, class: "fx-draw" });
       if (p.mark) {
         const mx = x0 + p.mark.at * step;
         pen.line("pic:mark", { x1: mx, y1: y0, x2: mx, y2: y0 + ch, stroke: COLOR.warn, "stroke-width": 2, "stroke-dasharray": "4 4" });
-        pen.text("pic:markt", { x: mx + 10, y: y0 + 22, fill: COLOR.warn, ...sans(SIZE.body, 700) }, p.mark.label);
+        pen.text("pic:markt", { x: mx + 10, y: y0 + 24, fill: COLOR.warn, ...sans(SIZE.body, 700) }, p.mark.label);
       }
+      if (p.note) pen.text("pic:note", { x: 580, y: 90, fill: COLOR.ink, ...sans(SIZE.accent, 700) }, p.note);
     } else if (p.kind === "bars") {
       p.bars.forEach((b, i) => {
-        const by = 80 + i * 80;
-        pen.text(`pic:b${i}:l`, { x: 24, y: by + 30, fill: COLOR.ink, ...sans(SIZE.body, 600) }, b.label);
-        pen.rect(`pic:b${i}:bar`, { x: 300, y: by + 8, width: Math.max(8, 360 * b.value), height: 32, rx: 6, fill: b.bad ? COLOR.error : COLOR.ok});
-        pen.text(`pic:b${i}:t`, { x: 310 + Math.max(8, 360 * b.value), y: by + 31, fill: b.bad ? COLOR.error : COLOR.ink, ...mono(SIZE.body) }, b.text);
+        const by = 50 + i * 56;
+        pen.text(`pic:b${i}:l`, { x: 20, y: by + 28, fill: COLOR.ink, ...sans(SIZE.body, 600) }, b.label);
+        pen.rect(`pic:b${i}:bar`, { x: 380, y: by + 8, width: Math.max(8, 300 * b.value), height: 30, rx: 6, fill: b.bad ? COLOR.error : COLOR.ok });
+        pen.text(`pic:b${i}:t`, { x: 392 + Math.max(8, 300 * b.value), y: by + 30, fill: b.bad ? COLOR.error : COLOR.ink, ...mono(SIZE.body) }, b.text);
       });
     } else {
       const card = (key: string, x: number, head: string, text: string, color: string) => {
-        panel(pen, `${key}:p`, { x, y: 70, w: 350, h: 240, fill: COLOR.surface, stroke: color });
-        pen.text(`${key}:h`, { x: x + 20, y: 106, fill: COLOR.muted, ...sans(SIZE.body, 500) }, head);
-        pen.text(`${key}:t`, { x: x + 20, y: 154, fill: color === COLOR.line ? COLOR.ink : color, ...sans(SIZE.accent, 700) }, text);
+        panel(pen, `${key}:p`, { x, y: 46, w: 390, h: 116, fill: COLOR.surface, stroke: color, shadow: false });
+        pen.text(`${key}:h`, { x: x + 16, y: 74, fill: COLOR.muted, ...sans(SIZE.min, 500) }, head);
+        pen.text(`${key}:t`, { x: x + 16, y: 106, fill: color === COLOR.line ? COLOR.ink : color, ...sans(SIZE.accent, 700) }, text);
       };
-      card("pic:l", 30, p.left.head, p.left.text, COLOR.line);
-      card("pic:r", 420, p.right.head, p.right.text, p.right.bad ? COLOR.error : COLOR.ok);
+      card("pic:l", 20, p.left.head, p.left.text, COLOR.line);
+      card("pic:r", 430, p.right.head, p.right.text, p.right.bad ? COLOR.error : COLOR.ok);
     }
   }, { class: "fx-pop", ...lit(w, "pic") });
 }
 
-/** Полка пяти классов: пустые гнёзда заполняются по мере встречи. */
-function shelf(pen: Pen, w: World): void {
-  CLASSES.forEach((_, i) => {
-    const no = w.shelf.byMeet ? w.shelf.met[i] : (i as ClassNo);
-    const met = no !== undefined && w.shelf.met.includes(no);
-    const active = met && w.shelf.active === no;
-    const name = met ? `${w.shelf.byMeet ? "" : `${i + 1}. `}${CLASSES[no]}` : w.shelf.byMeet ? "?" : `${i + 1}. ?`;
-    const x = 40 + i * 242;
-    pen.group(`shelf:${i}`, x, 584, () => {
-      pen.rect(`shelf:${i}:r`, {
-        x: 0, y: 0, width: 230, height: 54, rx: 10, fill: met ? COLOR.surface2 : COLOR.bg,
-        stroke: active ? COLOR.warn : met ? COLOR.line : COLOR.faint, "stroke-width": active ? 3 : 1.5, ...(met ? {} : { "stroke-dasharray": "6 5" }),
-      });
-      pen.text(`shelf:${i}:t`, { x: 115, y: 34, "text-anchor": "middle", fill: met ? (active ? COLOR.warn : COLOR.ink) : COLOR.faint, ...sans(SIZE.min, 700) },
-        name);
-    }, { ...(active ? { class: "fx-pop" } : {}), ...lit(w, "shelf") });
+/** Итог: рамка «измерение» вокруг всего, что не решение. */
+/** Итог: всё, что меряет, обведено «измерением»; набор починок и вердикт — снаружи. */
+function measure(pen: Pen): void {
+  pen.layer("front", () => {
+    const boxes = [BOX.load, BOX.vm, BOX.graphs, BOX.check, { x: MODEL.x, y: MODEL.y, w: MODEL.w, h: MODEL.h }];
+    boxes.forEach((b, i) =>
+      pen.rect(`measure:r${i}`, { x: b.x - 6, y: b.y - 6, width: b.w + 12, height: b.h + 12, rx: 16, fill: "none", stroke: COLOR.warn, "stroke-width": 3, class: "fx-fade" }));
+    pen.rect("measure:site", { x: BOX.site.x, y: BOX.site.y, width: BOX.site.w, height: BOX.site.h, rx: 18, fill: "none", stroke: COLOR.warn, "stroke-width": 2, "stroke-dasharray": "10 8", class: "fx-fade" });
+    pill(pen, "measure:t", "измерение", { x: 30, y: -2, size: SIZE.accent, fill: COLOR.bg, color: COLOR.warn, stroke: COLOR.warn, attrs: { class: "fx-pop" } });
   });
-}
-
-function crew(pen: Pen, w: World): void {
-  for (const k of CREW) {
-    const m = w.crew[k];
-    if (!m.on) continue;
-    const c = CAST[k];
-    pen.group(`crew:${k}`, c.x, CREW_Y, () => {
-      bob(pen, `crew:${k}:b`, { x: 0, y: 0, color: c.color, tint: c.tint, letter: c.letter, mood: m.mood, look: { x: 0.5, y: -0.5 } });
-      pen.text(`crew:${k}:n`, { x: 32, y: 92, "text-anchor": "middle", fill: COLOR.muted, ...sans(SIZE.min, 500) }, c.name);
-    }, lit(w, k));
-    if (m.say)
-      pen.layer("front", () =>
-        bubble(pen, `say:${k}:${w.frame}`, m.say!, { x: c.x + 32, y: CREW_Y - 22, tail: "down", align: k === "author" ? "end" : "start", attrs: { class: "fx-pop" } }));
-  }
 }
 
 function moral(pen: Pen, w: World): void {
