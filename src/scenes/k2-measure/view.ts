@@ -135,7 +135,7 @@ function graphs(pen: Pen, w: World): void {
     ["ошибки", "время", "очередь"].forEach((name, i) => {
       const y = 70 + i * 34;
       pen.text(`graphs:n${i}`, { x: 16, y: y + 6, fill: COLOR.muted, ...sans(SIZE.min, 500) }, name);
-      const bad = w.alert && i < 2;
+      const bad = (w.alert && i < 2) || (w.slow && i === 1);
       const d = bad ? `M 110 ${y} L 150 ${y} L 160 ${y - 16} L 175 ${y - 4} L 185 ${y - 18} L 220 ${y - 16}` : `M 110 ${y} L 220 ${y}`;
       pen.path(`graphs:l${i}:${bad}`, { d, fill: "none", stroke: bad ? COLOR.error : COLOR.ok, "stroke-width": 3, class: "fx-draw" });
     });

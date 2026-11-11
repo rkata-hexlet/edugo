@@ -45,6 +45,8 @@ export interface World extends Staged<Focus> {
   /** Поломка в сервисе видна (трещина), пока на сервисе нет починки. */
   fault: boolean;
   alert: boolean;
+  /** Линия «время» красная без алерта: p95 вырос, а про порог не говорим (глава «шум»). */
+  slow: boolean;
   /** Починка из набора, которую сейчас примерили к сервису. */
   card: { right: boolean; name: string } | null;
   /** Что сейчас считает проверка. */
@@ -78,6 +80,7 @@ export function world(): World {
     load: "steady",
     fault: true,
     alert: false,
+    slow: false,
     card: null,
     check: "ошибки и время ответа",
     verdict: { lamp: null, expect: null },
