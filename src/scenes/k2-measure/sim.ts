@@ -10,7 +10,7 @@ import type { Staged } from "../../kit/director";
 export const CLASSES = ["окно перехода", "шум как сигнал", "нагрузка не та", "мерим не то", "модель ≠ стенд"] as const;
 export type ClassNo = 0 | 1 | 2 | 3 | 4;
 
-/** Станции цикла (`kc`). */
+/** Станции круга задачи внутри главы «нагрузка не та». */
 export const STATIONS = ["не сходится", "почему", "правка", "снова"] as const;
 
 /** Звенья схемы. `deck` — набор верных и ложных починок; `model` — наши представления о системе. */
@@ -50,6 +50,10 @@ export interface World extends Staged<Focus> {
   /** Что мы думаем о системе — пузырь у автора. */
   model: string | null;
   loop: { on: boolean; at: number | null; lap: number };
+  /** Номера подозреваемых 1–4 у звеньев (хук). */
+  suspects: Link[];
+  /** Строка правила главы, 4–6 слов, на месте картинки. */
+  rule: string | null;
   shelf: { on: boolean; met: ClassNo[]; active: ClassNo | null };
   pic: Picture | null;
   author: { on: boolean; mood: Mood };
@@ -75,6 +79,8 @@ export function world(): World {
     ciOn: true,
     model: null,
     loop: { on: false, at: null, lap: 0 },
+    suspects: [],
+    rule: null,
     shelf: { on: false, met: [], active: null },
     pic: null,
     author: { on: false, mood: "idle" },

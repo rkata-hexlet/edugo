@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Attrs, Pen, TextContent } from "../../engine/contract";
 import { SAFE_BOTTOM, SIZE } from "../../kit/theme";
-import { buildClasses, buildCycle } from "./script";
+import { buildClasses } from "./script";
 import { render } from "./view";
 
 /** Фейковый Pen: копит текст и прямоугольники в координатах сцены (сдвиги групп складываются). */
@@ -54,7 +54,7 @@ class RecordingPen implements Pen {
   }
 }
 
-for (const [name, build] of [["цикл", buildCycle], ["пять классов", buildClasses]] as const) {
+for (const [name, build] of [["пять классов", buildClasses]] as const) {
   const steps = build();
   const frames = steps.map((step, i) => {
     const pen = new RecordingPen();

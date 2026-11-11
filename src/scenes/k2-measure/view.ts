@@ -1,13 +1,14 @@
 import { STAGE, type Attrs, type Pen } from "../../engine/contract";
 import { bob } from "../../kit/characters";
 import { COLOR, DIM, FONT, SIZE } from "../../kit/theme";
-import { bubble, lamp, panel, pill, plate } from "../../kit/widgets";
-import { CLASSES, STATIONS, ci, type Editable, type Focus, type Picture, type World } from "./sim";
+import { bubble, lamp, panel, pill } from "../../kit/widgets";
+import { CLASSES, STATIONS, ci, type Editable, type Focus, type Link, type Picture, type World } from "./sim";
 
 // Отрисовка наброска — серые фигуры фазы 0, без полировки. Раскладка:
 //   сверху — площадка (пунктирная рамка), в ней нагрузка → виртуалка (сервис + база) → графики и алерт;
 //   ниже — набор починок (стрелка в сервис), проверка (стрелка от виртуалки) → вердикт и CI;
-//   справа столбец пяти причин; внизу слева автор и его представления, справа строка цикла и картинка примера.
+//   под площадкой — строка причин (чипы); справа столбец — круг задачи (глава «нагрузка не та»);
+//   внизу слева автор и его представления (глава про модель и итог), справа картинка примера или строка правила.
 
 const sans = (size: number, weight = 600) => ({ "font-family": FONT.sans, "font-size": size, "font-weight": weight });
 const mono = (size: number) => ({ "font-family": FONT.mono, "font-size": size });
@@ -24,7 +25,14 @@ const BOX = {
 const SERVICE = { x: 230, y: 104, w: 140, h: 104 };
 const PIC = { x: 420, y: 470, w: 840, h: 176 };
 const AUTHOR = { x: 40, y: 520 };
-const MODEL = { x: 120, y: 440, w: 280, h: 206 };
+const MODEL = { x: 120, y: 470, w: 280, h: 176 };
+/** Где у звена номер подозреваемого (левый верхний угол звена; у площадки — у вкладки). */
+const SUSPECT: Partial<Record<Link, { x: number; y: number }>> = {
+  site: { x: BOX.site.x + 528, y: BOX.site.y + 4 },
+  load: { x: BOX.load.x - 24, y: BOX.load.y - 22 },
+  check: { x: BOX.check.x - 24, y: BOX.check.y - 22 },
+  model: { x: MODEL.x - 24, y: MODEL.y - 22 },
+};
 
 function lit(w: World, ...what: Focus[]): Attrs {
   return !w.focus || what.some((f) => w.focus!.includes(f)) ? {} : { opacity: DIM };
@@ -49,9 +57,11 @@ export function render(pen: Pen, w: World): void {
   if (w.author.on) author(pen, w);
   if (w.loop.on) loop(pen, w);
   if (w.pic) picture(pen, w, w.pic);
+  else if (w.rule) rule(pen, w, w.rule);
   if (w.tally) measure(pen);
+  w.suspects.forEach((link, i) => suspect(pen, w, link, i + 1));
   pen.layer("top", () => {
-    if (w.plate) plate(pen, `plate:${w.frame}`, "причина", w.plate, STAGE);
+    if (w.plate) chapterHead(pen, w);
     if (w.moral) moral(pen, w);
     if (w.title) titleCard(pen, w);
   });
@@ -184,22 +194,21 @@ function verdict(pen: Pen, w: World): void {
   }, lit(w, "verdict"));
 }
 
-/** Столбец пяти причин справа: пустые гнёзда — пунктир без текста, встреченные — с названием. */
+/** Строка пяти причин под площадкой: встреченные — чипы с названием, остальные — пустые кружки. */
 function shelf(pen: Pen, w: World): void {
+  let x = 16;
   CLASSES.forEach((name, i) => {
     const met = w.shelf.met.includes(i as never);
     const active = w.shelf.active === i;
-    pen.group(`shelf:${i}`, 1096, 20 + i * 80, () => {
-      pen.rect(`shelf:${i}:r`, {
-        x: 0, y: 0, width: 172, height: 66, rx: 10, fill: met ? COLOR.surface2 : COLOR.bg,
-        stroke: active ? COLOR.warn : met ? COLOR.line : COLOR.faint, "stroke-width": active ? 3 : 1.5, ...(met ? {} : { "stroke-dasharray": "6 5" }),
-      });
-      if (met) {
-        const cut = name.indexOf(" ");
-        const [a, b] = [name.slice(0, cut), name.slice(cut + 1)];
-        pen.text(`shelf:${i}:t`, { x: 86, y: b ? 28 : 40, "text-anchor": "middle", fill: active ? COLOR.warn : COLOR.ink, ...sans(SIZE.min, 700) }, b ? `${a}\n${b}` : a);
-      }
-    }, { ...(active ? { class: "fx-pop" } : {}), ...lit(w, "shelf") });
+    if (!met) {
+      pen.rect(`shelf:${i}:empty`, { x, y: 434, width: 18, height: 18, rx: 9, fill: "none", stroke: COLOR.faint, "stroke-width": 2, "stroke-dasharray": "4 3", ...lit(w, "shelf") });
+      x += 30;
+      return;
+    }
+    x += pill(pen, `shelf:${i}:${active}`, `${i + 1}. ${name}`, {
+      x, y: 427, size: SIZE.min, fill: active ? COLOR.surface2 : COLOR.bg, color: active ? COLOR.warn : COLOR.ink, stroke: active ? COLOR.warn : COLOR.line,
+      attrs: { ...(active ? { class: "fx-pop" } : {}), ...lit(w, "shelf") },
+    }) + 12;
   });
 }
 
@@ -219,21 +228,19 @@ function author(pen: Pen, w: World): void {
   }
 }
 
-/** Строка цикла над картинкой: «не сходится → почему → правка → снова», номер круга слева. */
+/** Круг задачи — столбец справа: «круг N», под ним станции сверху вниз; текущая подсвечена. */
 function loop(pen: Pen, w: World): void {
-  pen.group("loop", PIC.x, 424, () => {
-    if (w.loop.lap) pen.text("loop:lap", { x: 0, y: 28, fill: COLOR.muted, ...sans(SIZE.body, 700) }, `круг ${w.loop.lap}`);
-    let x = 110;
+  pen.group("loop", 1096, 20, () => {
+    if (w.loop.lap) pen.text(`loop:lap:${w.loop.lap}`, { x: 0, y: 24, fill: COLOR.ink, class: "fx-pop", ...sans(SIZE.body, 700) }, `круг ${w.loop.lap}`);
     STATIONS.forEach((name, i) => {
+      const y = 44 + i * 76;
       const here = w.loop.at === i;
       const color = here ? (i === 0 ? COLOR.error : COLOR.warn) : COLOR.faint;
-      const pw = pill(pen, `loop:s${i}:${here}`, name, { x, y: 4, size: SIZE.min, fill: here ? COLOR.surface2 : COLOR.bg, color: here ? color : COLOR.muted, stroke: color, attrs: here ? { class: "fx-pop" } : {} });
-      x += pw + 10;
-      if (i < STATIONS.length - 1) {
-        arrow(pen, `loop:a${i}`, x, 20, x + 22, 20, { "stroke-width": 2 });
-        x += 32;
-      }
+      pill(pen, `loop:s${i}:${here}`, name, { x: 0, y, size: SIZE.min, fill: here ? COLOR.surface2 : COLOR.bg, color: here ? color : COLOR.muted, stroke: color, attrs: here ? { class: "fx-pop" } : {} });
+      if (i < STATIONS.length - 1) arrow(pen, `loop:a${i}`, 20, y + 38, 20, y + 70, { "stroke-width": 2 });
     });
+    // «снова» возвращает к началу круга.
+    pen.path("loop:back", { d: `M 150 ${44 + 3 * 76 + 16} L 164 ${44 + 3 * 76 + 16} L 164 60 L 150 60`, fill: "none", stroke: COLOR.faint, "stroke-width": 2, "stroke-dasharray": "5 4" });
   }, lit(w, "loop"));
 }
 
@@ -278,7 +285,6 @@ function picture(pen: Pen, w: World, p: Picture): void {
   }, { class: "fx-pop", ...lit(w, "pic") });
 }
 
-/** Итог: рамка «измерение» вокруг всего, что не решение. */
 /** Итог: всё, что меряет, обведено «измерением»; набор починок и вердикт — снаружи. */
 function measure(pen: Pen): void {
   pen.layer("front", () => {
@@ -288,6 +294,36 @@ function measure(pen: Pen): void {
     pen.rect("measure:site", { x: BOX.site.x, y: BOX.site.y, width: BOX.site.w, height: BOX.site.h, rx: 18, fill: "none", stroke: COLOR.warn, "stroke-width": 2, "stroke-dasharray": "10 8", class: "fx-fade" });
     pill(pen, "measure:t", "измерение", { x: 30, y: -2, size: SIZE.accent, fill: COLOR.bg, color: COLOR.warn, stroke: COLOR.warn, attrs: { class: "fx-pop" } });
   });
+}
+
+/** Строка правила главы — на месте картинки примера. */
+function rule(pen: Pen, w: World, text: string): void {
+  pen.group(`rule:${w.frame}`, PIC.x, PIC.y, () => {
+    panel(pen, "rule:p", { x: 0, y: 0, w: PIC.w, h: 110, fill: COLOR.bg2, stroke: COLOR.warn });
+    pen.text("rule:h", { x: 24, y: 36, fill: COLOR.muted, ...sans(SIZE.min, 500) }, "правило");
+    pen.text("rule:t", { x: 24, y: 80, fill: COLOR.ink, ...sans(SIZE.title, 700) }, text);
+  }, { class: "fx-pop", ...lit(w, "pic") });
+}
+
+/** Номер подозреваемого у звена. */
+function suspect(pen: Pen, w: World, link: Link, n: number): void {
+  const at = SUSPECT[link];
+  if (!at) return;
+  pen.group(`suspect:${link}`, at.x, at.y, () => {
+    pen.rect(`suspect:${link}:r`, { x: 0, y: 0, width: 34, height: 34, rx: 17, fill: COLOR.warn });
+    pen.text(`suspect:${link}:t`, { x: 17, y: 24, "text-anchor": "middle", fill: COLOR.bg, ...sans(SIZE.body, 700) }, String(n));
+  }, { ...(n === w.suspects.length ? { class: "fx-pop" } : {}), ...lit(w, link) });
+}
+
+/** Заголовок главы поверх затемнённой схемы: схема остаётся якорем, не уходит со сцены. */
+function chapterHead(pen: Pen, w: World): void {
+  const n = (w.shelf.active ?? 0) + 1;
+  pen.group(`plate:${w.frame}`, 0, 0, () => {
+    pen.rect("plate:bg", { x: 0, y: 0, width: STAGE.w, height: STAGE.h, fill: COLOR.bg, opacity: 0.7 });
+    panel(pen, "plate:p", { x: 290, y: 250, w: 700, h: 170, fill: COLOR.bg2, stroke: COLOR.warn });
+    pen.text("plate:h", { x: 640, y: 302, "text-anchor": "middle", fill: COLOR.muted, "letter-spacing": 6, ...sans(SIZE.title, 600) }, `ПРИЧИНА ${n}`);
+    pen.text("plate:t", { x: 640, y: 378, "text-anchor": "middle", fill: COLOR.ink, class: "fx-rise", ...sans(40, 700) }, w.plate!);
+  }, { class: "fx-fade" });
 }
 
 function moral(pen: Pen, w: World): void {
