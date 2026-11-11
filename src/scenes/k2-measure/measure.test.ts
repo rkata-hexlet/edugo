@@ -67,7 +67,7 @@ for (const [name, build] of [["пять классов", buildClasses]] as const
       const bad = frames.flatMap(({ n, pen }) => [
         ...pen.texts.filter((t) => !(t.size >= SIZE.min)).map((t) => `кадр ${n}: ${t.key} кегль ${t.size}`),
         ...pen.texts.filter((t) => t.y > SAFE_BOTTOM).map((t) => `кадр ${n}: ${t.key} y=${t.y}`),
-        ...pen.rects.filter((r) => r.bottom > SAFE_BOTTOM && !/^bg$|title:bg|plate.*:bg/.test(r.key)).map((r) => `кадр ${n}: ${r.key} низ=${r.bottom}`),
+        ...pen.rects.filter((r) => r.bottom > SAFE_BOTTOM && !/^bg$|title:bg|plate.*:bg|tips:bg/.test(r.key)).map((r) => `кадр ${n}: ${r.key} низ=${r.bottom}`),
       ]);
       expect(bad).toEqual([]);
     });

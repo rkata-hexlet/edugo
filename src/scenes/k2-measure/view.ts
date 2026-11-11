@@ -2,7 +2,7 @@ import { STAGE, type Attrs, type Pen } from "../../engine/contract";
 import { bob } from "../../kit/characters";
 import { COLOR, DIM, FONT, SIZE } from "../../kit/theme";
 import { bubble, lamp, panel, pill } from "../../kit/widgets";
-import { CLASSES, STATIONS, ci, type Editable, type Focus, type Link, type Picture, type World } from "./sim";
+import { CLASSES, STATIONS, TIPS, ci, type Editable, type Focus, type Link, type Picture, type World } from "./sim";
 
 // Отрисовка наброска — серые фигуры фазы 0, без полировки. Раскладка:
 //   сверху — площадка (пунктирная рамка), в ней нагрузка → виртуалка (сервис + база) → графики и алерт;
@@ -62,6 +62,7 @@ export function render(pen: Pen, w: World): void {
   w.suspects.forEach((link, i) => suspect(pen, w, link, i + 1));
   pen.layer("top", () => {
     if (w.plate) chapterHead(pen, w);
+    if (w.tips) tips(pen, w);
     if (w.moral) moral(pen, w);
     if (w.title) titleCard(pen, w);
   });
@@ -323,6 +324,22 @@ function chapterHead(pen: Pen, w: World): void {
     panel(pen, "plate:p", { x: 290, y: 250, w: 700, h: 170, fill: COLOR.bg2, stroke: COLOR.warn });
     pen.text("plate:h", { x: 640, y: 302, "text-anchor": "middle", fill: COLOR.muted, "letter-spacing": 6, ...sans(SIZE.title, 600) }, `ПРИЧИНА ${n}`);
     pen.text("plate:t", { x: 640, y: 378, "text-anchor": "middle", fill: COLOR.ink, class: "fx-rise", ...sans(40, 700) }, w.plate!);
+  }, { class: "fx-fade" });
+}
+
+/** Итоговый список советов поверх схемы; оговорка — отдельной плашкой снизу. */
+function tips(pen: Pen, w: World): void {
+  const t = w.tips!;
+  pen.group("tips", 0, 0, () => {
+    pen.rect("tips:bg", { x: 0, y: 0, width: STAGE.w, height: STAGE.h, fill: COLOR.bg, opacity: 0.85 });
+    panel(pen, "tips:p", { x: 140, y: 40, w: 1000, h: 400, fill: COLOR.bg2, stroke: COLOR.warn });
+    pen.text("tips:h", { x: 172, y: 88, fill: COLOR.muted, "letter-spacing": 4, ...sans(SIZE.title, 600) }, "КАК НЕ ДАТЬ ИЗМЕРЕНИЮ СОВРАТЬ");
+    TIPS.slice(0, t.shown).forEach((line, i) =>
+      pen.text(`tips:${i}`, { x: 172, y: 146 + i * 50, fill: COLOR.ink, class: "fx-rise", ...sans(SIZE.accent, 600) }, `${i + 1}. ${line}`));
+    if (t.caveat) {
+      panel(pen, "tips:c:p", { x: 140, y: 468, w: 1000, h: 150, fill: COLOR.bg2, stroke: COLOR.error });
+      pen.text("tips:c:t", { x: 172, y: 516, fill: COLOR.ink, class: "fx-pop", ...sans(SIZE.accent, 700) }, t.caveat);
+    }
   }, { class: "fx-fade" });
 }
 
