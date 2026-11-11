@@ -7,7 +7,7 @@ import type { Staged } from "../../kit/director";
 // Звук выбирает sound.ts только по `events`.
 
 /** Пять причин: почему верное решение не проходит проверку с первого раза. */
-export const CLASSES = ["окно перехода", "шум как сигнал", "нагрузка не та", "мерим не то", "модель ≠ стенд"] as const;
+export const CLASSES = ["данные запаздывают", "шум как сигнал", "нагрузка не та", "мерим не то", "модель ≠ стенд"] as const;
 export type ClassNo = 0 | 1 | 2 | 3 | 4;
 
 /** Станции круга задачи внутри главы «нагрузка не та». */
@@ -38,8 +38,6 @@ export interface World extends Staged<Focus> {
   load: "steady" | "bursts";
   /** Поломка в сервисе видна (трещина), пока на сервисе нет починки. */
   fault: boolean;
-  /** Сервис перезапускается под новый код: процесса нет, запросы падают. */
-  restarting: boolean;
   alert: boolean;
   /** Починка из набора, которую сейчас примерили к сервису. */
   card: { right: boolean; name: string } | null;
@@ -74,7 +72,6 @@ export function world(): World {
     site: "ноутбук",
     load: "steady",
     fault: true,
-    restarting: false,
     alert: false,
     card: null,
     check: "ошибки и время ответа",

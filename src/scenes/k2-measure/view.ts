@@ -111,11 +111,9 @@ function vm(pen: Pen, w: World): void {
   }, lit(w, "vm"));
   const s = SERVICE;
   pen.group("svc", s.x, s.y, () => {
-    panel(pen, "svc:p", { x: 0, y: 0, w: s.w, h: s.h, fill: w.restarting ? COLOR.bg : COLOR.surface, stroke: w.restarting ? COLOR.warn : undefined, shadow: false });
-    pen.text("svc:t", { x: s.w / 2, y: 36, "text-anchor": "middle", fill: w.restarting ? COLOR.muted : COLOR.ink, ...sans(SIZE.body, 700) }, "сервис");
-    if (w.restarting) {
-      pen.text("svc:restart", { x: s.w / 2, y: 77, "text-anchor": "middle", fill: COLOR.warn, class: "fx-pop", ...sans(SIZE.min, 700) }, "перезапуск");
-    } else if (w.card) {
+    panel(pen, "svc:p", { x: 0, y: 0, w: s.w, h: s.h, fill: COLOR.surface, shadow: false });
+    pen.text("svc:t", { x: s.w / 2, y: 36, "text-anchor": "middle", fill: COLOR.ink, ...sans(SIZE.body, 700) }, "сервис");
+    if (w.card) {
       const c = w.card.right ? COLOR.ok : COLOR.error;
       pen.rect(`svc:patch:${w.card.name}`, { x: 24, y: 52, width: s.w - 48, height: 36, rx: 6, fill: w.card.right ? COLOR.doneBg : COLOR.alarmBg, stroke: c, "stroke-width": 2, class: "fx-pop" });
       pen.text("svc:patch:t", { x: s.w / 2, y: 77, "text-anchor": "middle", fill: c, ...sans(SIZE.min, 700) }, "починка");
