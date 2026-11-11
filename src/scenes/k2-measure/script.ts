@@ -73,9 +73,9 @@ const PIC = {
   ] },
   tape: { kind: "tape", title: "Лог сервиса: сорок запросов в секунду", marks: [28, 18, 8], markLabel: "очередь", window: null },
   tapeWin: { kind: "tape", title: "Проверка смотрит последние 50 строк — меньше 2 секунд", marks: [28, 18, 8], markLabel: "очередь", window: { from: 2, label: "окно проверки" } },
-  chance: { kind: "bars", title: "Код без починки: раундов без дедлока из 15", bars: [
-    { label: "залп из 16 повторов", value: 0.02, text: "0 из 15", bad: false },
-    { label: "залп из 4 повторов", value: 0.4, text: "6 из 15", bad: true },
+  chance: { kind: "bars", title: "Код без починки: в скольких раундах из 15 поймали дедлок", bars: [
+    { label: "залп из 16 повторов", value: 1, text: "15 из 15", bad: false },
+    { label: "залп из 4 повторов", value: 0.6, text: "9 из 15", bad: true },
   ] },
   noise: { kind: "bars", title: "p95 одной и той же починки", bars: [
     { label: "одна виртуалка", value: 0.12, text: "63 мс", bad: false },
@@ -134,6 +134,8 @@ function intro(d: Board): void {
     "крутится на ноутбуке или на машине CI.", (w) => {
     w.on.site = true;
     w.suspects = ["site"];
+    w.card = null;
+    w.verdict = { lamp: null, expect: null };
   }, ["site"]);
   d.v("Второй — нагрузка. Третий — сама проверка: что она читает и когда.", (w) => {
     w.suspects = ["site", "load", "check"];
@@ -144,6 +146,7 @@ function intro(d: Board): void {
 function noise(d: Board): void {
   d.v("Одна и та же починка: в одиночку p95 — шестьдесят три миллисекунды, а рядом с другими виртуалками — " +
     "четыреста восемьдесят пять. Вердикт по такой цифре — монетка.", (w) => {
+    d.apply(w, true, "верная починка");
     w.pic = PIC.noise;
     w.slow = true;
   }, ["site", "graphs", "pic"]);
