@@ -1,35 +1,32 @@
-import type { Mood } from "../../kit/characters";
 import type { Staged } from "../../kit/director";
 
 // Модель наброска «Почему верная починка не проходит с первого раза» (поиск формата кухни, 11.11): не симуляция,
 // а доска объяснения. Схема стенда из звеньев — виртуалка с сервисом и базой, нагрузка, графики и алерт, набор
-// починок, проверка, вердикт и CI, площадка вокруг, наши представления у автора. Правки копятся на звеньях.
+// починок, проверка, вердикт и CI, площадка вокруг. Правки копятся на звеньях.
 // Звук выбирает sound.ts только по `events`.
 
-/** Пять причин: почему верное решение не проходит проверку с первого раза. */
-export const CLASSES = ["данные запаздывают", "шум как сигнал", "нагрузка не та", "мерим не то", "модель ≠ стенд"] as const;
-/** Советы итога — по одному на причину и на ложное зелёное. */
+/** Три причины: почему верное решение не проходит проверку с первого раза. Только недетерминированные — те, что
+ * не закрываются разовой правкой кода проверки (решение пользователя 11.11). */
+export const CLASSES = ["данные запаздывают", "шум как сигнал", "нагрузка не та"] as const;
+/** Советы итога — по одному на причину. */
 export const TIPS = [
   "Читаем данные, когда они улеглись",
   "Меряем без соседей: одна виртуалка за раз",
-  "Нагрузка как в жизни: одновременность и старые данные",
-  "Через проверку — и верные, и ложные починки",
-  "Причину называем только с цифрами со стенда",
-  "Проверяем и то, чего быть не должно: повторы",
+  "Нагрузка как в жизни: одновременные залпы",
 ];
-export type ClassNo = 0 | 1 | 2 | 3 | 4;
+export type ClassNo = 0 | 1 | 2;
 
 /** Станции круга задачи внутри главы «нагрузка не та». */
 export const STATIONS = ["не сходится", "почему", "правка", "снова"] as const;
 
-/** Звенья схемы. `deck` — набор верных и ложных починок; `model` — наши представления о системе. */
-export const LINKS = ["site", "load", "vm", "graphs", "deck", "check", "verdict", "model"] as const;
+/** Звенья схемы. `deck` — набор верных и ложных починок. */
+export const LINKS = ["site", "load", "vm", "graphs", "deck", "check", "verdict"] as const;
 export type Link = (typeof LINKS)[number];
 /** Звенья, на которые ложатся правки (в итоге — счёт). Решение (верная починка) правок не получает. */
-export const EDITABLE = ["site", "load", "check", "model"] as const satisfies readonly Link[];
+export const EDITABLE = ["site", "load", "check"] as const satisfies readonly Link[];
 export type Editable = (typeof EDITABLE)[number];
 
-export type Focus = Link | "loop" | "shelf" | "pic" | "author";
+export type Focus = Link | "loop" | "shelf" | "pic";
 export type Lamp = "red" | "green" | null;
 
 /** Картинка примера: график, столбики или «думали / на стенде». */
@@ -56,16 +53,13 @@ export interface World extends Staged<Focus> {
   verdict: { lamp: Lamp; expect: Lamp };
   /** Сверка CI видна: в пути задачи вердикт показан без CI, где CI в истории не участвовал. */
   ciOn: boolean;
-  /** Что мы думаем о системе — пузырь у автора. */
-  model: string | null;
   loop: { on: boolean; at: number | null; lap: number };
-  /** Номера подозреваемых 1–4 у звеньев (хук). */
+  /** Номера подозреваемых 1–3 у звеньев (хук). */
   suspects: Link[];
   /** Строка правила главы, 4–6 слов, на месте картинки. */
   rule: string | null;
   shelf: { on: boolean; met: ClassNo[]; active: ClassNo | null };
   pic: Picture | null;
-  author: { on: boolean; mood: Mood };
   /** Итог: счёт правок на звеньях и рамка «измерение» вокруг всего, кроме решения. */
   tally: boolean;
   moral: string | null;
@@ -78,8 +72,8 @@ export function world(): World {
     sql: [], db: null, plate: null, stamp: null, term: null, focus: null, chapter: null, board: null,
     events: [], frame: 0, scene: 0,
     title: null,
-    on: { site: false, load: false, vm: false, graphs: false, deck: false, check: false, verdict: false, model: false },
-    edits: { site: 0, load: 0, check: 0, model: 0 },
+    on: { site: false, load: false, vm: false, graphs: false, deck: false, check: false, verdict: false },
+    edits: { site: 0, load: 0, check: 0 },
     site: "ноутбук",
     load: "steady",
     fault: true,
@@ -88,13 +82,11 @@ export function world(): World {
     check: "ошибки и время ответа",
     verdict: { lamp: null, expect: null },
     ciOn: true,
-    model: null,
     loop: { on: false, at: null, lap: 0 },
     suspects: [],
     rule: null,
     shelf: { on: false, met: [], active: null },
     pic: null,
-    author: { on: false, mood: "idle" },
     tally: false,
     moral: null,
     tips: null,

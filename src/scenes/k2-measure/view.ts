@@ -1,7 +1,6 @@
 import { STAGE, type Attrs, type Pen } from "../../engine/contract";
-import { bob } from "../../kit/characters";
 import { COLOR, DIM, FONT, SIZE } from "../../kit/theme";
-import { bubble, lamp, panel, pill } from "../../kit/widgets";
+import { lamp, panel, pill } from "../../kit/widgets";
 import { CLASSES, STATIONS, TIPS, ci, type Editable, type Focus, type Link, type Picture, type World } from "./sim";
 
 // Отрисовка наброска — серые фигуры фазы 0, без полировки. Раскладка:
@@ -24,14 +23,11 @@ const BOX = {
 } as const;
 const SERVICE = { x: 230, y: 104, w: 140, h: 104 };
 const PIC = { x: 420, y: 470, w: 840, h: 176 };
-const AUTHOR = { x: 40, y: 520 };
-const MODEL = { x: 120, y: 470, w: 280, h: 176 };
 /** Где у звена номер подозреваемого (левый верхний угол звена; у площадки — у вкладки). */
 const SUSPECT: Partial<Record<Link, { x: number; y: number }>> = {
   site: { x: BOX.site.x + 528, y: BOX.site.y + 4 },
   load: { x: BOX.load.x - 24, y: BOX.load.y - 22 },
   check: { x: BOX.check.x - 24, y: BOX.check.y - 22 },
-  model: { x: MODEL.x - 24, y: MODEL.y - 22 },
 };
 
 function lit(w: World, ...what: Focus[]): Attrs {
@@ -54,7 +50,6 @@ export function render(pen: Pen, w: World): void {
   if (w.on.check) check(pen, w);
   if (w.on.verdict) verdict(pen, w);
   if (w.shelf.on) shelf(pen, w);
-  if (w.author.on) author(pen, w);
   if (w.loop.on) loop(pen, w);
   if (w.pic) picture(pen, w, w.pic);
   else if (w.rule) rule(pen, w, w.rule);
@@ -213,22 +208,6 @@ function shelf(pen: Pen, w: World): void {
   });
 }
 
-/** Автор и его представления о системе — звено «модель». */
-function author(pen: Pen, w: World): void {
-  pen.group("author", AUTHOR.x, AUTHOR.y, () => {
-    bob(pen, "author:b", { x: 0, y: 0, color: "#ffd166", tint: "#5a4a1c", letter: "М", mood: w.author.mood, look: { x: 0.6, y: -0.4 } });
-    pen.text("author:n", { x: 32, y: 92, "text-anchor": "middle", fill: COLOR.muted, ...sans(SIZE.min, 500) }, "мы");
-  }, lit(w, "author", "model"));
-  if (w.on.model) {
-    pen.group("model", MODEL.x, MODEL.y, () => {
-      panel(pen, "model:p", { x: 0, y: 0, w: MODEL.w, h: MODEL.h, fill: COLOR.bg2, stroke: COLOR.faint });
-      head(pen, "model", "что мы думаем", w, "model");
-      if (w.model && !w.tally) pen.text(`model:t:${w.model}`, { x: 16, y: 74, fill: COLOR.ink, class: "fx-pop", ...sans(SIZE.body, 600) }, w.model);
-    }, lit(w, "model"));
-    if (w.model && !w.tally && w.focus?.includes("author")) pen.layer("front", () => bubble(pen, `author:say:${w.frame}`, "хм", { x: AUTHOR.x + 50, y: AUTHOR.y - 4, tail: "down", thought: true }));
-  }
-}
-
 /** Круг задачи — столбец справа: «круг N», под ним станции сверху вниз; текущая подсвечена. */
 function loop(pen: Pen, w: World): void {
   pen.group("loop", 1096, 20, () => {
@@ -289,7 +268,7 @@ function picture(pen: Pen, w: World, p: Picture): void {
 /** Итог: всё, что меряет, обведено «измерением»; набор починок и вердикт — снаружи. */
 function measure(pen: Pen): void {
   pen.layer("front", () => {
-    const boxes = [BOX.load, BOX.vm, BOX.graphs, BOX.check, { x: MODEL.x, y: MODEL.y, w: MODEL.w, h: MODEL.h }];
+    const boxes = [BOX.load, BOX.vm, BOX.graphs, BOX.check];
     boxes.forEach((b, i) =>
       pen.rect(`measure:r${i}`, { x: b.x - 6, y: b.y - 6, width: b.w + 12, height: b.h + 12, rx: 16, fill: "none", stroke: COLOR.warn, "stroke-width": 3, class: "fx-fade" }));
     pen.rect("measure:site", { x: BOX.site.x, y: BOX.site.y, width: BOX.site.w, height: BOX.site.h, rx: 18, fill: "none", stroke: COLOR.warn, "stroke-width": 2, "stroke-dasharray": "10 8", class: "fx-fade" });
@@ -332,13 +311,14 @@ function tips(pen: Pen, w: World): void {
   const t = w.tips!;
   pen.group("tips", 0, 0, () => {
     pen.rect("tips:bg", { x: 0, y: 0, width: STAGE.w, height: STAGE.h, fill: COLOR.bg, opacity: 0.85 });
-    panel(pen, "tips:p", { x: 140, y: 40, w: 1000, h: 400, fill: COLOR.bg2, stroke: COLOR.warn });
+    const h = 100 + TIPS.length * 50;
+    panel(pen, "tips:p", { x: 140, y: 40, w: 1000, h, fill: COLOR.bg2, stroke: COLOR.warn });
     pen.text("tips:h", { x: 172, y: 88, fill: COLOR.muted, "letter-spacing": 4, ...sans(SIZE.title, 600) }, "КАК НЕ ДАТЬ ИЗМЕРЕНИЮ СОВРАТЬ");
     TIPS.slice(0, t.shown).forEach((line, i) =>
       pen.text(`tips:${i}`, { x: 172, y: 146 + i * 50, fill: COLOR.ink, class: "fx-rise", ...sans(SIZE.accent, 600) }, `${i + 1}. ${line}`));
     if (t.caveat) {
-      panel(pen, "tips:c:p", { x: 140, y: 468, w: 1000, h: 150, fill: COLOR.bg2, stroke: COLOR.error });
-      pen.text("tips:c:t", { x: 172, y: 516, fill: COLOR.ink, class: "fx-pop", ...sans(SIZE.accent, 700) }, t.caveat);
+      panel(pen, "tips:c:p", { x: 140, y: 68 + h, w: 1000, h: 150, fill: COLOR.bg2, stroke: COLOR.error });
+      pen.text("tips:c:t", { x: 172, y: 116 + h, fill: COLOR.ink, class: "fx-pop", ...sans(SIZE.accent, 700) }, t.caveat);
     }
   }, { class: "fx-fade" });
 }
