@@ -38,6 +38,8 @@ export interface World extends Staged<Focus> {
   load: "steady" | "bursts";
   /** Поломка в сервисе видна (трещина), пока на сервисе нет починки. */
   fault: boolean;
+  /** Сервис перезапускается под новый код: процесса нет, запросы падают. */
+  restarting: boolean;
   alert: boolean;
   /** Починка из набора, которую сейчас примерили к сервису. */
   card: { right: boolean; name: string } | null;
@@ -72,6 +74,7 @@ export function world(): World {
     site: "ноутбук",
     load: "steady",
     fault: true,
+    restarting: false,
     alert: false,
     card: null,
     check: "ошибки и время ответа",
