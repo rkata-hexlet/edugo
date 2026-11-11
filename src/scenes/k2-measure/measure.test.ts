@@ -54,7 +54,7 @@ class RecordingPen implements Pen {
   }
 }
 
-for (const [name, build] of [["три причины", buildClasses]] as const) {
+for (const [name, build] of [["четыре причины", buildClasses]] as const) {
   const steps = build();
   const frames = steps.map((step, i) => {
     const pen = new RecordingPen();

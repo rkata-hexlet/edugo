@@ -137,6 +137,10 @@ function graphs(pen: Pen, w: World): void {
       pen.text(`graphs:n${i}`, { x: 16, y: y + 6, fill: COLOR.muted, ...sans(SIZE.min, 500) }, name);
       const bad = (w.alert && i < 2) || (w.slow && i === 1);
       const d = bad ? `M 110 ${y} L 150 ${y} L 160 ${y - 16} L 175 ${y - 4} L 185 ${y - 18} L 220 ${y - 16}` : `M 110 ${y} L 220 ${y}`;
+      if (i === 2 && w.backlog) {
+        pen.path("graphs:l2:tail", { d: `M 110 ${y} L 140 ${y} L 150 ${y - 20} L 220 ${y - 12}`, fill: "none", stroke: COLOR.warn, "stroke-width": 3, class: "fx-draw" });
+        return;
+      }
       pen.path(`graphs:l${i}:${bad}`, { d, fill: "none", stroke: bad ? COLOR.error : COLOR.ok, "stroke-width": 3, class: "fx-draw" });
     });
     if (w.alert) pill(pen, "graphs:alert", "алерт", { x: 150, y: 10, size: SIZE.min, fill: COLOR.alarmBg, color: COLOR.error, attrs: { class: "fx-pop" } });
