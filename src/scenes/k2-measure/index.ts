@@ -8,6 +8,6 @@ import { render } from "./view";
 // (решение пользователя 11.11: «берём kk, из kc круг внутри главы»).
 export const classes: Scene<World> = {
   id: "kk",
-  meta: { episode: 0, title: "Почему верная починка не проходит с первого раза", tagline: "Набросок: четыре причины по очереди", outro: OUTRO },
+  meta: { episode: 0, title: "Почему верная починка не проходит с первого раза", tagline: "Четыре причины, почему измерение врёт", outro: OUTRO },
   steps: buildClasses, render, sound, pronounce: PRONOUNCE,
 };
