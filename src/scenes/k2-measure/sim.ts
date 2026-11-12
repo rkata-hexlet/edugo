@@ -30,15 +30,23 @@ export type Editable = (typeof EDITABLE)[number];
 export type Focus = Link | "loop" | "shelf" | "pic";
 export type Lamp = "red" | "green" | null;
 
-/** Картинка примера: график, столбики или «думали / на стенде». */
+/** Картинка примера: график, столбики, лента лога или образ (дедлок, залп, опоздание счётчика, хвост очереди). */
 export type Picture =
-  | { kind: "chart"; title: string; points: number[]; mark: { at: number; label: string } | null; note: string | null; bad: boolean }
-  | { kind: "bars"; title: string; bars: { label: string; value: number; text: string; bad: boolean }[]; threshold?: { value: number; label: string } }
-  | { kind: "vs"; title: string; left: { head: string; text: string }; right: { head: string; text: string; bad: boolean } }
-  /** Лента лога: 30 с прошлого и несколько секунд будущего. Строки-след — секунды до «сейчас» (отрицательные — ещё
+  | { kind: "chart"; title: string; points: number[]; mark: { at: number; label: string } | null; bad: boolean }
+  /** `vms` — сколько виртуалок нарисовать у строки (соседи по железу). */
+  | { kind: "bars"; title: string; bars: { label: string; value: number; text: string; bad: boolean; vms?: number }[]; threshold?: { value: number; label: string } }
+  /** Лента лога: 24 с прошлого и 6 с будущего. Строки-след — секунды до «сейчас» (отрицательные — ещё
    * не вышли, рисуются призраком); окно — что видит проверка: часть в прошлом (хвост лога) и часть вперёд (слежение). */
   | { kind: "tape"; title: string; marks: { ago: number; label: string }[];
-      window: { past: number; pastLabel: string; ahead: number; aheadLabel: string } | null };
+      window: { past: number; pastLabel: string; ahead: number; aheadLabel: string } | null }
+  /** Два заказа держат по товару и хотят чужой — встречный порядок. */
+  | { kind: "deadlock"; title: string }
+  /** Залп: все жмут разом после пуша. */
+  | { kind: "burst"; title: string }
+  /** Счётчик базы отстаёт от правды до 10 с: читаем — видим старое. */
+  | { kind: "lag"; title: string }
+  /** Свои письма проверки — в конце хвоста очереди; таймер 2 мин истекает раньше. */
+  | { kind: "queue"; title: string };
 
 export interface World extends Staged<Focus> {
   title: { head: string; text: string } | null;

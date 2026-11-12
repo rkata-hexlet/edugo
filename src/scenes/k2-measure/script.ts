@@ -63,18 +63,20 @@ class Board extends Director<Focus, World> {
 
 const flat = (n: number, v = 0) => Array.from({ length: n }, () => v);
 const PIC = {
-  cliff: { kind: "chart", title: "Ошибки при ровной нагрузке", points: [...flat(7), 0.9, 1, 1, 1], mark: { at: 6, label: "чуть больше нагрузки" }, note: null, bad: true },
-  waves: { kind: "chart", title: "Ошибки при нагрузке залпами", points: [0, 0.55, 0, 0, 0.6, 0, 0, 0.5, 0, 0, 0.6], mark: null, note: "залп — 16 повторов\nраз в 10 секунд", bad: true },
-  stats: { kind: "vs", title: "Счётчики базы", left: { head: "читаем", text: "сразу после теста" }, right: { head: "соединения обновляют их", text: "с опозданием до 10 с:\nчисло ещё старое", bad: true } },
-  tail: { kind: "vs", title: "Если судить по задержке своих писем", left: { head: "свои заказы проверки", text: "встали за хвостом\nв 30 тысяч писем" }, right: { head: "за 2 минуты проверки", text: "письма не пришли:\nверной починке — красное", bad: true } },
+  cliff: { kind: "chart", title: "Ошибки при ровной нагрузке", points: [...flat(7), 0.9, 1, 1, 1], mark: { at: 6, label: "чуть больше нагрузки" }, bad: true },
+  waves: { kind: "chart", title: "Ошибки при нагрузке залпами", points: [0, 0.55, 0, 0, 0.6, 0, 0, 0.5, 0, 0, 0.6], mark: null, bad: true },
+  stats: { kind: "lag", title: "Счётчик базы" },
+  tail: { kind: "queue", title: "Если судить по задержке своих писем" },
+  deadlock: { kind: "deadlock", title: "Два заказа, общие товары" },
+  burst: { kind: "burst", title: "Пуш «Повторите заказ»" },
   rate: { kind: "bars", title: "Писем за 12 секунд: хвост не мешает", threshold: { value: 200 / 620, label: "порог 200" }, bars: [
     { label: "сломанный сервис", value: 0.13, text: "79", bad: true },
     { label: "верная починка", value: 1, text: "620", bad: false },
   ] },
-  tape: { kind: "tape", title: "Лог сервиса: 40 запросов в секунду", marks: [26, 16, 6].map((ago) => ({ ago, label: "отчёт" })), window: null },
+  tape: { kind: "tape", title: "Лог сервиса: 40 запросов в секунду", marks: [16, 6].map((ago) => ({ ago, label: "отчёт" })), window: null },
   // Окно ≈ 5 с: 50 строк хвоста лога (≈ 2 с) и 3 с слежения вперёд; отчёт 6 с назад и следующий через 4 с — мимо.
-  tapeWin: { kind: "tape", title: "Окно робота ≈ 5 с, отчёт — раз в 10 с",
-    marks: [{ ago: 26, label: "отчёт" }, { ago: 16, label: "отчёт" }, { ago: 6, label: "6 с назад" }, { ago: -4, label: "через 4 с" }],
+  tapeWin: { kind: "tape", title: "Окно робота ≈ 5 с",
+    marks: [{ ago: 16, label: "отчёт" }, { ago: 6, label: "6 с назад" }, { ago: -4, label: "через 4 с" }],
     window: { past: 2, pastLabel: "50 строк", ahead: 3, aheadLabel: "+3 с" } },
   chance4: { kind: "bars", title: "Код без починки: в скольких раундах из 15 поймали дедлок", bars: [
     { label: "залп из 4 повторов", value: 0.6, text: "9 из 15", bad: true },
@@ -84,8 +86,8 @@ const PIC = {
     { label: "залп из 16 повторов", value: 1, text: "15 из 15", bad: false },
   ] },
   noise: { kind: "bars", title: "p95 времени ответа одной и той же починки", bars: [
-    { label: "одна виртуалка", value: 0.12, text: "63 мс", bad: false },
-    { label: "рядом другие виртуалки", value: 0.9, text: "485 мс", bad: true },
+    { label: "одна виртуалка", value: 0.12, text: "63 мс", bad: false, vms: 1 },
+    { label: "рядом другие виртуалки", value: 0.9, text: "485 мс", bad: true, vms: 3 },
   ] },
 } satisfies Record<string, Picture>;
 
@@ -281,13 +283,16 @@ export function buildClasses(): Step<World>[] {
     "ищем почему, правим и гоняем снова.", (w) => {
     w.loop = { on: true, at: null, lap: 0 };
     w.ciOn = false;
-  }, ["vm", "loop"]);
+    w.pic = PIC.deadlock;
+  }, ["vm", "loop", "pic"]);
   station(0, "Сначала подаём ровную нагрузку, но нужной картины нет. Если запросов чуть меньше, ошибок ноль, а если чуть больше, " +
     "то за десять секунд приходит лавина, и через минуту падает почти всё. Алерт на такое не настроить.", ["load", "graphs", "pic"], (w) => {
     w.pic = PIC.cliff;
   });
   station(1, "Почему так? Дедлок рождает не средний поток запросов, а одновременность. В жизни это выглядит так: приходит пуш «Повторите заказ», и все жмут разом.",
-    ["load", "pic"]);
+    ["load", "pic"], (w) => {
+      w.pic = PIC.burst;
+    });
   station(2, "Правим нагрузку: теперь она идёт залпами по шестнадцать повторов, и каждый залп приходит раз в десять секунд.", ["load"], (w) => {
     d.edit(w, "load");
     w.load = "bursts";

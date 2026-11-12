@@ -1,0 +1,27 @@
+/* Движения сцены kk сверх словаря серии (motion-designer, этап 4 шлифовки кухни 01). Локально, чтобы не трогать
+   общий src/kit/motion.css. Перемотка (.no-anim) и reduced-motion гасят их правилами серии: классы начинаются с fx-. */
+
+/* Рост полосы во времени — «идёт время». */
+@keyframes fx-grow {
+  from { scale: 0 1; }
+  to { scale: 1 1; }
+}
+.stage rect.fx-grow {
+  transform-origin: left center;
+  animation: fx-grow 1.6s linear both;
+}
+
+/* Падение разом — залп: сверху, без отскока. */
+@keyframes fx-fall {
+  from { translate: 0 -36px; opacity: 0; }
+  to { translate: 0 0; opacity: 1; }
+}
+.stage .fx-fall {
+  animation: fx-fall 0.25s cubic-bezier(0.5, 0, 1, 0.6) both;
+}
+
+/* Сдвиг по времени внутри кадра: шаги одной картинки. */
+.stage [class].fx-l1 { animation-delay: 0.4s; }
+.stage [class].fx-l2 { animation-delay: 0.8s; }
+.stage [class].fx-l3 { animation-delay: 1.2s; }
+.stage [class].fx-l4 { animation-delay: 1.6s; }
